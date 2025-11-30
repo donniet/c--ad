@@ -3,12 +3,15 @@ project(c++ad VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 
-add_compile_options("-fexperimental-library")
+# add_compile_options("-fexperimental-library")
+# add_compile_options("-stdlib=libstdc++")
 add_compile_options("-stdlib=libc++")
+add_link_options("-static")
+link_libraries("c++abi" "c++")
 include_directories(include)
 
 ## Dependencies
@@ -24,6 +27,7 @@ message("modules file list: ${LIB_MODULE_FILES}")
 # add_compile_options(-stdlib=libc++)
 
 add_subdirectory(lib)
+add_subdirectory(test)
 add_subdirectory(experiments)
  
 add_executable(c++ad test.cpp)
