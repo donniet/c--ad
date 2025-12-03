@@ -2,6 +2,7 @@
 #include <iostream>
 
 import iso_surface;
+import linalg;
 
 
 template<typename FloatType>

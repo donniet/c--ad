@@ -4,277 +4,273 @@ module;
 #include <functional>
 #include <ranges>
 #include <array>
+#include <numeric>
+#include <bitset>
 
 export module iso_surface;
 
-export template<typename FloatType = float>
-struct Point : 
-    public std::ranges::view_interface<Point<FloatType>>
+import linalg;
+
+template<typename ValueType>
+struct array_view : 
+    public std::ranges::view_interface<array_view>
 {
-    using float_type = FloatType;
-    using value_type = float_type;
+    using value_type = ValueType;
+    using const_iterator = value_type const*;
 
-    float_type& operator[](int i);
-    float_type const& operator[](int i) const;
-    float_type& at(int i);
-    float_type const& at(int i) const;
+    const_iterator begin() const
+    { return m_begin; }
 
-    struct iterator;
-    struct const_iterator;
+    const_iterator end() const
+    { return m_end; }
 
-    iterator begin();
-    iterator end();
-    const_iterator begin() const;
-    const_iterator end() const;
-    const_iterator cbegin() const;
-    const_iterator cend() const;
+    array_view(const_iterator b, const_iterator e) :
+        m_begin(b), m_end(e)
+    { }
 
-    float_type x, y, z;
+    const_iterator m_begin, m_end;
 };
 
-export template<typename FloatType = float>
-struct Triangle
-{
-    using point_type = Point<FloatType>;
-
-    point_type points[3];
-};
-
-export template<typename FloatType = float>
-class Simplex
-{
-    using triangle_type = Triangle<FloatType>;
-
-    Simplex& operator+=(triangle_type const&);
-};
 
 /** Grid class represents a 3D grid of arbitrary size and density 
  * 
 */
-export template<typename PointType = Point<>>
 class Grid
 {
-    static constexpr size_t inline dimensions = 3;
-    using position_type = std::array<long, dimensions>;
+    enum dimension_names : size_t
+    {
+        left_right = 0,
+        bottom_top = 1,
+        back_front = 2,
+        dimensions = 3
+    };
 
-    using point_type = Point<>;
-    using edge_type = long;
+    struct position_type;
     struct corner_type;
+    struct edge_type;
     struct cell_type;
-    struct const_iterator;
+
+    struct cell_iterator;
+
     struct corners_view;
+    struct positions_view;
     struct cell_view;
 
-    // template<class T> using Set_of = std::vector<T>;
-    using triangle_type = Triangle< >;
-    using simplex_type = Simplex<triangle_type>;
+    template<typename Float>
+    struct density_grid_type : public std::vector<Float> 
+    { 
 
-    const_iterator begin() const;
-    const_iterator end() const;
+        coordinate_type m_bounds;
+    };
 
-    cell_view cells() const;
-    point_type at(position_type) const;
+    struct cell_grid_type;
 
-    struct triangulation_range;
+    using coordinate_type = std::array<long, 3>;
+
+    friend struct position_type;
+
+    template<typename Float>
+    cell_grid_type cells(density_grid_type<Float> const&) const;
+    // point_type at(position_type) const;
 
     // bool contains_surface( characterized_cell cell ) const;
-    triangulation_range triangulate( Grid<PointType>::cell_view&& ) const;
-    simplex_type surface() const;
+    triangle_grid_type triangulate( Grid::cell_view&& );
 
-    template<size_t Dim> size_t stride_to() const;
-    template<size_t Dim> size_t dimension() const;
+    template<typename SurfaceFunction>
+    simplex_type surface(SurfaceFunction&&) const;
 
-    position_type position_begin() const;
-    position_type position_end() const;
-protected:
-    static triangle_type triangle_from(const_iterator, edge_type[3]);
-    static size_t table_index(cell_type&& cell);
+    position_type origin() const;
+
+    coordinate_type const& bounds() const { return m_bounds; }
+
+    positions_view positions() const;
+
+    position_type corner_of(cell_type, corner_type);
+    
+    long vertex_id(position_type const&) const;
+    long vertex_id_along(position_type const&, edge_type const&) const;
+// protected:
+
     static const unsigned int s_edge_table[256];
     static const int s_triangle_table[256][16];
-private:
-    std::array<size_t, dimensions> m_bounds;
-    point_type m_origin;
-    point_type m_maximum;
+    static const unsigned int s_edge_table_corner_bitmask[8];
+// private:
+    coordinate_type m_bounds;
 };
-
 
 /**
  * Implementation 
  */
-
-template<typename FloatType>
-Point<FloatType>::float_type& Point<FloatType>::operator[](int i)
-{ return at(i); }
-
-template<typename FloatType>
-Point<FloatType>::float_type const& Point<FloatType>::operator[](int i) const
-{ return at(i); }
-
-template<typename FloatType>
-Point<FloatType>::float_type& Point<FloatType>::at(int i)
+struct Grid::position_type
 {
-    if(i < 0) 
-        return x;
-
-    switch(x) {
-    case 0: return x;
-    case 1: return y;
-    case 2: return z;
+    position_type operator+(corner_type const&) const;
+    position_type operator+(coordinate_type const& other) const
+    {
+        auto other_position = position_type{other, m_bounds};
+        auto ret = *this;
+        ret.m_index += other_position.m_index;
+        return ret;
     }
-    
-    return z;
-}
+    position_type& operator++();
+    position_type operator++(int);
+    position_type& operator--();
+    position_type operator--(int);
+    position_type& operator+=(long);
+    position_type& operator-=(long);
+    long operator-(position_type const&);
 
-template<typename FloatType>
-Point<FloatType>::float_type const& Point<FloatType>::at(int i) const
-{
-    if(i < 0) 
-        return x;
+    bool operator==(position_type const& other) const
+    { return m_index == other.m_index; }    
+    bool operator!=(position_type const& other) const
+    { return m_index != other.m_index; }
+    bool operator>(position_type const& other) const
+    { return m_index > other.m_index; }
+    bool operator>=(position_type const& other) const
+    { return m_index >= other.m_index; }
+    bool operator<(position_type const& other) const
+    { return m_index < other.m_index; }
+    bool operator<=(position_type const& other) const
+    { return m_index <= other.m_index; }
 
-    switch(x) {
-    case 0: return x;
-    case 1: return y;
-    case 2: return z;
+    long operator[](int i) const
+    { return at(i); }
+
+    long at(int i) const
+    { 
+        if(i < 0 || i >= 3)
+            return 0;
+        
+        long ret = m_index;
+        for(int j = 0; j < i; ++j)
+            ret /= m_bounds[j];
+
+        return ret % m_bounds[i];
     }
-    
-    return z;
-}
 
+    long index() const
+    { return m_index; }
 
-template<typename FloatType>
-struct Point<FloatType>::iterator
-{
-    friend struct Point;
+    bool is_valid() const
+    { return m_index >= 0 && m_index < index_upper_bound(); }
 
-    float_type& operator*() const
-    { return m_point->at(m_pos); }
-    iterator& operator++()
-    { ++m_pos; return *this; }
-    iterator operator++(int)
-    { iterator ret = *this; ++m_pos; return ret; }
-    iterator& operator+=(int d)
-    { m_pos += d; return *this; }
-    iterator operator+(int d) const
-    { iterator ret; return ret += d; }
-    iterator& operator--()
-    { --m_pos; return *this; }
-    iterator operator--(int)
-    { iterator ret = *this; --m_pos; return ret; }
-    iterator& operator-=(int d)
-    { m_pos -= d; return *this; }
-    iterator operator-(int d) const
-    { iterator ret; return ret -= d; }
-    bool operator==(iterator const& other) const
-    { return m_point == other.m_point && m_pos == other.m_pos;  }
-    bool operator!=(iterator const& other) const
-    { return !(*this == other); }
-    bool operator==(std::default_sentinel_t) const
-    { return m_pos == 3; }
-    bool operator!=(std::default_sentinel_t) const
-    { return m_pos != 3; }
+    long index_upper_bound() const
+    { return m_bounds[0] * m_bounds[1] * m_bounds[2]; }
 
-    iterator() : m_point{nullptr}, m_pos{0} { }
-    iterator(iterator&&) = default;
-    iterator(iterator const&) = default;
-    iterator& operator=(iterator&&) = default;
-    iterator& operator=(iterator const&) = default;
-protected:
-    iterator(Point * point, int pos = 0) :
-        m_point{point}, m_pos{pos}
+    position_type position_upper_bound() const
+    { return { index_upper_bound(), m_bounds }; }
+
+    position_type(long index, coordinate_type const& bounds) :
+        m_index{index}, m_bounds{bounds}
     { }
-private:
-    Point * m_point;
-    int m_pos;
+    position_type(coordinate_type const& coordinates, coordinate_type const& bounds) :
+        m_index{coordinates[0] + bounds[0] * 
+            (coordinates[1] + bounds[1] * coordinates[2]) }, 
+        m_bounds{bounds}
+    { }
+
+    long m_index;
+    coordinate_type m_bounds;
 };
 
-template<typename FloatType>
-struct Point<FloatType>::const_iterator
+struct Grid::positions_view :
+    std::ranges::view_interface<Grid::positions_view>
 {
-    friend struct Point;
+    struct const_iterator
+    {
+        position_type operator*() const
+        { return m_position; }
 
-    float_type const& operator*() const
-    { return m_point->at(m_pos); }
-    const_iterator& operator++()
-    { ++m_pos; return *this; }
-    const_iterator operator++(int)
-    { const_iterator ret = *this; ++m_pos; return ret; }
-    const_iterator& operator+=(int d)
-    { m_pos += d; return *this; }
-    const_iterator operator+(int d) const
-    { const_iterator ret = *this; return ret += d; }
-    const_iterator& operator--()
-    { --m_pos; return *this; }
-    const_iterator operator--(int)
-    { const_iterator ret = *this; --m_pos; return ret; }
-    const_iterator& operator-=(int d)
-    { m_pos -= d; return *this; }
-    const_iterator operator-(int d) const
-    { const_iterator ret = *this; return ret -= d; }
-    bool operator==(const_iterator const& other) const
-    { return m_point == other.m_point && m_pos == other.m_pos;  }
-    bool operator!=(const_iterator const& other) const
-    { return !(*this == other); }
-    bool operator==(std::default_sentinel_t) const
-    { return m_pos == 3; }
-    bool operator!=(std::default_sentinel_t) const
-    { return m_pos != 3; }
+        position_type operator[](long amount) const
+        { return *(*this + amount); }
 
-    const_iterator() : m_point{nullptr}, m_pos{0} { }
-    const_iterator(const_iterator&&) = default;
-    const_iterator(const_iterator const&) = default;
-    const_iterator& operator=(const_iterator&&) = default;
-    const_iterator& operator=(const_iterator const&) = default;
-protected:
-    const_iterator(Point const* point, int pos = 0) :
-        m_point{point}, m_pos{pos}
-    { }
-private:
-    Point const* m_point;
-    int m_pos;
+        const_iterator& operator++()
+        { ++m_position; return *this; }
+        const_iterator& operator--()
+        { --m_position; return *this; }
+        const_iterator& operator+=(long amount)
+        { m_position += amount; return *this; }
+        const_iterator& operator-=(long amount)
+        { m_position -= amount; return *this; }
+        const_iterator operator+(long amount) const
+        { auto ret = *this; ret.m_position += amount; return ret; }
+        const_iterator operator-(long amount) const
+        { auto ret = *this; ret.m_position -= amount; return ret; }
+        long operator-(const_iterator const& other) const
+        { auto ret = *this; ret.m_position - other.m_position; return ret; }
+        
+        bool operator==(const_iterator const& other) const
+        { return m_position == other.m_position; }
+        bool operator!=(const_iterator const& other) const
+        { return m_position != other.m_position; }
+        bool operator<(const_iterator const& other) const
+        { return m_position < other.m_position; }
+        bool operator<=(const_iterator const& other) const
+        { return m_position <= other.m_position; }
+        bool operator>(const_iterator const& other) const
+        { return m_position > other.m_position; }
+        bool operator>=(const_iterator const& other) const
+        { return m_position >= other.m_position; }
+
+        const_iterator& operator=(const_iterator&&) = default;
+        const_iterator& operator=(const_iterator const&) = default;
+
+        operator bool() const
+        { return m_position.is_valid(); }
+    
+        // DT: do we need a default constructor?
+        const_iterator(position_type const& position) : 
+            m_position{position}
+        { }
+        const_iterator(const_iterator&&) = default;
+        const_iterator(const_iterator const&) = default;
+
+        position_type m_position;
+    };
+
+    const_iterator begin() const
+    { return { m_grid->origin() }; }
+    const_iterator end() const
+    { return { m_grid->origin().position_upper_bound() }; }
+
+    //positions_view() : m_grid{nullptr} { }
+
+    positions_view& operator=(positions_view&&) = default;
+    positions_view& operator=(positions_view const&) = default;
+
+    positions_view(Grid const& grid) : m_grid(&grid) { }
+    positions_view(positions_view const&) = default;
+    positions_view(positions_view&&) = default;
+    
+// private:
+    Grid const * m_grid;
 };
 
-template<typename FloatType>
-Point<FloatType>::iterator Point<FloatType>::begin()
-{ return { this, 0 }; }
 
-template<typename FloatType>
-Point<FloatType>::iterator Point<FloatType>::end()
-{ return { this, 3 }; }
-
-template<typename FloatType>
-Point<FloatType>::const_iterator Point<FloatType>::begin() const
-{ return { this, 0 }; }
-
-template<typename FloatType>
-Point<FloatType>::const_iterator Point<FloatType>::end() const
-{ return { this, 3 }; }
-
-template<typename FloatType>
-Point<FloatType>::const_iterator Point<FloatType>::cbegin() const
-{ return { this, 0 }; }
-
-template<typename FloatType>
-Point<FloatType>::const_iterator Point<FloatType>::cend() const
-{ return { this, 3 }; }
-
-template<typename PointType>
-struct Grid<PointType>::corner_type
+struct Grid::corner_type
 { 
     enum value_type : int
     {
         back_bottom_left   = 0b000,
         back_bottom_right  = 0b001,
-        back_top_left      = 0b010,
-        back_top_right     = 0b011,
+        back_top_right     = 0b010,
+        back_top_left      = 0b011,
         front_bottom_left  = 0b100,
         front_bottom_right = 0b101,
-        front_top_left     = 0b110,
-        front_top_right    = 0b111,
-        total_corners
+        front_top_right    = 0b110,
+        front_top_left     = 0b111,
+        total_corners      = 8,
     };
 
-    template<size_t Dim> int displacement()
-    { return (m_value & (0b1 << Dim)) ? 1 : 0; }
+    long at(int x) const
+    {
+        if(x < 0 || x >= dimensions) 
+            return 0;
+        
+        return (m_value & (0b1 << x)) ? 1 : 0;
+    }
+
+    int operator[](int x) const
+    { return at(x); }
 
     bool operator==(corner_type other) const
     { return m_value == other.m_value; }
@@ -316,10 +312,13 @@ struct Grid<PointType>::corner_type
     corner_type operator-(corner_type other) 
     { return { m_value - other.m_value }; }
 
+    position_type relative_to(position_type const& position) const
+    { return position + *this; }
+
     corner_type& operator=(corner_type const&) = default;
     corner_type& operator=(corner_type&&) = default;
 
-    corner_type(value_type value = front_top_right) :
+    corner_type(value_type value = back_bottom_left) :
         m_value{value}
     { }
     corner_type(int value) : 
@@ -333,337 +332,389 @@ private:
     int m_value;
 };
 
-template<typename PointType>
-struct Grid<PointType>::cell_type
+struct Grid::corners_view : 
+    public std::ranges::view_interface<Grid::corners_view>
 {
-    friend struct const_iterator;
+    struct const_iterator
+    {       
+        using value_type = corner_type;
 
+        value_type operator*() const 
+        { return m_current; }
+        const_iterator& operator++() 
+        { ++m_current; return *this; }
+        bool operator==(const_iterator const& other) const
+        { return m_current == other.m_current; }
+        bool operator!=(const_iterator const& other) const
+        { return m_current != other.m_current; }
+
+        const_iterator(value_type corner) : m_current{corner} { }
+
+        value_type m_current;
+    };
+
+    const_iterator begin() const { return { 0 }; }
+    const_iterator end() const { return { corner_type::total_corners }; }
+};
+
+struct Grid::edge_type 
+{
+    enum value_type : int 
+    {
+        back_bottom,
+        bottom_right,
+        front_bottom,
+        bottom_left,
+
+        back_top, 
+        top_right,
+        top_front, 
+        top_left,
+
+        back_left, 
+        back_right, 
+        front_right, 
+        front_left,
+
+        total_edges
+    };
+
+    long relative_vertex_id(Grid const& grid, position_type const& p)
+    {
+        using rel = coordinate_type;
+
+        switch(m_value) 
+        {
+        case edge_type::back_bottom:
+            return grid.vertex_id(p + rel{0,0,0}) + 1;
+        case edge_type::bottom_right:
+            return grid.vertex_id(p + rel{0,1,0}) + 0;
+        case edge_type::front_bottom:
+            return grid.vertex_id(p + rel{1,0,0}) + 1;
+        case edge_type::bottom_left:
+            return grid.vertex_id(p + rel{0,0,0}) + 0;
+
+        case edge_type::back_top: 
+            return grid.vertex_id(p + rel{0,0,1}) + 1;
+        case edge_type::top_right: 
+            return grid.vertex_id(p + rel{0,1,1}) + 0;
+        case edge_type::top_front: 
+            return grid.vertex_id(p + rel{1,0,1}) + 1;
+        case edge_type::top_left: 
+            return grid.vertex_id(p + rel{0,0,1}) + 0;
+
+        case edge_type::back_left: 
+            return grid.vertex_id(p + rel{0,0,0}) + 2;
+        case edge_type::back_right: 
+            return grid.vertex_id(p + rel{0,1,0}) + 2;
+        case edge_type::front_right: 
+            return grid.vertex_id(p + rel{1,1,0}) + 2;
+        case edge_type::front_left: 
+            return grid.vertex_id(p + rel{1,0,0}) + 2;
+        }
+
+        return -1;
+    }
+
+private:
+    float m_distance; /* [0,1] */
+    int m_value;
+};
+
+template<typename T>
+concept view_of = std::ranges::view<T>;
+
+
+struct Grid::cell_type {
+    friend struct cell_iterator;
+    
+    using triangle_pattern = tetrahedral_triangulation<triangle_type>;
+
+    // from CIsoSurface.cpp
+
+    static constexpr corners_view corners()
+    { return {}; }
+
+    // this_is_a( MovableType )
     cell_type& operator=(cell_type const&) = default;
     cell_type& operator=(cell_type&&) = default;
 
-    cell_type(position_type position) :
-        m_position{position}
+    cell_type() : m_field{}, m_is_rightmost{false}, m_is_topmost{false}, 
+        m_is_frontmost{false}, m_triangles{}
     { }
-    cell_type() { }
+    cell_type(scalar_field_iterator back_bottom_left_corner) :
+        m_field{back_bottom_left_corner}
+    {
+        auto right_side = m_field[1,0,0];
+        auto top_side   = m_field[0,1,0];
+        auto front_side = m_field[0,0,1];
+        auto extents = m_field.extents();
+
+        m_is_rightmost = ( right_side == extents[0] - 1 );
+        m_is_topmost   = ( top_side   == extents[1] - 1 );
+        m_is_frontmost = ( front_side == extents[2] - 1 );
+
+        m_triangles = triangle_pattern::from_corners
+        ( corners() | mapped_to( m_field ) );
+    }
+
     cell_type(cell_type const&) = default;
     cell_type(cell_type&&) = default;
 
-    template<size_t Dim> long position() const
-    {
-        if constexpr (Dim >= dimensions)
-            return 0;
-        
-        return m_position[Dim];
-    }
+    int triangles_found() const;
+    bool is_rightmost() const { return m_is_rightmost; }
+    bool is_topmost() const   { return m_is_topmost;   }
+    bool is_frontmost() const { return m_is_frontmost; }
+
+
 
 private:
-    position_type m_position;
+    bool m_is_rightmost, m_is_topmost, m_is_frontmost;
+    scalar_field_iterator m_field;
+    triangle_pattern m_triangles;
 };
 
-template<typename PointType>
-struct Grid<PointType>::const_iterator 
+struct Grid::cell_iterator 
 {
-    friend class Grid<PointType>;
+    friend class Grid;
 
-    cell_type operator*() const
-    { return m_cell; }
-    cell_type const* operator->() const
-    { return &m_cell; }
+    cell_type operator*() const { return m_cell; }
+    cell_type const* operator->() const { return &m_cell; }
 
-    const_iterator& operator++()
-    { 
-        increment_helper(1);
-        return *this;
-    }
-    const_iterator& operator+=(long amount)
-    { 
-        increment_helper(amount);
-        return *this;
-    }
-    const_iterator& operator--()
-    { 
-        increment_helper(-1);
-        return *this;
-    }
-    const_iterator& operator-=(long amount)
-    { 
-        increment_helper(-amount);
-        return *this;
-    }
+    cell_iterator& operator++()
+    { increment_helper(1); return *this; }
+    cell_iterator operator++(int)
+    { auto ret = *this; increment_helper(1); return ret; }
+    cell_iterator& operator+=(long amount)
+    { increment_helper(amount); return *this; }
+    cell_iterator& operator--()
+    { increment_helper(-1); return *this; }
+    cell_iterator operator--(int)
+    { auto ret = *this; increment_helper(-1); return ret; }
+    cell_iterator& operator-=(long amount)
+    { increment_helper(-amount); return *this; }
 
-    template<typename IndexSequence>
-    void increment_helper(long amount, 
-        IndexSequence = std::make_index_sequence<Grid<PointType>::dimensions>{});
+    cell_iterator operator+(long amount)
+    { auto ret = *this; ret.increment_helper(amount); return ret; }
+    cell_iterator operator-(long amount)
+    { auto ret = *this; ret.increment_helper(-amount); return ret; }
 
-    template<size_t Dim, size_t ... Dims>
-    void increment_helper(long amount, std::index_sequence<Dim, Dims...>)
+    void increment_helper(long amount)
     {
-        auto stride = m_grid->stride_to<Dim>();
-        m_cell.template position<Dim>() += (amount % stride);
-        amount /= stride;
+        amount += m_cell[0];
+        m_cell[0] = amount % m_grid->bounds(0);
+        amount /= m_grid->bounds(0);
 
-        // check for remainder
-        if(m_cell.template position<Dim>() >= m_grid->dimension<Dim>())
-            ++amount;
+        amount += m_cell[1];
+        m_cell[1] = amount % m_grid->bounds(1);
+        amount /= m_grid->bounds(1);
 
-        // finish the other dimensions
-        increment_helper(amount, std::index_sequence<Dims...>{});
+        m_cell[2] += amount;
     }
-
-    template<>
-    void increment_helper(long amount, std::index_sequence<>)
-    { }
 
     bool is_valid() const
     {
-        //TODO: turn this into variadic template
-        return m_cell.template position<0>() >= 0 &&
-               m_cell.template position<1>() >= 0 &&
-               m_cell.template position<2>() >= 0 &&
-               (size_t)m_cell.template position<0>() < m_grid->dimension<0>() &&
-               (size_t)m_cell.template position<1>() < m_grid->dimension<1>() &&
-               (size_t)m_cell.template position<2>() < m_grid->dimension<2>();
+        return m_cell[0] >= 0 && m_cell[0] < m_grid->bounds(0) &&
+               m_cell[1] >= 0 && m_cell[1] < m_grid->bounds(1) &&
+               m_cell[2] >= 0 && m_cell[2] < m_grid->bounds(2);
     }
 
-    point_type corner(corner_type corner)
+
+    corners_view corners() const;
+
+    auto edge_position(edge_type const&) const
     { 
-        auto dimensions_sequence = 
-            std::make_index_sequence<Grid<PointType>::dimensions>{};
-        return corner_helper(corner, dimensions_sequence);
+        // TODO: return the linear interpolated position along this edge
     }
 
-    corners_view corners(Grid<PointType> const* grid)
-    { return { grid, *this }; }
-
-    bool operator==(const_iterator const& other) const 
+    bool operator==(cell_iterator const& other) const 
     { return m_cell == other.m_cell; };
-    bool operator!=(const_iterator const& other) const 
+    bool operator!=(cell_iterator const& other) const 
     { return m_cell != other.m_cell; };
     bool operator==(std::default_sentinel_t) const
-    { return !(bool)m_cell; }
+    { return m_cell < cell_type::origin() || m_cell >= m_grid->m_bounds; }
     bool operator!=(std::default_sentinel_t) const
-    { return (bool)m_cell; }
-    bool operator<(const_iterator const& other) const
+    { return m_cell >= cell_type::origin() && m_cell < m_grid->m_bounds; }
+    bool operator<(cell_iterator const& other) const
     { return m_cell < other.m_cell; }
-    bool operator<=(const_iterator const& other) const
+    bool operator<=(cell_iterator const& other) const
     { return m_cell <= other.m_cell; };
-    bool operator>(const_iterator const& other) const 
+    bool operator>(cell_iterator const& other) const 
     { return m_cell > other.m_cell; };
-    bool operator>=(const_iterator const& other) const
+    bool operator>=(cell_iterator const& other) const
     { return m_cell >= other.m_cell; };
 
-    const_iterator(const_iterator&&) = default;
-    const_iterator(const_iterator const&) = default;
-    const_iterator& operator=(const_iterator&&) = default;
-    const_iterator& operator=(const_iterator const&) = default;
+    cell_iterator(cell_iterator&&) = default;
+    cell_iterator(cell_iterator const&) = default;
+    cell_iterator& operator=(cell_iterator&&) = default;
+    cell_iterator& operator=(cell_iterator const&) = default;
 
 protected:
-    template<size_t ... Dims>
-    point_type corner_helper(corner_type corner, std::index_sequence<Dims...>)
-    {
-        return m_grid->at({(static_cast<long>(m_grid->dimension<Dims>()) + 
-            corner.template displacement<Dims>())... });
-    }
-    
-    const_iterator(Grid<PointType> const* grid, cell_type cell = {}) :
+    cell_iterator(Grid const* grid, cell_type cell = {}) :
         m_grid{grid}, m_cell{cell}
     { }
 private:
-    Grid<PointType> const* m_grid;
+    Grid const* m_grid;
     cell_type m_cell;
 };
 
-template<typename PointType>
-struct Grid<PointType>::corners_view : 
-    public std::ranges::view_interface<corners_view>
-{
-    struct const_iterator
-    {
-        point_type operator*() 
-        { return m_cell.corner(m_corner_id); }
 
-        const_iterator& operator++();
-        const_iterator& operator+=(int);
-        const_iterator& operator--();
-        const_iterator& operator-=(int);
 
-        bool operator==(const_iterator const&) const;
-        bool operator!=(const_iterator const&) const;
-        bool operator==(std::default_sentinel_t) const;
-        bool operator!=(std::default_sentinel_t) const;
-
-        const_iterator(cell_type cell) : 
-            m_cell{cell}, m_corner_id{0}
-        { }
-        const_iterator(const_iterator&&) = default;
-        const_iterator(const_iterator const&) = default;
-        const_iterator& operator=(const_iterator&&) = default;
-        const_iterator& operator=(const_iterator const&) = default;
-
-        cell_type m_cell;
-        int m_corner_id;
-    };
-
-    const_iterator begin() { return m_begin; }
-    std::default_sentinel_t end() { return {}; }
-
-    corners_view(cell_type cell) : 
-        m_begin{cell}
-    { }
-
-private:
-    const_iterator m_begin;
-};
-
-template<typename PointType>
-struct Grid<PointType>::cell_view : 
+struct Grid::cell_view : 
     public std::ranges::view_interface<cell_view>
 {
-    const_iterator begin()  { return m_begin; }
-    const_iterator end()    { return m_end; }
+    cell_iterator begin()  { return m_begin; }
+    cell_iterator end()    { return m_end; }
 
-    const_iterator m_begin, m_end;
-    cell_view(const_iterator b, const_iterator e) :
+    cell_iterator m_begin, m_end;
+    cell_view(cell_iterator b, cell_iterator e) :
         m_begin{b}, m_end{e}
     { }
 };
 
-template<typename PointType>
-Grid<PointType>::cell_view Grid<PointType>::cells() const
-{ return { begin(), end() }; }
+/**
+ * table_index calculates the index into the edge table used to construct facets
+ * pred is a function f(p : position_type) -> float_type and the surface is 
+ * defined where pred(p) == 0
+ */
+template<typename SurfaceFunction>
+size_t Grid::table_index(
+    Grid::cell_iterator&& this_cell, SurfaceFunction&& pred)
+{
+    using std::views::filter,
+          std::get,
+          // DT: not implemented in libc++ yet (#105251) 
+          //     https://github.com/llvm/llvm-project/issues/105251)
+          // std::views::enumerate,
+          std::views::values,
+          std::views::zip,
+          std::reduce;
 
-template<typename PointType>
-Grid<PointType>::const_iterator Grid<PointType>::begin() const
-{ return {this, position_begin()}; }
+    static auto combine_masks = std::bit_or< >{};
 
-template<typename PointType>
-Grid<PointType>::const_iterator Grid<PointType>::end() const
-{ return {this, position_end()}; }
+    auto in_volume = [&pred]( auto const& pair ) 
+    { return pred(get<0>(pair)); };
 
-// template<typename PointType>
-// bool Grid<PointType>::contains_surface( 
-//     typename Grid<PointType>::characterized_cell cell ) const
-// {
-//     /* TODO: write contains_surface logic from rchandra CIsoSurface.cpp */
-//     return cell.contains_surface();
-// }
+    auto valid_corners = 
+        zip(cell.corners(), s_edge_table_corner_bitmask) |
+        filter( in_volume ) | values; 
 
-template<typename PointType>
-Grid<PointType>::triangle_type 
-Grid<PointType>::triangle_from(Grid<PointType>::const_iterator, 
-    Grid<PointType>::edge_type edges[3])
+    return reduce(valid_corners.begin(), valid_corners.end(), combine_masks); 
+}
+
+long Grid::vertex_id(Grid::position_type const& p) const
+{ 
+    long index = ( p[0] + ( m_bounds[0] + 1 ) * ( p[1] + ( m_bounds[1] + 1 ) * p[2] ) ); 
+
+    return 3 * index; // leave room for interpolation
+}
+
+Grid::triangle_type 
+Grid::triangle_from(Grid::cell_iterator this_cell, Grid::edge_type edges[3])
 {
     //TODO: see GetEdgeID and GenerateSurface functions in CIsoSurface.cpp
+    return { this_cell.edge_position(edges[0]), 
+             this_cell.edge_position(edges[1]), 
+             this_cell.edge_position(edges[2]) };
 }
 
-template<typename PointType>
-struct Grid<PointType>::triangulation_range :
-    public std::ranges::view_interface<Grid<PointType>::triangulation_range>
-{
-    struct const_iterator
-    {
-        triangle_type operator*() const
-        { 
-            return triangle_from(m_current_cell, {
-                s_triangle_table[m_table_index][m_triangle_index],
-                s_triangle_table[m_table_index][m_triangle_index + 1],
-                s_triangle_table[m_table_index][m_triangle_index + 2]
-            });
-        }
-        const_iterator& operator++()
-        {
-            if(!m_current_cell.is_valid())
-                return *this;
-            
-            m_triangle_index += 3;
-            increment_until_valid_or_end();
-            return *this;
-        }
-        bool operator==(const_iterator const& other) const
-        { 
-            return m_current_cell == other.m_current_cell &&
-                   m_table_index == other.m_table_index &&
-                   m_triangle_index == other.m_triangle_index;
-        }
-        bool operator!=(const_iterator const& other) const
-        { return !(*this == other); }
+Grid::positions_view Grid::positions() const
+{ return { *this }; }
 
-        const_iterator(cell_view::const_iterator&& current_cell) :
-            m_current_cell{current_cell}, 
-            m_table_index{table_index(*m_current_cell)}, 
-            m_triangle_index{0}
-        { increment_until_valid_or_end(); }
-    protected:
-        void next_cell()
-        {
-            ++m_current_cell;
-            m_table_index = table_index(*m_current_cell);
-            m_triangle_index = 0;
-        }
+position_type Grid::origin() const
+{ return { 0, m_bounds }; }
 
-        void increment_until_valid_or_end()
-        {
-            while(m_current_cell.is_valid() && 
-                  s_triangle_table[m_table_index][m_triangle_index] == -1)
-                next_cell();
-        }
-    private:
-        cell_view::const_iterator m_current_cell;
-        size_t m_table_index;
-        size_t m_triangle_index;
-    };
+long Grid::bounds(int dim) const
+{ return m_bounds[dim]; }
 
-    const_iterator begin() const { return { m_cells.begin() }; }
-    std::default_sentinel_t end() const { return {}; }
-
-    triangulation_range& operator=(triangulation_range&&) = default;
-    triangulation_range& operator=(triangulation_range const&) = default;
-    triangulation_range( cell_view&& cells ) : m_cells{cells} { }
-    triangulation_range() : m_cells{} { }
-    triangulation_range(triangulation_range&&) = default;
-    triangulation_range(triangulation_range const&) = default;
-private:
-    cell_view m_cells;
-};
-
-template<typename PointType>
-Grid<PointType>::triangulation_range 
-Grid<PointType>::triangulate( Grid<PointType>::cell_view&& cell_range ) const
+Grid::triangulation_range 
+Grid::triangulate( Grid::cell_view&& cell_range )
 { return { cell_range }; }
 
-template<typename PointType>
-typename Grid<PointType>::simplex_type 
-Grid<PointType>::surface() const 
-{   
-    auto triangulate = std::bind(&Grid::triangulate, this);
+template<typename SurfaceFunction>
+Grid::simplex_type Grid::surface(SurfaceFunction&& surf) const 
+{
+    auto triangulate = std::bind(&Grid::interpolate, this);
 
-    return { cells() | triangulate };
+    // evaluate the function at each of the grid points
+    density_grid_type density = positions() | surf;
+
+    // create a set of cells using the density grid
+    cell_grid_type cell_grid = cells(density);
+
+    // triangluate the cells
+    return cell_grid | triangulate;
 }
 
-template<typename PointType>
-template<size_t Dim> 
-size_t Grid<PointType>::stride_to() const
-{ 
-    if constexpr (Dim >= dimensions - 1)
-        return 1;
-
-    return m_bounds[Dim] * stride_of<Dim+1>();
-}
-
-template<typename PointType>
-template<size_t Dim> 
-size_t Grid<PointType>::dimension() const
-{ return m_bounds[Dim]; }
-
-template<typename PointType>
-Grid<PointType>::position_type Grid<PointType>::position_begin() const
-{ return { 0, 0, 0 }; }
-
-template<typename PointType>
-Grid<PointType>::position_type Grid<PointType>::position_end() const
-{ return { m_bounds[0], m_bounds[1], m_bounds[2] }; }
 
 
+
+template< typename TriangleType, typename FieldPredicate = greater_than_zero >
+struct tetrahedral_triangulation
+{
+    static constexpr int maximum_triangles = 5;
+    static constexpr size_t total_corners = 8;
+
+    static constexpr FieldPredicate predicate{};
+
+    using triangle_type = TriangleType;
+    using triangles_view = array_view< triangle_type >;
+    using triangles_array = std::array< triangle_type, maximum_triangles >;
+    using index_type = size_t;
+
+    operator bool() const { return triangle_count() > 0; }
+    int triangle_count() const { return m_triangle_count; }
+    triangles_view triangles() const 
+    { return { m_triangles.begin(), m_triangles.end() }; }
+
+    template<view_of CornerValues>
+    static tetrahedral_triangulation from_corners(CornerValues&& field_at) 
+    { 
+        auto triangle_pattern = lookup_from(field_at); // corners
+        return { triangle_pattern.size(), triangle_pattern };
+    }
+
+    tetrahedral_triangulation() : m_triangle_count{0}, m_triangles{} 
+    { }
+
+protected:
+    // ASSUMPTION: corners are always in the < order of corner_type
+    template<view_of FieldValues>
+    static index_type lookup_index(FieldValues&& corner_values)
+    { 
+        using corner_bitset = std::bitset<total_corners>;
+
+        auto bits = corner_values | predicate | std::ranges::to<corner_bitset>;
+
+        return bits.to_ulong();
+    }
+
+    template<view_of CornerValues>
+    static std::vector< triangle_type > lookup_from(CornerValues&& field_at)
+    {
+        using std::ranges::values,
+              std::ranges::keys;
+        using to_lookup_index = std::bind(&)
+
+        auto archetype = s_lookup_table[field_at | values | to_lookup_index];
+        
+        return archetype | relative_to( field_at | keys );
+    }
+
+    template< view_of Triangles >
+    tetrahedral_triangulation( int triangle_count, Triangles&& triangles ) :
+        m_triangle_count{ triangle_count }, 
+        m_triangles{ triangles | std::ranges::to< triangles_array >() }
+    { }
+
+private:
+    int m_triangle_count;
+    // reserve space for the maximum number
+    triangles_array m_triangles;
+};
+
+const unsigned int Grid::s_edge_table_corner_bitmask[8] = 
+{ 0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80 };
 
 /** from here:
  * 
@@ -674,8 +725,8 @@ Grid<PointType>::position_type Grid<PointType>::position_end() const
  * Email: rc99@doc.ic.ac.uk, rchandrashekara@hotmail.com
  * 
  */
-template<typename PointType> 
-const unsigned int Grid<PointType>::s_edge_table[256] = {
+ 
+const unsigned int Grid::s_edge_table[256] = {
 	0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
 	0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
 	0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
@@ -710,8 +761,8 @@ const unsigned int Grid<PointType>::s_edge_table[256] = {
 	0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0
 };
 
-template<typename PointType> 
-const int Grid<PointType>::s_triangle_table[256][16] = {
+ 
+const int Grid::s_triangle_table[256][16] = {
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 	{0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 	{0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},

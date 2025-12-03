@@ -284,5 +284,23 @@ Vector<Float> normalize(Vector<Float> const & a)
 }
 
 
+export template< typename PointType = Point<> >
+struct Triangle
+{
+    using point_type = PointType;
+
+    point_type points[3];
+};
+
+export template< typename TriangleType = Triangle<> >
+class Simplex
+{
+    using triangle_type = TriangleType;
+
+    Simplex& operator+=(triangle_type const&);
+};
+
+
+
 
 

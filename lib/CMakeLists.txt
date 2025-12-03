@@ -14,3 +14,4 @@ target_sources(marching_tetrahedra PUBLIC
 add_library(iso_surface iso_surface.cppm)
 target_sources(iso_surface PUBLIC
     FILE_SET CXX_MODULES FILES iso_surface.cppm)
+target_link_libraries(iso_surface PUBLIC linalg)

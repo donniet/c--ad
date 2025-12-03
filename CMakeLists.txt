@@ -9,7 +9,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 # add_compile_options("-fexperimental-library")
 # add_compile_options("-stdlib=libstdc++")
-add_compile_options("-stdlib=libc++")
+add_compile_options("-stdlib=libc++" "-v")
 add_link_options("-static")
 link_libraries("c++abi" "c++")
 include_directories(include)
