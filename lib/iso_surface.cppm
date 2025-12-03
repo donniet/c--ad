@@ -648,6 +648,12 @@ Grid::simplex_type Grid::surface(SurfaceFunction&& surf) const
 
 
 
+struct greater_than_zero
+{
+    template<typename NumberType>
+    static constexpr bool operator()(NumberType x)
+    { return x > 0; }
+};
 
 template< typename TriangleType, typename FieldPredicate = greater_than_zero >
 struct tetrahedral_triangulation
@@ -655,12 +661,12 @@ struct tetrahedral_triangulation
     static constexpr int maximum_triangles = 5;
     static constexpr size_t total_corners = 8;
 
-    static constexpr FieldPredicate predicate{};
-
     using triangle_type = TriangleType;
+    using predicate_type = FieldPredicate;
     using triangles_view = array_view< triangle_type >;
     using triangles_array = std::array< triangle_type, maximum_triangles >;
     using index_type = size_t;
+    using this_type = tetrahedral_triangulation<triangle_type, predicate_type>;
 
     operator bool() const { return triangle_count() > 0; }
     int triangle_count() const { return m_triangle_count; }
@@ -680,7 +686,8 @@ struct tetrahedral_triangulation
 protected:
     // ASSUMPTION: corners are always in the < order of corner_type
     template<view_of FieldValues>
-    static index_type lookup_index(FieldValues&& corner_values)
+    static index_type lookup_index(FieldValues&& corner_values, 
+        predicate_type&& predicate =  predicate_type{})
     { 
         using corner_bitset = std::bitset<total_corners>;
 
@@ -689,16 +696,29 @@ protected:
         return bits.to_ulong();
     }
 
-    template<view_of CornerValues>
-    static std::vector< triangle_type > lookup_from(CornerValues&& field_at)
+    template<view_of CornersView>
+    static triangle_type make_relative(triangle_archetype const& archetype, CornersView&& field_at)
     {
-        using std::ranges::values,
-              std::ranges::keys;
-        using to_lookup_index = std::bind(&)
+        using edges = ??, values = ??;
 
-        auto archetype = s_lookup_table[field_at | values | to_lookup_index];
+        auto mapped_edges = archetype.edges() | select_from( field_at | edges );
+
+        return mapped_edges | interpolate_points( field_at | values );
+    }
+
+
+    template<view_of CornerValues>
+    static std::vector< triangle_type > lookup_from(CornerValues&& field_at, 
+        predicate_type&& predicate = predicate_type{})
+    {
+        using values = std::ranges::values;
+        using keys = std::ranges::keys;
+
+        auto archetype = s_lookup_table[
+            lookup_index( field_at | values, predicate )];
         
-        return archetype | relative_to( field_at | keys );
+        // TODO: relative_to from make_relative above
+        return archetype | relative_to( field_at );
     }
 
     template< view_of Triangles >
