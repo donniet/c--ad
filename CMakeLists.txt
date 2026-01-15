@@ -9,13 +9,14 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 # add_compile_options("-fexperimental-library")
 # add_compile_options("-stdlib=libstdc++")
-add_compile_options("-stdlib=libc++" "-v")
-add_link_options("-static")
-link_libraries("c++abi" "c++")
-include_directories(include)
+# add_compile_options("-stdlib=libc++" "-v")
+# add_link_options("-static")
+# link_libraries("c++abi" "c++")
+include_directories(include ../vcglib/)
 
 ## Dependencies
 find_package(TBB REQUIRED)
+find_package(Eigen3 3.4 REQUIRED)
 
 file(GLOB_RECURSE LIB_MODULE_FILES
     *.cppm

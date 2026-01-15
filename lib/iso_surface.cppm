@@ -10,30 +10,11 @@ module;
 export module iso_surface;
 
 import linalg;
+import utilities;
+import geometry;
 
-template<typename ValueType>
-struct array_view : 
-    public std::ranges::view_interface<array_view>
-{
-    using value_type = ValueType;
-    using const_iterator = value_type const*;
-
-    const_iterator begin() const
-    { return m_begin; }
-
-    const_iterator end() const
-    { return m_end; }
-
-    array_view(const_iterator b, const_iterator e) :
-        m_begin(b), m_end(e)
-    { }
-
-    const_iterator m_begin, m_end;
-};
-
-
-/** Grid class represents a 3D grid of arbitrary size and density 
- * 
+/**  
+ * Grid class represents a 3D grid of arbitrary size and density
 */
 class Grid
 {
@@ -421,9 +402,6 @@ private:
     int m_value;
 };
 
-template<typename T>
-concept view_of = std::ranges::view<T>;
-
 
 struct Grid::cell_type {
     friend struct cell_iterator;
@@ -647,14 +625,6 @@ Grid::simplex_type Grid::surface(SurfaceFunction&& surf) const
 }
 
 
-
-struct greater_than_zero
-{
-    template<typename NumberType>
-    static constexpr bool operator()(NumberType x)
-    { return x > 0; }
-};
-
 template< typename TriangleType, typename FieldPredicate = greater_than_zero >
 struct tetrahedral_triangulation
 {
@@ -690,9 +660,13 @@ protected:
         predicate_type&& predicate =  predicate_type{})
     { 
         using corner_bitset = std::bitset<total_corners>;
+        using std::ranges::to;
 
-        auto bits = corner_values | predicate | std::ranges::to<corner_bitset>;
+        // run the value of the field at the corners through the predicate to
+        // get a list of bools, then turn that into a bitset
+        auto bits = corner_values | predicate | to< corner_bitset >;
 
+        // return the bitmask of this bitset to use as a lookup
         return bits.to_ulong();
     }
 
@@ -701,11 +675,10 @@ protected:
     {
         using edges = ??, values = ??;
 
-        auto mapped_edges = archetype.edges() | select_from( field_at | edges );
+        auto mapped_edges = archetype.intersecting_edges() | select_from( field_at | edges );
 
         return mapped_edges | interpolate_points( field_at | values );
     }
-
 
     template<view_of CornerValues>
     static std::vector< triangle_type > lookup_from(CornerValues&& field_at, 
