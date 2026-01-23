@@ -28,6 +28,11 @@ int main( int ac, char* av[] )
     cout << "det(r) = " << r.det() << endl;
     cout << "r = \n" << r << endl;
     cout << "inv(r) = \n" << r.inverse() << endl;
+    cout << "m + r = \n" << ( m + r ) << endl;
+    cout << "m - r = \n" << ( m - r ) << endl;
+    cout << "m * r = \n" << ( m * r ) << endl;
+    cout << "m / r = \n" << ( m / r ) << endl;
+    cout << "r / r = \n" << ( r / r ) << endl;
 
     return EXIT_SUCCESS;
 }

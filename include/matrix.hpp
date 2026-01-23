@@ -19,6 +19,8 @@ using std::size_t;
  */
 namespace matrix {
 
+using std::get;
+
 template< size_t... Is >
 using seq = ::std::index_sequence< Is... >;
 
@@ -65,57 +67,23 @@ namespace detail {
     /**
      * Transpose helpers
      */
-    template< typename Matrix >
-    struct TransposeHelper;
-
-    template< typename MatrixType, typename IndexSequence >
-    struct TransposeTypeHelper;
-
-    template< typename MatrixType, size_t... Is >
-    struct TransposeTypeHelper< MatrixType, seq< Is... >>
+    template< typename Matrix, size_t... Is >
+    auto transpose_helper( Matrix const& mat, seq< Is... > )
     { 
-        static constexpr size_t stride = MatrixType::stride;
+        static constexpr size_t stride = Matrix::stride;
+        return from( mat.template at< col_of( Is, stride ), row_of( Is, stride )>()... );
+    }
 
-        static constexpr size_t transposed_index( size_t I )
-        { return row_of( I, stride ) + col_of( I, stride ) * stride; }
-
-        using type = SquareMatrix< 
-            std::tuple_element_t< transposed_index( Is ), 
-                typename MatrixType::tuple_type >... >;
-    };
+    template< typename Matrix >
+    auto transpose( Matrix const& mat );
 
     template< typename... Ts >
-    struct TransposeHelper< SquareMatrix< Ts... >>
-    {
-        using matrix_type = SquareMatrix< Ts... >;
-        static constexpr size_t stride = matrix_type::stride;
-        static constexpr size_t size = sizeof...( Ts );
-
-        using type = TransposeTypeHelper< matrix_type, 
-            std::make_index_sequence< size >>::type;
-         
-        static type transpose( matrix_type const& mat )
-        { return transpose_helper( mat, 
-            std::make_index_sequence< sizeof...( Ts )>{} ); }
-
-        template< size_t... Is >
-        static type transpose_helper( matrix_type const& mat, 
-            seq< Is... > )
-        {
-            type ret;
-            (( ret.template at< row_of( Is, stride ), col_of( Is, stride ) >() = 
-               mat.template at< col_of( Is, stride ), row_of( Is, stride ) >()), 
-              ... );
-            return ret;
-        }
-    };
+    auto transpose( SquareMatrix< Ts... > const& mat )
+    { return transpose_helper( mat, make_seq< sizeof...( Ts )>{} ); }
 
     template< typename Matrix >
-    using transpose_t = TransposeHelper< Matrix >::type;
+    using transpose_t = decltype( transpose( Matrix{} ));
 
-    template< typename Matrix >
-    transpose_t< Matrix > transpose( Matrix const& mat )
-    { return TransposeHelper< Matrix >::transpose( mat ); }
 
     /**
      * Submatrix utilities
@@ -217,7 +185,7 @@ namespace detail {
     auto DeterminantHelper< Matrix, seq< Is... >>::calculate( Matrix const& mat )
     { 
         return ((( Is % 2 == 0 ? 1. : -1. ) *    // alternate permutations
-                    mat.template at< 0, Is >() * // value of 0th row, Is col
+                    mat.template at< 0, Is >() * // value of 0th row, Is-th col
                     determinant(                 // determinant of submatrix
                         sub_matrix< 0, Is >( mat ))) + ... );
     }
@@ -264,6 +232,10 @@ struct SquareMatrix : std::tuple< Ts... >
     static constexpr size_t stride = square_root< size >::value;
     static constexpr size_t columns = stride, rows = stride;
     static constexpr shape_type shape = { rows, columns };
+    using element_seq = make_seq< size >;
+    using stride_seq = make_seq< stride >;
+    static constexpr element_seq all_elements = {}; 
+    static constexpr stride_seq stride_elements = {};
 
     static constexpr shape_type row_col_of( size_t I )
     { return { I / columns, I % columns }; }
@@ -273,11 +245,11 @@ struct SquareMatrix : std::tuple< Ts... >
 
     template< size_t Row, size_t Col >
     element_t< Row, Col >& at() 
-    { return std::get< Row * columns + Col >( *this ); }
+    { return get< Row * columns + Col >( *this ); }
 
     template< size_t Row, size_t Col >
     element_t< Row, Col > const& at() const
-    { return std::get< Row * columns + Col >( *this ); }
+    { return get< Row * columns + Col >( *this ); }
 
     auto transpose() const
     { return detail::transpose( *this ); }
@@ -303,9 +275,43 @@ struct SquareMatrix : std::tuple< Ts... >
     auto inverse() const
     { return detail::inverse( *this ); }
 
+    template< typename... Us >
+    requires ( sizeof...( Us ) == size )
+    auto operator+( SquareMatrix< Us... > const& other ) const
+    { return element_op_helper( std::plus<>{}, other, all_elements ); }
+
+    template< typename... Us >
+    requires ( sizeof...( Us ) == size )
+    auto operator-( SquareMatrix< Us... > const& other ) const
+    { return element_op_helper( std::minus<>{}, other, all_elements ); }
+
+    template< typename... Us >
+    requires ( sizeof...( Us ) == size )
+    auto operator*( SquareMatrix< Us... > const& other ) const
+    { return multiplies_helper( other, all_elements ); }
+
+    template< typename... Us >
+    requires ( sizeof...( Us ) == size )
+    auto operator/( SquareMatrix< Us... > const& other ) const
+    { return multiplies_helper( other.inverse(), all_elements ); }
 
     SquareMatrix() = default;
     SquareMatrix( Ts... ts ) : tuple_type{ ts... } { }
+private:
+    template< typename OpType, typename OtherType, size_t... Is >
+    auto element_op_helper( 
+        OpType op, OtherType const& other, seq< Is... > ) const
+    { return from( op( get< Is >( *this ), get< Is >( other ))... ); }
+
+    template< typename OtherType, size_t... Is >
+    auto multiplies_helper( OtherType const& other, seq< Is... > ) const
+    { return from( multiplies_element_helper< 
+        detail::row_of( Is, stride ), detail::col_of( Is, stride )>( 
+            other, stride_elements )... ); }
+
+    template< size_t Row, size_t Col, typename OtherType, size_t... Is >
+    auto multiplies_element_helper( OtherType const& other, seq< Is... > ) const
+    { return (( at< Row, Is >() * other.template at< Is, Col >() ) + ... ); }
 };
 
 template< typename... Ts >
