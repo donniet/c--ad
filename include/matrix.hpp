@@ -84,7 +84,6 @@ namespace detail {
     template< typename Matrix >
     using transpose_t = decltype( transpose( Matrix{} ));
 
-
     /**
      * Submatrix utilities
      */
@@ -275,6 +274,22 @@ struct SquareMatrix : std::tuple< Ts... >
     auto inverse() const
     { return detail::inverse( *this ); }
 
+    // TODO: this is going to be a pain! have to parameter pack both the params
+    //       and the elements.
+    // Option 1: wrap the params in a tuple, unpack the elements and pass to
+    //           another helper to unpack the tuple of params which finally
+    //           invokes the object stored in the matrix. wrap that in a from
+    template< typename... Us >
+    auto operator()( Us... );
+
+    template< >
+    auto operator()() 
+    { return invoke_helper( all_elements ); }
+
+    template< typename T >
+    auto operator()( T t ) 
+    { return invoke_helper( t, all_elements ); }
+
     template< typename... Us >
     requires ( sizeof...( Us ) == size )
     auto operator+( SquareMatrix< Us... > const& other ) const
@@ -297,7 +312,16 @@ struct SquareMatrix : std::tuple< Ts... >
 
     SquareMatrix() = default;
     SquareMatrix( Ts... ts ) : tuple_type{ ts... } { }
+    
 private:
+    template< size_t... Is >
+    auto invoke_helper( seq< Is... > )
+    { return from( get< Is >( *this )()... ); }
+
+    template< typename T, size_t... Is >
+    auto invoke_helper( T t, seq< Is... > )
+    { return from( get< Is >( *this )( t )... ); }
+
     template< typename OpType, typename OtherType, size_t... Is >
     auto element_op_helper( 
         OpType op, OtherType const& other, seq< Is... > ) const
@@ -336,7 +360,6 @@ auto uniform_helper( T value, std::index_sequence< Is... > )
 template< size_t Side, typename T >
 auto uniform( T value = T{} )
 { return detail::uniform_helper( value, make_seq< Side * Side >{} ); }
-
 
 namespace tests {
 
