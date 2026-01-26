@@ -15,6 +15,10 @@ add_executable(test_geometry2 test_geometry2.cpp)
 add_executable(test_units test_units.cpp)
 add_executable(test_units2 test_units2.cpp)
 add_executable(test_memory test_memory.cpp)
+add_executable(test_constraint_playground test_constraint_playground.cpp)
+add_executable(test_constraint_playground2 test_constraint_playground2.cpp)
+add_executable(test_matrix test_matrix.cpp)
+add_executable(test_tensor test_tensor.cpp)
 
 message("source dir ${CMAKE_SOURCE_DIR}")
 
