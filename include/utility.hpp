@@ -8,6 +8,37 @@
 
 using std::size_t;
 
+/**
+ * math utilities
+ */
+template< size_t X >
+struct Identity { static constexpr size_t value = X; };
+
+/**
+ * Sequence helpers
+ */
+template< size_t... Is >
+using seq = ::std::index_sequence< Is... >;
+
+template< size_t Size >
+using make_seq = ::std::make_index_sequence< Size >;
+
+/**
+ * override of std::get<I> that can call Type::template at<I>
+ */
+template< typename T >
+concept has_at = requires( T t )
+{ t.template at< 0 >(); };
+
+template< size_t I, size_t J, has_at T >
+auto const& get( T const& obj )
+{ return obj.template at< I, J >(); }
+
+template< size_t I, size_t J, has_at T >
+auto& get( T& obj )
+{ return obj.template at< I, J >(); }
+
+
 /** 
  * is_virtual_base_of implementation taken from 
  * [https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2985r0.html]

@@ -27,5 +27,18 @@ int main( int ac, char* av[] )
     if( get< 0 >( t4.values ) != 1. + 5. + 9. )
         throw std::logic_error("FAIL: contraction test");
 
+    auto t5 = make_tensor<shape<1,2>>( 5., 6. );
+    auto t6 = make_tensor<shape<2,1>>( 7., 8. );
+
+    auto t7 = t5 * t6;
+
+    auto t5t6 = make_tensor< shape<1,2,2,1>>(
+        5. * 7., 5. * 8.,
+        6. * 7., 6. * 8.
+    );
+
+    if( t7 != t5t6 )
+        throw std::logic_error("FAIL: multiplication test");
+
     return EXIT_SUCCESS;
 }

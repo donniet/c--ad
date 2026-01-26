@@ -121,7 +121,6 @@ static_assert( is_same_v< shape<1,2,3>, insert_at< shape<1,3>, 1, 2 >> );
 static_assert( is_same_v< index<1,2,3>, insert_at< index<1,3>, 1, 2 >> );
 } // namespace test
 
-
 /**
  * ArityOf extracts the number of dimensions of a given tensor shape at index I
  */
@@ -349,7 +348,6 @@ struct TypesOf< Tensor< Shape, Types >>
 template< typename Tensor >
 using types_of = TypesOf< Tensor >::type;
 
-
 template< typename Shape, typename... Types >
 Tensor< Shape, types< Types... >> make_tensor( Types... values )
 { return { values_of( values... ) }; }
@@ -365,21 +363,32 @@ constexpr T identity( T t ) { return t; }
  * 
  * out[I] = op(left[left_at(I)], right[right_at(I)])
  */
-template< typename Op, typename LeftValuesType, typename RightValuesType, 
-    typename Seq, typename LeftIndex, typename RightIndex >
-auto op_helper( Op op, LeftValuesType const&, RightValuesType const&, 
-    Seq, LeftIndex = identity< size_t >, RightIndex = identity< size_t > );
+template< typename Op, typename LeftValuesType, typename RightValuesType, typename Seq >
+auto op_helper( Op op, LeftValuesType const&, RightValuesType const&, Seq );
 
-template< typename Op, typename LeftValuesType, typename RightValuesType, 
-    typename LeftIndex, typename RightIndex, size_t... Is >
-auto op_helper( Op op, LeftValuesType const& left_values, RightValuesType const& right_values, 
-    seq< Is... >, LeftIndex left_at, RightIndex right_at )
-{ return make_values_of( op( 
-    get< left_at( Is )>( left_values ), get< right_at( Is )>( right_values ))
-    ... ); }
+template< typename Op, typename LeftValuesType, typename RightValuesType, size_t... Is >
+auto op_helper( Op op, LeftValuesType const& left_values, 
+    RightValuesType const& right_values, seq< Is... > )
+{ return make_values_of( op( get< Is >( left_values ), get< Is >( right_values ))... ); }
 
 template< size_t I, size_t J, typename Shape, typename Types >
 auto contract( Tensor< Shape, Types > const& );
+
+
+template< typename ProductShape, size_t LeftSize, typename LeftTensor, typename RightTensor, size_t... Is >
+auto multiply_helper( LeftTensor const& left, RightTensor const& right, seq< Is... > )
+{ return make_tensor< ProductShape >( 
+        (get< Is / LeftSize >( left.values ) * get< Is % LeftSize >( right.values ))... ); }
+
+template< typename Shape1, typename Types1, typename Shape2, typename Types2, size_t... Is >
+auto equality_helper( Tensor< Shape1, Types1 > const& first, 
+    Tensor< Shape2, Types2 > const& second, seq< Is... > )
+{ return (( get< Is >( first.values ) == get< Is >( second.values )) and ... ); }
+
+template< typename Shape1, typename Types1, typename Shape2, typename Types2, size_t... Is >
+auto inequality_helper( Tensor< Shape1, Types1 > const& first, 
+    Tensor< Shape2, Types2 > const& second, seq< Is... > )
+{ return (( get< Is >( first.values ) != get< Is >( second.values )) or ... ); }
 
 /**
  * Tensor class holds an arbitrarily typed tuple of values organized by a 
@@ -407,16 +416,22 @@ struct Tensor< shape< Is... >, types< Ts... >>
 
     // outer product
     template< typename Shape, typename Types >
-    auto operator*( Tensor< Shape, Types > const& other )
+    auto operator*( Tensor< Shape, Types > const& other ) const
     { 
         using other_type = Tensor< Shape, Types >;
-        using other_shape = Shape;
-        using product_shape = shape_cat< shape_type, other_shape >;
+        using product_shape = shape_cat< shape_type, Shape >;
 
-        return make_tensor< product_shape >( op_helper( std::multiplies< >{},
-            values, other.values, make_seq< size * other_type::size >{},
-            div_by< size >, mod_by< size > ));
+        return multiply_helper< product_shape, size >( *this, other, 
+            make_seq< size * other_type::size >{} ); 
     }
+
+    template< typename Types2 >
+    auto operator==( Tensor< shape_type, Types2 > const& other ) const
+    { return equality_helper( *this, other, make_seq< size >{} ); }
+
+    template< typename Types2 >
+    auto operator!=( Tensor< shape_type, Types2 > const& other ) const
+    { return inequality_helper( *this, other, make_seq< size >{} ); }
 
     Tensor() : values{} { }
     Tensor( values_of< Ts... > values ) : values{ values } { }
@@ -425,6 +440,7 @@ struct Tensor< shape< Is... >, types< Ts... >>
     values_type values;
 
 };
+
 
 /**
  * Contraction represents a contracton on a tensor
