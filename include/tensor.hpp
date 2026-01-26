@@ -37,6 +37,9 @@ struct index
     static constexpr size_t size = sizeof...( Is );
 };
 
+/**
+ * shape is a compile-time reference to the shape of a tensor
+ */
 template< size_t... Is >
 struct shape 
 { 
@@ -528,6 +531,107 @@ namespace test {
 
 } // namespace test
 
+/**
+ * SubTensor is like a sub matrix only for tensors
+ */
+namespace detail {
+
+template< typename Shape >
+struct SubTensorShape;
+
+template< size_t... Is >
+requires (( Is > 1 ) and ... ) // cannot subtensor to 0 dimensioned tensors
+struct SubTensorShape< shape< Is... >>
+{ using type = shape<( Is-1 )...>; };
+
+template< typename Shape >
+using sub_tensor_shape = SubTensorShape< Shape >::type;
+
+} // namespace detail
+
+namespace test {
+static_assert( is_same_v< shape<2>, detail::sub_tensor_shape< shape<3> >> );
+static_assert( is_same_v< shape<2,2>, detail::sub_tensor_shape< shape<3,3> >> );
+static_assert( is_same_v< shape<2,3,4>, detail::sub_tensor_shape< shape<3,4,5> >> );
+static_assert( detail::sub_tensor_shape< shape<3,3> >::elements_size == 4 );
+} // namespace test
+
+namespace detail {
+
+template< size_t I, typename SuperShape, typename About >
+struct SuperTensorElement;
+
+template< size_t I, typename SuperShape, typename About, typename Seq >
+struct SuperTensorElementHelper;
+
+template< size_t I, typename SuperShape, typename About, size_t... Ds >
+struct SuperTensorElementHelper< I, SuperShape, About, seq< Ds... >>
+{
+    using super_shape = SuperShape;
+    using sub_shape = sub_tensor_shape< super_shape >;
+    using sub_index = index_from< sub_shape, I >;
+    using about_index = About;
+    
+    // skip the about_index
+    static constexpr size_t value = element_from< super_shape, index<
+        (( DimIndexOf< Ds, sub_index >::value < DimIndexOf< Ds, about_index >::value ) ? 
+        DimIndexOf< Ds, sub_index >::value : 1 + DimIndexOf< Ds, sub_index >::value )... >>;
+};
+
+// calculate the tensor element index based on a sub-element index
+template< size_t I, size_t... Ds, size_t... As >
+requires ( sizeof...( Ds ) == sizeof...( As ) )
+struct SuperTensorElement< I, shape< Ds... >, index< As... >>
+{ static constexpr size_t value = SuperTensorElementHelper< I, shape< Ds... >, 
+    index< As... >, make_seq< sizeof...( Ds )>>::value; };
+
+template< size_t SubElement, typename SuperShape, typename About >
+static constexpr size_t super_tensor_element = 
+    SuperTensorElement< SubElement, SuperShape, About >::value;
+
+template< typename AboutIndex, typename Shape, typename Types, size_t... Is >
+auto sub_tensor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
+{ return make_tensor< sub_tensor_shape< Shape >>(
+    get< super_tensor_element< Is, Shape, AboutIndex >>( v.values )... ); }
+
+} // namespace detail
+
+/**
+ * sub_tensor removes the rows/cols of the given tensor about the given index
+ */
+template< typename AboutIndex, typename Shape, typename Types >
+auto sub_tensor( Tensor< Shape, Types > const& v )
+{ return detail::sub_tensor_helper< AboutIndex >( v, 
+    make_seq< detail::sub_tensor_shape< Shape >::elements_size >{} ); }
+
+/**
+ * Square tensor functions (transpose, determinant, cofactor)
+ */
+
+namespace detail {
+
+template< size_t N, typename Types, size_t... Is >
+auto transpose_helper( Tensor< shape< N, N >, Types > const& v, seq< Is... > )
+{ return make_tensor< shape< N, N >>( get< ( Is % N ) * N + Is / N >( v.values )... ); }
+
+// template< typename TensorType >
+// struct DetHelper
+// {
+//     template< size_t... Is >
+//     static auto calculate( tensor_type const& v, seq< Is... > );
+// };
+
+} // namespace detail
+
+template< size_t N, typename Types >
+auto transpose( Tensor< shape< N, N >, Types > const& v )
+{ return detail::transpose_helper( v, make_seq< N*N >{} ); }
+
+/**
+ * Determinant of square tensors
+ */
+template< size_t N, typename Types >
+auto det( Tensor< shape< N,N >, Types > const& v );
 
 } // namespace tensor
 
