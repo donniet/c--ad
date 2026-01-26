@@ -46,6 +46,18 @@ int main( int ac, char* av[] )
     if( s4 != t3_s11 )
         throw std::logic_error("FAIL: sub_matrix test");
 
+    /**
+     * Arithmetic tests
+     */
+    auto a1 = make_tensor< shape< 2, 2 >>( 2., 3., 5., 7. );
+    auto a2 = make_tensor< shape< 2, 2 >>( 7., 5., 3., 2. );
+
+    auto a12 = a1 + a2;
+    static_assert( is_same_v< shape< 2, 2 >, shape_of< decltype( a12 )>> );
+    
+    auto a1plusa2 = make_tensor< shape< 2, 2 >>( 9., 8., 8., 9. );
+    if( a12 != a1plusa2 )
+        throw std::logic_error("FAIL: plus test");
 
     /**
      * Multiplication Tests
@@ -122,6 +134,40 @@ int main( int ac, char* av[] )
 
     if( determinant( d2 ) != 5. )
         throw std::logic_error("FAIL: det test 2x2");
+
+    /**
+     * Cofactor tests
+     */
+    auto c2 = cofactor( d2 );
+    static_assert( is_same_v< shape< 2, 2 >, shape_of< decltype( c2 )>> );
+
+    auto cofactor_c2 = make_tensor< shape< 2, 2 >>(
+        3., -2., 
+        -2., 3. );
+    
+    if( c2 != cofactor_c2 )
+        throw std::logic_error("FAIL: cofactor test");
+
+    /**
+     * Inverse tests
+     */
+    auto i2 = make_tensor< shape< 2, 2 >>(
+        5., 4.,
+        3., 4. );
+
+    auto i2i = inverse( i2 );
+    static_assert( is_same_v< shape< 2, 2 >, shape_of< decltype( i2i )>> );
+
+    auto inverse_i2 = make_tensor< shape< 2, 2 >>(
+        4. / 8., -4. / 8.,
+        -3. / 8., 5. / 8. );
+
+    std::cout << "i2 ==\n" << i2i << "\ninverse_d2 ==\n" << inverse_i2 << std::endl;
+
+    if( i2i != inverse_i2 )
+        throw std::logic_error("FAIL: inverse test");
+
+    
 
     return EXIT_SUCCESS;
 }
