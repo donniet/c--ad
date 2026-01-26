@@ -5,6 +5,7 @@
 
 int main( int ac, char* av[] )
 {
+    using std::cout, std::cerr, std::endl;
     using namespace tensor;
     using std::is_same_v;
 
@@ -33,6 +34,8 @@ int main( int ac, char* av[] )
     if( get< 0 >( t4.values ) != 1. + 5. + 9. )
         throw std::logic_error("FAIL: contraction test");
 
+    cout << "PASS: contraction test" << endl;
+
     /**
      * Sub Tensor Tests
      */
@@ -46,6 +49,8 @@ int main( int ac, char* av[] )
     if( s4 != t3_s11 )
         throw std::logic_error("FAIL: sub_matrix test");
 
+    cout << "PASS: sub_matrix test" << endl;
+
     /**
      * Arithmetic tests
      */
@@ -58,6 +63,8 @@ int main( int ac, char* av[] )
     auto a1plusa2 = make_tensor< shape< 2, 2 >>( 9., 8., 8., 9. );
     if( a12 != a1plusa2 )
         throw std::logic_error("FAIL: plus test");
+
+    cout << "PASS: plus test" << endl;
 
     /**
      * Multiplication Tests
@@ -73,6 +80,8 @@ int main( int ac, char* av[] )
 
     if( t7 != t5t6 )
         throw std::logic_error("FAIL: multiplication test");
+    
+    cout << "PASS: multiplication test" << endl;
 
     auto u5 = make_tensor< shape<2>>( 5., 6. );
     auto u6 = make_tensor< shape<2>>( 7., 8. );
@@ -86,6 +95,8 @@ int main( int ac, char* av[] )
     if( u7 != u5u6 )
         throw std::logic_error("FAIL: multiplication test");
 
+    cout << "PASS: multiplication test 2" << endl;
+
     /**
      * Transpose tests
      */
@@ -95,6 +106,8 @@ int main( int ac, char* av[] )
 
     if( transpose(u7) != u5u6_t )
         throw std::logic_error("FAIL: transpose test");
+    
+    cout << "PASS: transpose test" << endl;
 
     /**
      * Scale tests
@@ -114,6 +127,8 @@ int main( int ac, char* av[] )
 
     if( t9 != t8sby4 )
         throw std::logic_error("FAIL: scale test");
+    
+    cout << "PASS: scale test" << endl;
 
     /**
      * Determinant tests
@@ -121,19 +136,25 @@ int main( int ac, char* av[] )
     double d = determinant( t3 );
 
     if( d != 0. )
-        throw std::logic_error("FAIL: det test");
+        throw std::logic_error("FAIL: determinant test");
+    
+    cout << "PASS: determinant test" << endl;
     
     auto d1 = make_tensor< shape< 1, 1 >>( 5. );
 
     if( determinant( d1 ) != 5. )
-        throw std::logic_error("FAIL: det test 1x1");
+        throw std::logic_error("FAIL: determinant test 1x1");
+    
+    cout << "PASS: determinant test 1x1" << endl;
 
     auto d2 = make_tensor< shape< 2, 2 >>(
         3., 2.,
         2., 3. );
 
     if( determinant( d2 ) != 5. )
-        throw std::logic_error("FAIL: det test 2x2");
+        throw std::logic_error("FAIL: determinant test 2x2");
+    
+    cout << "PASS: determinant test 2x2" << endl;
 
     /**
      * Cofactor tests
@@ -147,6 +168,8 @@ int main( int ac, char* av[] )
     
     if( c2 != cofactor_c2 )
         throw std::logic_error("FAIL: cofactor test");
+
+    cout << "PASS: cofactor test" << endl;
 
     /**
      * Inverse tests
@@ -166,6 +189,8 @@ int main( int ac, char* av[] )
 
     if( i2i != inverse_i2 )
         throw std::logic_error("FAIL: inverse test");
+
+    cout << "PASS: inverse test" << endl;
 
     
 
