@@ -326,6 +326,23 @@ using contracted_shape = ContractedShape< I, J, Shape >::type;
 template< typename... Ts >
 struct types { };
 
+// types details
+namespace detail {
+template< typename T, typename Seq >
+struct UniformTypesHelper;
+
+template< typename T, size_t... Is >
+struct UniformTypesHelper< T, seq< Is... >>
+{ using type = types< noop_t< T, Is >... >; };
+
+template< typename T, size_t Size >
+struct UniformTypes 
+{ using type = UniformTypesHelper< T, make_seq< Size >>::type; };
+} // namespace detail (types)
+
+template< typename T, size_t Size >
+using uniform_types = detail::UniformTypes< T, Size >::type;
+
 // forward declaration
 template< typename Shape, typename Types >
 struct Tensor;
@@ -460,6 +477,63 @@ struct Tensor< shape< Is... >, types< Ts... >>
 };
 
 /**
+ * UniformTensor wraps a tuple of (Ds*...) instances of T
+ */
+template< typename T, size_t... Ds >
+using UniformTensor = Tensor< shape< Ds... >, uniform_types< T, ( Ds * ... ) >>;
+
+namespace detail {
+
+template< typename ValuesType, typename T, size_t... Is >
+void fill_uniform_values( ValuesType& values, T in, seq< Is... > )
+{ ( get< Is >( values ) = ... = in ); }
+
+} // namespace detail (UniformTensor)
+
+template< size_t... Ds >
+auto make_uniform( auto val )
+{ 
+    auto u = UniformTensor< decltype(val), Ds... >{};
+    detail::fill_uniform_values( u.values, val, make_seq< ( Ds * ... ) >{} );
+    return u;
+}
+
+/**
+ * Matrix alias for a 2D tensor
+ */
+template< size_t Rows, size_t Cols, typename... Ts >
+requires( sizeof...( Ts ) == Rows * Cols )
+using Matrix = Tensor< shape< Rows, Cols >, types< Ts... >>;
+
+/**
+ * NOTE: make_matrix reads the elements in column major order and then 
+ * transposes to row major order.  This helps readability:
+ * 
+ * constexpr size_t ROWS = 2;
+ * constexpr size_t COLS = 3;
+ * auto A = make_matrix< ROWS, COLS >(
+ *     1., 2., 3.,
+ *     4., 5., 6. );
+ * ASSERT( at<0, 1>(A) == 2. and at<0, 2>(A) == 3. and
+ *         at<1, 0>(A) == 4. and at<1, 2>(A) == 6.);
+ * 
+ */
+template< size_t Rows, size_t Cols, typename... Ts >
+auto make_matrix( Ts... ts )
+{ return transpose( make_tensor< shape< Cols, Rows >>( ts... )); } 
+
+/**
+ * Vector alias for a 1D row-vector
+ */
+template< size_t N, typename... Ts >
+requires( sizeof...( Ts ) == N )
+using Vector = Tensor< shape< N >, types< Ts... >>;
+
+template< size_t N, typename... Ts >
+auto make_vector( Ts... ts )
+{ return make_tensor< shape< N >>( ts... ); }
+
+/**
  * Contraction represents a contracton on a tensor
  */
 template< size_t I, size_t J, typename TensorType >
@@ -534,7 +608,7 @@ struct Contraction< I, J, Tensor< shape< Ks... >, types< Ts... >>>
     static constexpr auto invoke( tensor_type const& v )
     { return do_contraction< output_shape, element >( v.values, elements_seq{} ); }
 };
-} // namespace detail
+} // namespace detail (contraction)
 
 template< size_t I, size_t J, size_t... Is, typename... Ts >
 requires ( I != J and I < sizeof...( Is ) and J < sizeof...( Is ) and 
@@ -548,7 +622,7 @@ constexpr auto contract( Tensor< shape< Is... >, types< Ts... >> const& tensor )
 
 // contraction tests
 namespace test {
-
+static_assert( is_same_v< shape<3,4>, detail::Contraction<1,2, UniformTensor<bool, 3,2,2,4>>::output_shape > );
 } // namespace test
 
 /**

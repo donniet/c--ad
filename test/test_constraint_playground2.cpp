@@ -99,7 +99,7 @@ struct Multiply
     Expr2 second; 
 };
 
-// TODO: continue these maybe?
+// TODO: continue these maybe? do we need lazy eval of Formulae?
 template< typename... Exprs1, typename... Exprs2 >
 requires ( sizeof...( Exprs1 ) == sizeof... ( Exprs2 ) )
 struct Multiply< Formulae< Exprs1... >, Formulae< Exprs2... >>
@@ -370,34 +370,60 @@ template< typename Expr >
 auto make_partial_of( Expr expr )
 { return [&expr]( Variable by ) { return partial( expr, by ); }; }
 
+/**
+ * jacobian matrix of a list of constraint equations. returns an ROWSxCOLS 
+ * matrix where the (r,c) element is df_r/dx_c where f_n are the equations and
+ * x_n are the variables (and d/dx represents a partial derivative here)
+ * 
+ * NOTE: we currently only support square jacobians since only square matrices
+ * are implemented.
+ */
 template< typename ConstraintType, typename VariableRange >
 auto jacobian( ConstraintType, VariableRange );
 
-// jacobian is only defined on a conjunction of equal_zero expressions
-// template< typename... Expr, typename VariableRange >
-// auto jacobian( Conjunction< EqualsZero< Expr... >> constraints, 
-//     VariableRange const& by_vars)
-// { 
-//     static constexpr const size_t size = sizeof...( Expr );
-//     return jacobian_helper( constraints, by_vars, std::make_index_sequence< size >{} );
-// }
+template< typename ConstraintType, typename VariableRange, size_t... Is >
+auto jacobian_helper( ConstraintType, VariableRange const&, std::index_sequence< Is... > );
 
-// template< typename ConstraintsType, typename VariableRange, size_t... Is >
-// auto jacobian_helper( ConstraintsType constraints, VariableRange const& by_vars, 
-//     std::index_sequence< Is... > )
-// { return matrix_by_rows( 
-//     jacobian_row_helper( get< Is >( constraints ), by_vars )... ); }
+template< size_t Rows, typename... Exprs, typename VariableRange, size_t... Is >
+auto jacobian_helper( Conjunction< EqualsZero< Exprs >... > constraints, 
+    std::vector< Variable > const& vars, std::index_sequence< Is... > )
+{
+    using matrix::detail::row_of, matrix::detail::col_of, std::get;
 
-// template< typename ConsraintType, typename VariableRange >
-// auto jacobian_row_helper( ConstraintType constraint, VariableRange const& by_vars )
-// { 
+    // create a matrix from patial derivatives of our expressions by the
+    // list of variables. Our constraint is a conjunction of f(x_n) = 0
+    // expressions.  We calculate the partial derivative df_r/dx_c where
+    // r and c are the row and column of the jacobian respectively.
+    return matrix::from( partial( 
+        get< row_of( Is, Rows )>( constraints ).first, // rows correspond to constraints
+        vars[ col_of( Is, Rows ) ])... );              // cols correspond to partial
+                                                       // derivatives by each var
+}
 
-//         by_vars | transform( make_partial_of( constraint ));
-// }
+// jacobian is only defined on a conjunction of equal_zero expressions (for now)
+template< typename... Expr, typename VariableRange >
+auto jacobian( Conjunction< EqualsZero< Expr >... > constraints, 
+    VariableRange const& by_vars)
+{ 
+    using std::vector, std::ranges::begin, std::ranges::end;
+    static constexpr size_t count = sizeof...( Expr );
 
+    vector< Variable > vars( begin( by_vars ), end( by_vars ));
+
+    // TODO: implement rectangular jacobians
+    if( count != vars.size() )
+        throw std::invalid_argument( "jacobian must be square (for now)" );
+    
+    // setup the helper for count * count elements
+    return jacobian_helper< count >( constraints, by_vars, 
+        std::make_index_sequence< count * count >{} ); 
+}
 
 /**
- * operators namespace:  inclusion enables operators
+ * operators namespace. We are isolating the expression operators in case they
+ * get mixed up with the standard ones.  
+ * 
+ * TODO: assess whether these can live in the parent namespace
  */
 namespace operators {
 
@@ -500,15 +526,15 @@ void collect_variables( Variable expr, set< Variable >& collection )
 { collection.insert( expr ); }
 
 template< typename... Expr >
-std::tuple< Expr... > extract_constraint_expressions( 
+Formulae< Expr... > extract_constraint_expressions( 
     Conjunction< EqualsZero< Expr >... > constraint )
-{ return extract_constraint_expressions_helper( constraint, 
-    std::make_index_sequence< sizeof...( Expr )>{} ); }
+{ return extract_constraint_expressions_helper< Formulae< Expr... >>( 
+    constraint, make_seq< sizeof...( Expr )>{} ); }
 
-template< typename ConstraintType, size_t... Is >
-auto extract_constraint_expression_helper( ConstraintType constraint,
+template< typename FormulaeType, typename ConstraintType, size_t... Is >
+FormulaeType extract_constraint_expression_helper( ConstraintType constraint,
     std::index_sequence< Is... > )
-{ return std::make_tuple( std::get< Is >( constraint.expressions )... ); }
+{ return { std::get< Is >( constraint.expressions )... }; }
 
 bool has_mixed_derivatives( set< Variable > const& variables )
 {
@@ -583,68 +609,70 @@ VariableValues newton( EqualsZero< Expr > expr,
     return values;
 }
 
-// template< typename... Expr >
-// VariableValues newton( Conjunction< EqualsZero< Expr >... > expr, double eps = 1e-4, size_t iterations = 100 )
-// {
-//     using std::views::transform;
-//     using std::views::filter;
+template< typename... Exprs >
+VariableValues newton( Conjunction< EqualsZero< Exprs >... > exprs, 
+    double eps = 1e-4, size_t iterations = 100 )
+{
+    using std::views::transform;
+    using std::views::filter;
 
-//     static auto assign_zero = []( Variable x ) -> std::pair< Variable, double >
-//     { return { x, 0. }; };
-//     static auto diff_variables = []( Variable x ) 
-//     { return d( x ); };
-//     static auto values_for = []( set< Variable > const& vars )
-//     { return [&vars]( std::pair< Variable, double > const& var_val )
-//       { return vars.contains( var_val.first ); }; };
-//     static constexpr size_t constraints_size = sizeof...( Expr );
+    static auto assign_zero = []( Variable x ) -> std::pair< Variable, double >
+    { return { x, 0. }; };
+    static auto diff_variable = []( Variable x ) 
+    { return d( x ); };
+    static auto values_for = []( set <Variable> const& vars )
+    { return [&vars]( std::pair< Variable, double > const& var_val )
+      { return vars.contains( var_val.first ); }; };
+    static constexpr size_t constraints_size = sizeof...( Exprs );
 
-//     set< Variable > variables = collect_variables( expr );
-//     if( has_mixed_derivatives( variables ))
-//         throw invalid_argument( "cannot calculate newtons-method on"
-//             " differentials" );
+    static auto f = extract_constraint_expressions( exprs );
+    set <Variable> variables = collect_variables( exprs );
 
-//     if( constraints_size != variables.size() )
-//         throw invalid_argument( "must have an equal number of formulae and"
-//             " variables (for now)." );
+    if( has_mixed_derivatives( variables ))
+        throw invalid_argument( "cannot calculate newtons-method on"
+            " differentials" );
 
-//     // initial guess x == 0
-//     VariableValues values = variables | transform( assign_zero );
-//     set< Variable > dv = variables | transform( diff_variables );
-//     std::tuple< Expr... > f = extract_constraint_expressions( expr );
-//     auto df = d( f );
+    if( constraints_size != variables.size() )
+        throw invalid_argument( "must have an equal number of formulae and"
+            " variables (for now)." );
 
-//     // set dx == eps
-//     for( auto dx : dv ) 
-//         values[ dx ] = eps;
+    // initial guess x == 0
+    VariableValues values = variables | transform( assign_zero );
+    set <Variable> dv = variables | transform( diff_variable );
+    auto jacob = jacobian( exprs, variables );
 
-//     // iterate
-//     for( ++iterations; iterations > 0; --iterations )
-//     {
-//         // extract a vector of initial values of variables excluding differentials
-//         auto x0 = values | filter( values_for( variables )) | transform( std::get< 1 > );
-//         double fx = f( values );
-//         double dfx = df( values );
-//         double x1;
+    // set dx == eps
+    for( auto dx : dv ) 
+        values[ dx ] = eps;
 
-//         // is this almost flat?
-//         if( abs( dfx / eps ) <= eps )
-//         {
-//             // guess fx next time
-//             x1 = x0 - fx;
-//         }
-//         else
-//         {
-//             // x_1 = x_0 - f(x_0) / f'(x_0)
-//             x1 = x0 - fx * eps / dfx;
+    // iterate
+    for( ++iterations; iterations > 0; --iterations )
+    {
+        // extract a vector of initial values of variables excluding differentials
+        auto x0 = values | filter( values_for( variables )) | transform( std::get< 1 > );
+        double fx = f( values );
+        double dfx = df( values );
+        double x1;
 
-//             if( abs( x1 - x0 ) < eps )
-//                 return values;
-//         }
-//         values[ x ] = x1;
-//     }
+        // is this almost flat?
+        if( abs( dfx / eps ) <= eps )
+        {
+            // guess fx next time
+            x1 = x0 - fx;
+        }
+        else
+        {
+            // x_1 = x_0 - f(x_0) / f'(x_0)
+            x1 = x0 - fx * eps / dfx;
 
-//     return values;
-// }
+            if( abs( x1 - x0 ) < eps )
+                return values;
+        }
+        values[ x ] = x1;
+    }
+
+    return values;
+}
 
 // input/output
 std::ostream& operator<<( std::ostream& os, Constant const& val )
@@ -704,7 +732,7 @@ int main( int ac, char* av[] )
     auto million = Constant{ 1'000'000. };
 
     // example from https://en.wikipedia.org/wiki/Newton%27s_method#Solution_of_cos(x)_=_x3_using_Newton's_method
-    auto f = ( cos(x) - x*x*x );
+    auto f = ( cos(x) - x*x*x*x ); // == 0
     // TODO: this doesn't work right now
     // auto f = ( cos(x) - pow(x, 3.) );
 

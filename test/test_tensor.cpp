@@ -185,7 +185,9 @@ int main( int ac, char* av[] )
         4. / 8., -4. / 8.,
         -3. / 8., 5. / 8. );
 
+#ifndef NDEBUG
     std::cout << "i2 ==\n" << i2i << "\ninverse_d2 ==\n" << inverse_i2 << std::endl;
+#endif
 
     if( i2i != inverse_i2 )
         throw std::logic_error("FAIL: inverse test");

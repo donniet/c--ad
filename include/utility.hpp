@@ -15,13 +15,27 @@ template< size_t X >
 struct Identity { static constexpr size_t value = X; };
 
 /**
+ * noop_t always evaluates to it's template parameter no matter what size_t is
+ * passed as the secon parameter.  This is useful for constructing uniform
+ * pack types from sequences
+ */
+namespace detail {
+template< typename T, size_t Ignored >
+struct NoopType { using type = T; };
+
+} // namespace detail (noop_t)
+
+template< typename T, size_t Ignored >
+using noop_t = detail::NoopType< T, Ignored >::type;
+
+/**
  * Sequence helpers
  */
 template< size_t... Is >
-using seq = ::std::index_sequence< Is... >;
+using seq = std::index_sequence< Is... >;
 
 template< size_t Size >
-using make_seq = ::std::make_index_sequence< Size >;
+using make_seq = std::make_index_sequence< Size >;
 
 /**
  * override of std::get<I> that can call Type::template at<I>
