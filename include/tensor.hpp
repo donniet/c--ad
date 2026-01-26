@@ -172,6 +172,7 @@ static_assert(
 /**
  * ElementFrom calculates the element index from a
  */
+// TODO: swich Shape and Index order, right?
 template< typename Shape, typename Index >
 struct ElementFrom;
 
@@ -393,6 +394,10 @@ auto inequality_helper( Tensor< Shape1, Types1 > const& first,
     Tensor< Shape2, Types2 > const& second, seq< Is... > )
 { return (( get< Is >( first.values ) != get< Is >( second.values )) or ... ); }
 
+template< typename Shape, typename Types, size_t... Is >
+auto scale_helper( long double scalar, Tensor< Shape, Types > const& v, seq< Is... > )
+{ return make_tensor< Shape >(( scalar * get< Is >( v.values ))... ); }
+
 /**
  * Tensor class holds an arbitrarily typed tuple of values organized by a 
  * tuple of size_t's or it's shape.
@@ -435,6 +440,9 @@ struct Tensor< shape< Is... >, types< Ts... >>
     template< typename Types2 >
     auto operator!=( Tensor< shape_type, Types2 > const& other ) const
     { return inequality_helper( *this, other, make_seq< size >{} ); }
+
+    auto scale( long double scalar ) const
+    { return scale_helper( scalar, *this, make_seq< size >{} ); }
 
     Tensor() : values{} { }
     Tensor( values_of< Ts... > values ) : values{ values } { }
@@ -605,33 +613,52 @@ auto sub_tensor( Tensor< Shape, Types > const& v )
     make_seq< detail::sub_tensor_shape< Shape >::elements_size >{} ); }
 
 /**
- * Square tensor functions (transpose, determinant, cofactor)
+ * Transpose of a square tensor
  */
+template< size_t N, typename Types >
+auto transpose( Tensor< shape< N, N >, Types > const& v );
 
 namespace detail {
-
 template< size_t N, typename Types, size_t... Is >
 auto transpose_helper( Tensor< shape< N, N >, Types > const& v, seq< Is... > )
 { return make_tensor< shape< N, N >>( get< ( Is % N ) * N + Is / N >( v.values )... ); }
-
-// template< typename TensorType >
-// struct DetHelper
-// {
-//     template< size_t... Is >
-//     static auto calculate( tensor_type const& v, seq< Is... > );
-// };
-
 } // namespace detail
 
 template< size_t N, typename Types >
 auto transpose( Tensor< shape< N, N >, Types > const& v )
-{ return detail::transpose_helper( v, make_seq< N*N >{} ); }
+{ return detail::transpose_helper( v, make_seq< N * N >{} ); }
 
 /**
  * Determinant of square tensors
  */
 template< size_t N, typename Types >
-auto det( Tensor< shape< N,N >, Types > const& v );
+auto determinant( Tensor< shape< N, N >, Types > const& v );
+
+namespace detail {
+
+// recursively calculate the determinant by expanding along row 0
+template< size_t N, typename Types, size_t... Ns >
+auto det_helper( Tensor< shape< N, N >, Types > const& v, seq< Ns... > )
+{
+    return ((( Ns % 2 == 0 ? 1. : -1. ) *            // alternating terms
+                get< element_from<                   // v[0,Ns]
+                    shape< N, N >, index< 0, Ns >>>( v.values ) * 
+                determinant(                          // det of submatrix[0,Ns]
+                    sub_tensor< index< 0, Ns >>( v ))) + ... );
+}
+
+template< typename Types >
+auto det_helper( Tensor< shape< 1, 1 >, Types > const& v, seq< 0 > )
+{ return get< 0 >( v.values ); }
+
+} // namespace detail
+
+/**
+ * Determinant of square tensors
+ */
+template< size_t N, typename Types >
+auto determinant( Tensor< shape< N, N >, Types > const& v )
+{ return detail::det_helper( v, make_seq< N >{} ); }
 
 } // namespace tensor
 

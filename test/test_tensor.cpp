@@ -22,6 +22,9 @@ int main( int ac, char* av[] )
         1., 2., 3.,
         4., 5., 6.,
         7., 8., 9. );
+    // 1*(5*9-6*8) - 2*(4*9-6*7) + 3*(4*8-5*7)
+    // 45 - 48 - 2*(36 - 42) + 3*(32 - 35)
+    // -3 + 12 - 9 == 0
 
     auto t4 = contract< 0, 1 >( t3 );
 
@@ -80,6 +83,45 @@ int main( int ac, char* av[] )
 
     if( transpose(u7) != u5u6_t )
         throw std::logic_error("FAIL: transpose test");
+
+    /**
+     * Scale tests
+     */
+    auto t8 = make_tensor< shape< 2, 3 >>(
+        4. *  5., 4. *  7.,
+        4. * 11., 4. * 13.,
+        4. * 17., 4. * 19. );
+
+    auto t9 = t8.scale( 1. / 4. );
+    static_assert( is_same_v< shape< 2, 3 >, shape_of< decltype( t9 )>> );
+
+    auto t8sby4 = make_tensor< shape< 2, 3 >>(
+        5., 7.,
+        11., 13.,
+        17., 19. );
+
+    if( t9 != t8sby4 )
+        throw std::logic_error("FAIL: scale test");
+
+    /**
+     * Determinant tests
+     */
+    double d = determinant( t3 );
+
+    if( d != 0. )
+        throw std::logic_error("FAIL: det test");
+    
+    auto d1 = make_tensor< shape< 1, 1 >>( 5. );
+
+    if( determinant( d1 ) != 5. )
+        throw std::logic_error("FAIL: det test 1x1");
+
+    auto d2 = make_tensor< shape< 2, 2 >>(
+        3., 2.,
+        2., 3. );
+
+    if( determinant( d2 ) != 5. )
+        throw std::logic_error("FAIL: det test 2x2");
 
     return EXIT_SUCCESS;
 }
