@@ -21,12 +21,7 @@ namespace matrix {
 
 using std::get;
 
-template< size_t... Is >
-using seq = ::std::index_sequence< Is... >;
-
-template< size_t Size >
-using make_seq = ::std::make_index_sequence< Size >;
-
+// TODO: Vector or Formulae?  Any?  All?
 template< typename... Ts >
 struct Vector : std::tuple< Ts... > 
 { };
@@ -217,6 +212,34 @@ namespace detail {
     auto inverse( SquareMatrix< Ts... > const& mat )
     { return inverse_helper( mat, make_seq< sizeof...( Ts ) >{} ); }
 
+    /**
+     * Matrix Multiplication
+     */
+    template< typename Scheme, typename LeftType, typename RightType >
+    auto do_multiply( LeftType const& left, RightType const& right );
+
+    template< size_t... Is, typename LeftType, typename RightType >
+    auto do_multiply< seq< Is... >>( LeftType const& left, RightType const& right )
+    { 
+        return from( dot( row< left_row( Is )>( left ), column< right_col( Is )>( right ))... );
+    }
+
+    template< typename LeftType, typename RightType >
+    struct Multiplier;
+
+    template< typename... Ts, typename... Us >
+    requires sizeof...( Ts ) == sizeof...( Us )
+    struct Multiplier< SquareMatrix< Ts... >, SquareMatrix< Us... >> 
+    {
+        using left_type = SquareMatrix< Ts... >;
+        using right_type = SquareMatrix< Us... >;
+        using output_size = sizeof...( Ts );
+        using output_stride = left_type::stride;
+
+        static auto mulitply( left_type const& left, right_type const& right )
+        { return do_multiply( left, right, /* ... */ ); }
+    };
+
 } // namespace detail
 
 template< typename... Ts >
@@ -312,7 +335,7 @@ struct SquareMatrix : std::tuple< Ts... >
 
     SquareMatrix() = default;
     SquareMatrix( Ts... ts ) : tuple_type{ ts... } { }
-    
+
 private:
     template< size_t... Is >
     auto invoke_helper( seq< Is... > )
@@ -402,6 +425,8 @@ namespace tests {
 
 } // namespace tests
 
+
+
 /**
  * Details of printing matrices
  */
@@ -426,6 +451,6 @@ std::ostream& operator<<( std::ostream& os, SquareMatrix< Ts... > const& mat )
     return os;
 }
 
-} // namespac matrix
+} // namespace matrix
 
 #endif
