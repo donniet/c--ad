@@ -268,17 +268,17 @@ static constexpr T variable_value( T* value_ptr )
  */
 template< typename T, size_t... Is >
 constexpr T get_variable_value()
-{ return detail::variable_value( static_cast< T* >( nullptr )); }
+{ return detail::variable_value< T, Is... >( static_cast< T* >( nullptr )); }
 
 /**
  * sets the variable with address Is... and type T
  * 
- * @tparam Is is the address of the variable
  * @tparam T is the type of the variable
+ * @tparam Is is the address of the variable
  */
-template< size_t... Is, typename T >
+template< typename T, size_t... Is >
 constexpr void set_variable_value( T value )
-{ return detail::variable_value( &value ); }
+{ detail::variable_value< T, Is... >( &value ); }
 
 /**
  * Variable in an expression
@@ -298,7 +298,7 @@ struct Variable : public Expression< T >
 
     // DT: weird having a const setter, isn't it? see set_variable_value...
     constexpr void set( T value ) const
-    { set_variable_value< I, Is... >( value ); }
+    { set_variable_value< T, I, Is... >( value ); }
 
     constexpr T get() const
     { get_variable_value< T, I, Is... >(); }
