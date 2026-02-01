@@ -19,6 +19,7 @@ add_executable(test_constraint_playground test_constraint_playground.cpp)
 add_executable(test_constraint_playground2 test_constraint_playground2.cpp)
 add_executable(test_matrix test_matrix.cpp)
 add_executable(test_tensor test_tensor.cpp)
+add_executable(test_expressions test_expressions.cpp)
 
 message("source dir ${CMAKE_SOURCE_DIR}")
 

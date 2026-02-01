@@ -5,6 +5,7 @@
 #include <tuple>
 #include <ranges>
 #include <memory>
+#include <type_traits>
 
 using std::size_t;
 
@@ -13,6 +14,39 @@ using std::size_t;
  */
 template< size_t X >
 struct Identity { static constexpr size_t value = X; };
+
+// min_v and max_v details
+namespace detail {
+
+template< size_t I, size_t... Is >
+struct Min
+{ static constexpr size_t value = ( I < Min< Is... >::value ? I : Min< Is... >::value ); };
+
+template< size_t I >
+struct Min< I >
+{ static constexpr size_t value = I; };
+
+template< size_t I, size_t... Is >
+struct Max
+{ static constexpr size_t value = ( I > Max< Is... >::value ? I : Max< Is... >::value ); };
+
+template< size_t I >
+struct Max< I >
+{ static constexpr size_t value = I; };
+
+} // namespace detail
+
+/**
+ * Evaluates to the minimum (or maximum) value of the parameter pack
+ * 
+ * @tparam Is are the values to extract the minimum of
+ * @return the minimum of the parameters Is
+ */
+template< size_t... Is >
+static constexpr size_t min_v = detail::Min< Is... >::value;
+
+template< size_t... Is >
+static constexpr size_t max_v = detail::Max< Is... >::value;
 
 /**
  * noop_t always evaluates to it's template parameter no matter what size_t is
@@ -174,11 +208,55 @@ constexpr bool are_equal( T t, U u, Ts... ts )
 { return t == u && are_equal( u, ts... ); }
 
 /**
+ * sequence helpers (credit to Google Gemini)
+ */
+
+// 1. Primary template: The "worker" that performs the recursion
+template <typename T, typename Result, T... Rest>
+struct reverse_helper;
+
+// 2. Base case: When the input sequence is empty, return the accumulated result
+template <typename T, T... Reversed>
+struct reverse_helper<T, std::integer_sequence<T, Reversed...>> {
+    using type = std::integer_sequence<T, Reversed...>;
+};
+
+// 3. Recursive step: Move the first element of the "Rest" pack 
+// to the front of the "Reversed" pack
+template <typename T, T... Reversed, T First, T... Rest>
+struct reverse_helper<T, std::integer_sequence<T, Reversed...>, First, Rest...> {
+    using type = typename reverse_helper<T, std::integer_sequence<T, First, Reversed...>, Rest...>::type;
+};
+
+// 4. Public Interface
+template <typename T>
+struct reverse_integer_sequence;
+
+template <typename T, T... Is>
+struct reverse_integer_sequence<std::integer_sequence<T, Is...>> {
+    using type = typename reverse_helper<T, std::integer_sequence<T>, Is...>::type;
+};
+
+/**
+ * reverses an integer sequence
+ */
+template <typename T>
+using reverse_integer_sequence_t = typename reverse_integer_sequence<T>::type;
+
+#ifndef NDEBUG
+namespace test {
+static_assert( std::is_same_v< std::index_sequence< 0, 1, 2, 3 >,
+    reverse_integer_sequence_t< std::index_sequence< 3, 2, 1, 0 >>> );
+} // namespace test
+#endif
+
+
+/**
  * Tuple helpers
  */
 namespace detail {
 
-using ::std::index_sequence;
+using std::index_sequence;
 
 template< typename TupleType, size_t... Is >
 struct TupleSelect
@@ -221,6 +299,9 @@ requires ( N < sizeof...( Ts ) )
 auto remove_nth( std::tuple< Ts... > const& tup )
 { return detail::remove_nth_helper< N >( tup, 
     std::make_index_sequence< sizeof...( Ts ) - 1 >{} ); }
+
+
+
 
 /**
  * Pack helpers

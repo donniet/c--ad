@@ -1,474 +1,1258 @@
 /**
- * expressions.hpp are lazily evaluated mathematical expressions of units
+ * Expressions are laizily evaluated mathematical functions.  The type system
+ * is used to allow autodifferentiation of the expressions which in turn can be
+ * leveraged for auto-solvers.  These are designed to be used in constraints on
+ * the dimensions of our c++ad objects
+ * 
+ * EXAMPLE:
+ * 
+ * auto model = Universe{ "my_model" };
+ * auto block = new ( model ) Box{ "maple" };
+ * // constraints passed to add_constraint are Conjunction< Equal< ... >, ... >
+ * model.add_constraint( block.width == 2 * block.height and 
+ *                       block.height == 3 * block.depth and
+ *                       block.depth == 4_in );
+ * cout << STL{ model };
+ * 
  */
 
 #ifndef __EXPRESSIONS_HPP__
 #define __EXPRESSIONS_HPP__
 
+#include "utility.hpp"
+
+#include <any>
+#include <vector>
+#include <unordered_map>
+#include <tuple>
+#include <utility>
 #include <functional>
+#include <cmath>
+#include <type_traits>
+#include <concepts>
+// TODO: handle floating point environments
+// #include <cfenv>
 
 namespace expressions {
 
+using std::tuple, std::get, std::tuple_element_t, std::tuple_size_v;
+using std::index_sequence, std::make_index_sequence;
+
 /**
- * Constant represents an unchanging expression value
+ * Concepts
+ */
+// template< typename Expr, typename ResultType >
+// concept result_is = requires( Expr expr, ResultType result )
+// { result = expr(); };
+
+
+// is the unit continuous or discrete?
+template< typename Unit >
+concept continuous = std::floating_point< Unit > or 
+    std::floating_point< typename Unit::value_type >;
+
+template< typename Unit >
+concept discrete = 
+    ( std::integral< Unit > and not std::is_same_v< Unit, bool > ) or
+    ( std::integral< typename Unit::value_type > and not 
+        std::is_same_v< typename Unit::value_type, bool > );
+
+template< typename Unit >
+concept numeric = continuous< Unit > or discrete< Unit >;
+
+template< typename Expr, typename Unit >
+concept expression_of = Expr::is_expression and 
+    std::is_same_v< typename Expr::result_type, Unit >;
+
+template< typename Expr, typename... Exprs >
+struct SameExpressionResultTypes
+{ static constexpr bool value = ( std::is_same_v< typename Expr::result_type, 
+        typename Exprs::result_type > and ... ); };
+
+template< typename Expr >
+struct SameExpressionResultTypes< Expr >
+{ static constexpr bool value = true; };
+
+template< typename... Exprs >
+static constexpr bool same_expression_result_types = 
+    SameExpressionResultTypes< Exprs... >::value;
+
+template< typename Expr, typename... Exprs >
+requires same_expression_result_types< Expr, Exprs... >
+struct ResultOf
+{ using type = typename Expr::result_type; };
+
+template< typename... Exprs >
+using result_of = typename ResultOf< Exprs... >::type;
+
+template< typename Expr >
+concept continuous_expression = Expr::is_expression and 
+    continuous< typename Expr::result_type >;
+
+template< typename Expr >
+concept discrete_expression = Expr::is_expression and 
+    discrete< typename Expr::result_type >;
+
+template< typename Expr >
+concept boolean_expression = Expr::is_expression and 
+    std::is_same_v< bool, typename Expr::result_type >;
+
+template< typename Unit >
+concept boolean_or_numeric = std::is_same_v< bool, Unit > or numeric< Unit >;
+
+/**
+ * identities
+ * 
+ * TODO: where should these go? here, units.hpp, someplace else?
  */
 template< typename Unit >
-struct Constant
-{ 
-    using value_type = Unit;
-    value_type operator()() const { return value; }
-    value_type value; 
-};
+struct AdditiveIdentity
+{ static constexpr Unit value = 0; };
+
+template< typename Unit >
+struct MultiplicativeIdentity
+{ static constexpr Unit value = 1; };
+
+template< typename Unit >
+static constexpr auto additive_identity = AdditiveIdentity< Unit >::value;
+
+template< typename Unit >
+static constexpr auto multiplicative_identity = 
+    MultiplicativeIdentity< Unit >::value;
 
 /**
- * Zero is an identically zero, unitless, and dimensionless
+ * Base class for all expressions
  */
-struct Zero 
-{ 
-    using value_type = long double;
-    operator long double() const { return 0; } 
-    value_type operator()() const { return 0; }
-};
-
-// expression base classes 
-
-/**
- * Unary is the base of a unary expression
- */
-template< typename T >
-struct Unary
-{ T operand; };
-
-/**
- * Binary is the base of a binary expression
- */
-template< typename T, typename U >
-struct Binary
-{ T first; U second; };
-
-/**
- * Nary is the base of an N-ary expression
- */
-template< typename T, typename... Ts >
-struct Nary : std::tuple< T, Ts... >
-{ 
-    using tuple_type = std::tuple< T, Ts... >;
-
-    T& get_first() { return std::get< 0 >( *this ); }
-    Nary< Ts... > get_rest() 
-    { return get_rest_helper( std::make_index_sequence< sizeof...( Ts )>{} ); }
-
-    Nary& operator=( Nary const& ) = default;
-    Nary& operator=( Nary&& ) = default;
-
-    Nary( T first, Ts... rest ) : tuple_type{ first, rest... } { }
-    Nary() : tuple_type{} { }
-    Nary( Nary const& ) = default;
-    Nary( Nary&& ) = default;
-private:
-    template< size_t... Is >
-    Nary< Ts... > get_rest_helper( std::index_sequence< Is... > )
-    { return { std::get< Is+1 >( *this )... }; }
-};
-
-/**
- * Method is a Nary expression that wraps an std::function object
- */
-template< typename T, typename... ArgTypes >
-struct Method : protected Nary< T, ArgTypes... >
-{
-    using value_type = decltype( T{}( ArgTypes{}()... ) );
-    using function_type = std::function< value_type( ArgTypes... )>;
-    using nary_type = Nary< T, ArgTypes... >;
-
-    value_type operator()() const
-    { return exec_helper( std::make_index_sequence< sizeof...( ArgTypes )>{} ); }
-
-    T& function() { return nary_type::get_first(); }
-private:
-    template< size_t... Is >
-    value_type exec_helper( std::index_sequence< Is... > )
-    { return function()( std::get< 1+Is >( *this )... ); }
-};
-
-/**
- * invocation_of is a helper method that returns a Method expression for the
- * given std::function object
- */
-template< typename ReturnType, typename... ArgTypes >
-Method< std::function< ReturnType(ArgTypes...) >, ArgTypes...  > 
-invocation_of( std::function< ReturnType( ArgTypes... )> method, 
-    ArgTypes... args )
-{ return { method, args... }; }
-
-/**
- * Product is the binary multiplication expression
- */
-template< typename T, typename U >
-struct Product : public Binary< T, U >
-{ 
-    using value_type = decltype( T{}() * U{}() );
-    value_type operator()() const 
-    { return Binary<T,U>::first() * Binary<T,U>::second(); } 
-};
-
-/**
- * Quotient is the binary division expresssion
- */
-template< typename T, typename U >
-struct Quotient : public Binary< T, U >
-{ 
-    using value_type = decltype( T{}() / U{}() );
-    value_type operator()() const 
-    { return Binary<T,U>::first() / Binary<T,U>::second(); } 
-};
-
-/**
- * Sum is the binary addition expression
- */
-template< typename T, typename U >
-struct Sum : Binary<T,U>
-{ 
-    using value_type = decltype( T{}() + U{}() );
-    value_type operator()() const 
-    { return Binary<T,U>::first() + Binary<T,U>::second(); } 
-};
-
-/**
- * Exp is the unary exponentiation expression e^x where e is euler's constant
- */
-template< typename T >
-struct Exp : Unary<T>
-{ 
-    using value_type = decltype( std::exp( T{}() ));
-    value_type operator()() const 
-    { return std::exp( Unary<T>::operand() ); } 
-};
-
-/**
- * Log is the unary logarithm expression ln(x) where ln is the log base e or 
- * natural logarithm
- */
-template< typename T >
-struct Log : Unary<T>
-{ 
-    using value_type = decltype( std::log( T{}() ));
-    auto operator()() const 
-    { return std::log( Unary<T>::operand() ); } 
-};
-
-/**
- * Scale is a binary expression representing the scaling of another expression
- * by a constant
- */
-template< typename T >
-struct Scale : Binary< T, long double >
-{ 
-    using value_type = decltype( T{}() * (long double)0 );
-    using base_type = Binary< T, long double >;
-    auto operator()() const 
-    { return base_type::first() * base_type::second; } 
-};
-
-/**
- * ElementOf represents the extraction of an element from a tuple-type object
- * using a compile-time index
- */
-template< typename T, size_t I >
-struct ElementOf : Unary< T >
-{ 
-    static constexpr size_t index = I;
-    auto operator()() const  
-    { return std::get< index >( Unary< T >::operand() ); }
-};
-
-// template< typename T, typename U >
-// struct Cartesian : Binary< T, U >
-// { 
-//     auto operator()() const 
-//     { return detail::span_expression( Binary<T,U>::first(), 
-//         Binary<T,U>::second() ); } 
-// };
-
-/**
- * Variable represents an unknown in an expression including the absolute
- * derivatives (Dots > 0)
- */
-template< size_t Dots >
-struct Variable 
-{ 
-    // TODO: needs constructor and to live with Unit and Operands
-    static Variable named( std::string const& name ) 
-    { return Variable( name ); }
-
-    Variable( Variable const& ) = default;
-
-    std::string variable_name; 
-private:
-    Variable( std::string const& name ) : variable_name{ name } { }
-};
-
-// namespace variables 
-// {
-//     auto _x = Variable<0>::named("x");
-//     auto _y = Variable<0>::named("y");
-// }
-
-/**
- * Expression is a wrapper that allows for lazy evaluation of any type
- */
-template< typename T >
+template< typename ResultType, typename... Exprs >
 struct Expression
 {
-    using operation_type = T;
-    using value_type = typename operation_type::value_type;
+    static constexpr bool is_expression = true;
+    static constexpr size_t size = sizeof...( Exprs );
+    using result_type = ResultType;
+    using element_seq = make_index_sequence< size >;
+    using reverse_element_seq = reverse_integer_sequence_t< element_seq >;
 
+    Expression& operator=( Expression const& ) = default;
+
+    constexpr Expression( Exprs... exprs ) : exprs{ exprs... } { }
+    Expression( Expression const& ) = default;
+    
+protected:
+    // similar to ( ... op exprs ) except op is a binary function object 
+    template< typename Op >
+    ResultType fold_left( Op op, ResultType initial_value = ResultType{} ) const
+    { return fold_left_helper( op, initial_value, element_seq{} ); }
+
+    // similar to ( exprs op ... )
+    template< typename Op >
+    ResultType fold_right( Op op, ResultType initial_value = ResultType{} ) const
+    { return fold_left_helper( op, initial_value, reverse_element_seq{} ); }
+
+    // evaluates the Ith sub-expression and returns the result
     template< size_t I >
-    constexpr Expression< ElementOf< T, I >> element() const
-    { return {{ *this }}; }
-
-    // template< typename U >
-    // Expression< Cartesian< T, U >> cartesian( Expression< U > other ) const
-    // { return { *this, other }; }
-
-    Expression< Scale< T >> scale( long double s ) const
-    { return {{ value, s }}; }
-
-    Expression< Exp< T >> exp() const
-    { return {{ value }}; }
-
-    Expression< Log< T >> log() const
-    { return {{ value }}; }
-
-    Expression< Exp< Scale< Log< T >>>> sqrt() const
-    { return {{{{ value }, 0.5 }}}; }
-
-    Expression< Exp< Scale< Log< T >>>> pow( long double exponent ) const
-    { 
-        Log< T > l = { value };
-        Scale< Log< T >> s = { value , exponent };
-        return {{{ value , exponent }}}; 
-    }
-
-    template< typename U >
-    Expression< Product< T, U >> product( Expression< U > other ) const
-    { return {{ value, other.value }}; }
-
-    template< typename U >
-    Expression< Quotient< T, U >> quotient( Expression< U > other ) const
-    { return {{ value, other.value }}; }
-
-    template< typename U >
-    Expression< Sum< T, U >> sum( Expression< U > other ) const
-    { return {{ value, other.value }}; }
-
-    template< typename U >
-    Expression< Sum< T, Scale< U >>> difference( Expression< U > other ) const
-    { return {{ value, { other.value, -1 }}}; }
-
-    value_type operator()() const { return value(); }
-
-    T value;
-};
-
-template< typename Unit >
-Expression< Constant< Unit >> constant( Unit value )
-{ return {{ value }}; }
-
-/**
- * Values is a tuple of Units with helpers for concatenating and slicing
- */
-template< unit... Ts >
-struct Values : std::tuple< Ts... >
-{
-    using tuple_type = std::tuple< Ts... >;
-    // using dimensions_type = Dimensions< Ts... >;
-    static constexpr const size_t size = sizeof...( Ts );
-
-    template< size_t I >
-    using element_t = std::tuple_element_t< I, tuple_type >;
-
-    // append elements
-    template< unit... Us >
-    Values< Ts..., Us... > concat( Values< Us... > const& other ) const
-    { return std::tuple_cat( *this, other ); }
-
-    // cast-away some elements
-    template< unit... Us >
-    operator Values< Us... >()
-    { return cast_helper< Values< Us... >>( 
-        std::make_index_sequence< sizeof...( Us ) >{} ); }
-
-    // getters
-    template< size_t I >
-    element_t< I >& at() { return std::get< I >( *this ); }
-    template< size_t I >
-    element_t< I > const& at() const { return std::get< I >( *this ); }
-    // element_t< 0 >& first() { return at<0>(); }
-    // element_t< 0 > const& first() const { return at<0>(); }
-    // element_t< size-1 >& last() { return at< size-1 >(); }
-    // element_t< size-1 > const& last() const { return at< size-1 >(); }
-
-
-    // arithemetic, this counts as a unit itself
-    Values& operator+=( Values const& other )
-    { return plus_equal_helper( other, std::make_index_sequence< size >{} ); }
-    Values& operator-=( Values const& other )
-    { return minus_equal_helper( other, std::make_index_sequence< size >{} ); }
-    Values& operator*=( long double scalar )
-    { return scale_helper( scalar, std::make_index_sequence< size >{} ); }
-
-    Values() : tuple_type{ Ts{ 0 }... } { }
+    ResultType eval() const
+    { return get< I >( exprs )(); }
 
 private:
-    template< typename CastType, size_t... Is >
-    CastType cast_helper( std::index_sequence< Is... > )
-    { return { std::get< Is >( *this )... }; }
+    // executes the fold operation using an index_sequence 
+    template< typename Op, size_t... Is >
+    ResultType fold_left_helper( Op op, ResultType result, 
+        index_sequence< Is... > ) const
+    { return (( result = op( result, eval< Is >() )), ... ); }
 
-    template< size_t... Is >
-    Values& plus_equal_helper( Values const& other, 
-        std::index_sequence< Is... > )
-    {
-        (( std::get< Is >( *this ) += std::get< Is >( other )), ... );
-        return *this;
-    }
-
-    template< size_t... Is >
-    Values& minus_equal_helper( Values const& other, 
-        std::index_sequence< Is... > )
-    {
-        (( std::get< Is >( *this ) -= std::get< Is >( other )), ... );
-        return *this;
-    }
-
-    template< size_t... Is >
-    Values& scale_helper( long double scalar, std::index_sequence< Is... > )
-    {
-        (( std::get< Is >( *this ) *= scalar ), ... );
-        return *this;
-    }
+private:
+    tuple< Exprs... > exprs;
 };
 
-
 /**
- * operators namespace includes the c++ operators on expresssions
+ * Constant expression will never change it's value
+ * 
+ * @tparam T is the unit of this contstant
+ * @tparam Value is the value of this constant
  */
-namespace operators
+template< boolean_or_numeric T, T Value >
+struct Constant : public Expression< T >
 {
-    template< typename T >
-    auto operator*( long double s, Expression< T > const& expr )
-    { return expr.scale( s ); }
+    static constexpr bool is_constant = true;
+    using expression_type = Expression< T >;
+    using value_type = T;
+    static constexpr T value = Value;
 
-    template< typename T >
-    auto operator*( Expression< T > const& expr, long double s )
-    { return expr.scale( s ); }
+    value_type operator()() { return value; }
 
-    template< typename T, typename U >
-    auto operator+( Expression< T > const& expr, Expression< U > const& other )
-    { return expr.sum( other ); }
+    Constant() = default;
+};
 
-    template< typename T, typename U >
-    auto operator-( Expression< T > const& expr, Expression< U > const& other )
-    { return expr.difference( other ); }
+// constant aliases
+template< numeric T >
+using constant_zero_expr = Constant< T, T{ 0 } >;
 
-    template< typename T, typename U >
-    auto operator*( Expression< T > const& expr, Expression< U > const& other )
-    { return expr.product( other ); }
+template< numeric T >
+static constexpr auto constant_zero = constant_zero_expr< T >{};
 
-    template< typename T, typename U >
-    auto operator/( Expression< T > const& expr, Expression< U > const& other )
-    { return expr.quotient( other ); }
+template< numeric T >
+using constant_one_expr = Constant< T, T{ 1 } >;
 
-    template< typename T >
-    auto exp( Expression< T > const& expr )
-    { return expr.exp(); }
+template< numeric T >
+static constexpr auto constant_one = constant_one_expr< T >{};
 
-    template< typename T >
-    auto log( Expression< T > const& expr )
-    { return expr.log(); }
+using constant_true_expr = Constant< bool, true >;
+static constexpr auto constant_true = constant_true_expr{};
 
-    template< typename T >
-    auto sqrt( Expression< T > const& expr )
-    { return expr.sqrt(); }
+using constant_false_expr = Constant< bool, false >;
+static constexpr auto constant_false = constant_false_expr{};
 
-    template< typename T >
-    auto pow( Expression< T > const& expr, long double exponent )
-    { return expr.pow( exponent ); }
+namespace detail {
 
+template< typename Expr >
+struct IsConstant
+{ static constexpr bool value = false; };
 
-    auto d( long double ) { return Zero{}; }
-    
-    // TODO: do we need to differentiate constants?
-    // template< typename UnitType >
-    // auto d( Expression< Constant< UnitType >> ) 
-    // { return Expression< Constant< UnitType >>{ 0 }; }
+template< boolean_or_numeric T, T Value >
+struct IsConstant< Constant< T, Value >>
+{ static constexpr bool value = true; };
 
-    auto d( Zero ) { return Zero{}; }
+} // namespace detail
 
-    // template< size_t Dots >
-    // auto d( Expression< Variable< Dots >> var )
-    // { return Expression< Variable< Dots+1 >>{ 
-    //     Variable< Dots+1 >::named( var.value.variable_name )}; }
-    
-    // template< size_t Dots >
-    // auto s( Expression< Variable< Dots >> var )
-    // { return Expression< Variable< Dots-1 >>{ 
-    //     Variable< Dots-1 >::named( var.value.variable_name )}; }
-    
-    
+template< typename Expr >
+static constexpr bool is_constant = detail::IsConstant< Expr >::value;
 
-    // template< typename Contra, typename Covar >
-    // auto d( Expression< Tensor< Contra, Covar >> var )
-    // { return Expression< Tensor< Contra, Covar >>{ var.contravariant, 
-    //     var.covariant }; }
+namespace detail {
 
-    template< typename UnitType >
-    auto d( Expression< Scale< UnitType >> unit )
-    { return d( expression_of( unit.value.first )).scale( unit.value.second ); }
-
-    template< typename UnitType >
-    auto d( Expression< Exp< UnitType >> unit )
-    { return d( expression_of( unit.value.operand )).product( unit ); }
-
-    template< typename UnitType >
-    auto d( Expression< Log< UnitType >> unit )
-    { return d( expression_of( unit.value.operand )).quotient( 
-        expression_of( unit.value.operand )); }
-
-    template< typename U, typename T >
-    auto d( Expression< Product< U, T >> unit )
-    { 
-        auto left = expression_of( unit.value.first ).product( 
-            d( expression_of( unit.value.second )));
-
-        auto right = d( expression_of( unit.value.first )).product(
-            expression_of( unit.value.secon ));
-
-        return left.sum( right );
-    }
-
-    template< typename U, typename T >
-    auto d( Expression< Quotient< U, T >> unit )
-    { 
-        auto left = d( expression_of( unit.value.first )).product( 
-            expression_of( unit.value.second ));
-
-        auto right = expression_of( unit.value.first ).product( 
-            d( expression_of( unit.value.second )));
-
-        auto denom = expression_of( unit.value.second ).product( 
-            expression_of( unit.value.second ));
-
-        return left.difference( right ).quotient( denom ); 
-    }
-} // namespace operators
 
 /**
- * expression_of is a helper method that turns any unit-type object into an 
- * expression which can be lazily evaluated and differentiated
+ * stores and retrieves a variable value.  
+ * 
+ * @tparam T is the type of the variable
+ * @tparam Is are a set of identifiers used to specify which variable we are
+ * getting or setting
+ * @param value_ptr is a pointer to the new value of this variable or null if
+ * this is not a setter call.
+ * @returns the static value nested in the function
+ * 
+ * HACK: we will use static variables to store the value of a given variable 
+ * right in it's getter/setter function. This works because any difference in 
+ * the template arguments will instantiate a new variable_value<...> method and
+ * thus a new static value (I think...)
+ * 
+ * DT: don't judge me. I've been known to use a goto here and there as well
+ * 
+ * TODO: add a scope based on the Universe, otherwise variables will conflict
+ * across universes.  This could be as simple as adding the universe's ID
+ * as one of the template parameters since we should enforce Universe's as not
+ * dynamically allocated anyway
  */
-template< typename UnitType >
-Expression< UnitType > expression_of( UnitType value ) { return { value }; }
+template< typename T, size_t... Is >
+static constexpr T variable_value( T* value_ptr )
+{  
+    // this value will be unique per the template parameters to this function
+    static volatile T value = T{};
+
+    // setter case
+    if( value_ptr != nullptr )
+        value = *value_ptr;
+
+    // getter case
+    return value;
+}
+
+} // namespace detail
+
+/**
+ * retrieves the variable of type T and address Is...
+ * 
+ * @tparam T is the type of the variable
+ * @tparam Is... is the address of the variable
+ * @returns the current value of the variable: either T{} or the last value set
+ * through set_variable_value< Is... >( T value )
+ */
+template< typename T, size_t... Is >
+constexpr T get_variable_value()
+{ return detail::variable_value( static_cast< T* >( nullptr )); }
+
+/**
+ * sets the variable with address Is... and type T
+ * 
+ * @tparam Is is the address of the variable
+ * @tparam T is the type of the variable
+ */
+template< size_t... Is, typename T >
+constexpr void set_variable_value( T value )
+{ return detail::variable_value( &value ); }
+
+/**
+ * Variable in an expression
+ * 
+ * @tparam T the type of value this variable may take
+ * @tparam I the necessary part of the address to this variable
+ * @tparam Is zero or more numbers that when concatenated with I form the 
+ * unique address of this variable
+ */
+template< boolean_or_numeric T, size_t I, size_t... Is >
+struct Variable : public Expression< T >
+{ 
+    static constexpr bool is_variable = true;
+    using unique_identifier = seq< I, Is... >;
+    using expression_type = Expression< T >;
+    using value_type = T;
+
+    // DT: weird having a const setter, isn't it? see set_variable_value...
+    constexpr void set( T value ) const
+    { set_variable_value< I, Is... >( value ); }
+
+    constexpr T get() const
+    { get_variable_value< T, I, Is... >(); }
+
+    // TODO: getters and setters that can be connected to dimensions
+    constexpr expression_type::result_type operator()() const
+    { return get(); }
+};
+
+namespace detail {
+
+template< typename Expr, typename Var >
+struct DependsOn;
+
+template< boolean_or_numeric T, T Value, typename Var >
+struct DependsOn< Constant< T, Value >, Var >
+{ static constexpr bool value = false; };
+
+template< boolean_or_numeric T, size_t... Is >
+struct DependsOn< Variable< T, Is... >, Variable< T, Is... >>
+{ static constexpr bool value = true; };
+
+template< typename ResultType, typename... Exprs, 
+    boolean_or_numeric T, size_t... Is >
+struct DependsOn< Expression< ResultType, Exprs... >, Variable< T, Is... >>
+{ static constexpr bool value = 
+    ( ... or DependsOn< Exprs, Variable< T, Is... > >::value ); };
+
+template< typename Expr >
+struct MaximumVariableIndexSizeHelper;
+
+template< typename Expr, size_t maximum_index_size >
+struct MaximumVariableIndicesSeqHelper;
+
+template< typename Expr, typename MaximumIndicesSeq >
+struct DependentVariablesTupleTypeHelper;
+
+} // namespace detail
+
+/**
+ * Predicate to determine if an Expression<...> type is dependent on a 
+ * Variable<...> type
+ * 
+ * @tparam Expr is the Expression<...> type to be searched
+ * @tparam Var is the Variable<...> type 
+ * @returns true if Expr depends on Var
+ */
+template< typename Expr, typename Var >
+static constexpr bool depends_on = detail::DependsOn< Expr, Var >::value;
+
+template< typename Expr >
+struct ExpressionTraits
+{
+    static constexpr size_t maximum_variable_index_size = 
+        detail::MaximumVariableIndexSizeHelper< Expr >::value;
+    
+    using maximum_variable_indices_seq = 
+        detail::MaximumVariableIndicesSeqHelper< Expr, 
+            maximum_variable_index_size >::type;
+  
+    // tuple type referencing all types and addresses of variables found in Expr
+    using dependent_variables_tuple_type = 
+        detail::DependentVariablesTupleTypeHelper< Expr, 
+            maximum_variable_indices_seq >;
+};
+
+/**
+ * Represents a lazily evaluated conjunction (logical AND)
+ */
+template< boolean_expression... Exprs >
+struct Conjunction : public Expression< bool, Exprs... >
+{
+    using expression_type = Expression< bool, Exprs... >;
+
+    // similar to ( ... and exprs() )
+    expression_type::result_type operator()() const
+    { expression_type::fold_left( std::logical_and<>{}, true ); }
+
+    Conjunction() = default;
+    Conjunction( Exprs... exprs ) : expression_type{ exprs... } { }
+};
+
+/**
+ * Represents a lazily evaluated disjunction (logical OR)
+ */
+template< boolean_expression... Exprs >
+struct Disjunction : Expression< bool, Exprs... >
+{
+    using expression_type = Expression< bool, Exprs... >;
+
+    // similar to ( ... and exprs() )
+    expression_type::result_type operator()() const
+    { expression_type::fold_left( std::logical_or<>{}, true ); }
+    
+    Disjunction() = default;
+    Disjunction( Exprs... exprs ) : expression_type{ exprs... } { }
+};
+
+/**
+ * Represents a lazily evaluate compliment (logical NOT)
+ */
+template< boolean_expression Expr >
+struct Compliment : Expression< bool, Expr >
+{
+    using expression_type = Expression< bool, Expr >;
+
+    // not expr()
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>(); }
+    
+    Compliment() = default;
+    Compliment( Expr expr ) : expression_type{ expr } { }
+};
+
+/**
+ * Represents a lazily evaluated operator==
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct Equal : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() == 
+        expression_type::template eval<1>(); }
+
+    Equal() = default;
+    Equal( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazily evaluated operator!=
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct NotEqual : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() != 
+        expression_type::template eval<1>(); }
+
+    NotEqual() = default;
+    NotEqual( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazily evaluated operator< (std::less)
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct Less : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() < 
+        expression_type::template eval<1>(); }
+
+    Less() = default;
+    Less( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazily evaluated operator<=
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct LessOrEqual : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() <=
+        expression_type::template eval<1>(); }
+
+    LessOrEqual() = default;
+    LessOrEqual( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazily evaluated operator>
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct Greater : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() >
+        expression_type::template eval<1>(); }
+
+    Greater() = default;
+    Greater( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazily evaluated operator>=
+ */
+template< typename LeftExpr, typename RightExpr >
+requires same_expression_result_types< LeftExpr, RightExpr >
+struct GreaterOrEqual : Expression< bool, LeftExpr, RightExpr >
+{
+    using expression_type = Expression< bool, LeftExpr, RightExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() >=
+        expression_type::template eval<1>(); }
+
+    GreaterOrEqual() = default;
+    GreaterOrEqual( LeftExpr left_expr, RightExpr right_expr ) : 
+        expression_type{ left_expr, right_expr }
+    { }
+};
+
+/**
+ * Represents a lazy sum
+ */
+template< typename Expr1, typename Expr2, typename... Exprs >
+requires same_expression_result_types< Expr1, Expr2, Exprs... >
+struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
+{
+    using expression_type = Expression< result_of< Expr1 >, 
+        Expr1, Expr2, Exprs... >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::fold_left( std::plus<>{}, 
+        additive_identity< typename expression_type::result_type > ); }
+
+    template< size_t I >
+    auto term() { return get< I >( expression_type::exprs ); }
+
+    constexpr Sum() = default;
+    constexpr Sum( tuple< Expr1, Expr2, Exprs... > expr_tuple ) :
+        expression_type{ expr_tuple } 
+    { }
+    constexpr Sum( Expr1 expr1, Expr2 expr2, Exprs... exprs ) : 
+        expression_type{ expr1, expr2, exprs... } 
+    { }
+};
+
+/**
+ * Represents the lazy binary operator-(a,b)
+ * 
+ * TODO: should we have a Difference expression which fold_right's an 
+ * alternating negation? for exmaple:
+ * 
+ * difference( 5, 6, 7, 8, 9 )() == 5 - (6 - (7 - (8 - 9)))
+ *                               == 5 - (6 - (7 - 8 + 9))
+ *                               == 5 - (6 - 7 + 8 - 9)
+ *                               == 5 - 6 + 7 - 8 + 9
+ */
+template< typename MinuendExpr, typename SubtractendExpr >
+requires same_expression_result_types< MinuendExpr, SubtractendExpr >
+struct Difference : Expression< result_of< MinuendExpr >, 
+    MinuendExpr, SubtractendExpr >
+{
+    using expression_type = Expression< result_of< MinuendExpr >, 
+        MinuendExpr, SubtractendExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() - 
+        expression_type::template eval<1>(); }
+
+    MinuendExpr minuend() { return get< 0 >( expression_type::exprs ); }
+    SubtractendExpr subtractend() { return get< 1 >( expression_type::exprs ); }
+
+    Difference() = default;
+    Difference( MinuendExpr minuend_expr, SubtractendExpr subtractend_expr ) :
+        expression_type{ minuend_expr, subtractend_expr }
+    { }
+};
+
+/**
+ * Represents a lazy nullary operator-()
+ */
+template< typename Expr >
+struct Negation : Expression< result_of< Expr >, Expr >
+{
+    using expression_type = Expression< result_of< Expr >, Expr >;
+
+    expression_type::result_type operator()() const
+    { return -expression_type::template eval<0>(); }
+
+    Negation() = default;
+    Negation( Expr expr ) : expression_type{ expr } { }
+};
+
+/**
+ * Represents a lazy product
+ */
+template< typename Expr1, typename Expr2, typename... Exprs >
+requires same_expression_result_types< result_of< Expr1 >, Expr1, Expr2, 
+    Exprs... >
+struct Product : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
+{
+    using expression_type = Expression< result_of< Expr1 >, Expr1, Expr2, 
+        Exprs... >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::fold_left( std::multiplies<>{}, 
+        multiplicative_identity< typename expression_type::result_type > ); }
+
+    Product() = default;
+    constexpr Product( tuple< Expr1, Expr2, Exprs... > expr_tuple ) :
+        expression_type{ expr_tuple } 
+    { }
+    constexpr Product( Expr1 expr1, Expr2 expr2, Exprs... exprs ) : 
+        expression_type{ expr1, expr2, exprs... } 
+    { }
+};
+
+/**
+ * Represents a lazy quotient
+ */
+template< typename NumeratorExpr, typename DenominatorExpr >
+requires same_expression_result_types< NumeratorExpr, DenominatorExpr >
+struct Quotient : Expression< result_of< NumeratorExpr >, 
+    NumeratorExpr, DenominatorExpr >
+{
+    using expression_type = Expression< result_of< NumeratorExpr >, 
+        NumeratorExpr, DenominatorExpr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() / 
+        expression_type::template eval<1>(); }
+
+    Quotient() = default;
+    Quotient( NumeratorExpr numerator_expr, DenominatorExpr denominator_expr ) :
+        expression_type{ numerator_expr, denominator_expr }
+    { }
+};
+
+/**
+ * Represents lazy exponentiation (std::exp)
+ */
+template< typename ExponentExpr >
+struct Exp : Expression< result_of< ExponentExpr >, ExponentExpr >
+{
+    using expression_type = Expression< result_of< ExponentExpr >, 
+        ExponentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::exp( expression_type::template eval<0>() ); }
+
+    Exp() = default;
+    Exp( ExponentExpr exponent_expr ) : expression_type{ exponent_expr } { }
+};
+
+/**
+ * Represents lazy exponentiation (std::log)
+ */
+template< typename ArgumentExpr >
+struct Log : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::log( expression_type::template eval<0>() ); }
+
+    Log() = default;
+    Log( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy power function (std::pow)
+ */
+template< typename BaseExpr, typename ExponentExpr >
+requires same_expression_result_types< BaseExpr, ExponentExpr >
+struct Power : Expression< result_of< BaseExpr >, BaseExpr, ExponentExpr >
+{
+    using expression_type = Expression< result_of< BaseExpr >, 
+        BaseExpr, ExponentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::pow( expression_type::template eval<0>(),
+        expression_type::template eval<1>() ); }
+
+    Power() = default;
+    Power( BaseExpr base_expr, ExponentExpr exponent_expr ) :
+        expression_type{ base_expr, exponent_expr }
+    { }
+};
+
+/**
+ * Represents lazy sine (std::sin)
+ */
+template< typename ArgumentExpr >
+struct Sine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::sin( expression_type::template eval<0>() ); }
+
+    Sine() = default;
+    Sine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy cosine (std::cos)
+ */
+template< typename ArgumentExpr >
+struct Cosine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::cos( expression_type::template eval<0>() ); }
+
+    Cosine() = default;
+    Cosine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy tangent (std::tan)
+ */
+template< typename ArgumentExpr >
+struct Tangent : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::tan( expression_type::template eval<0>() ); }
+
+    Tangent() = default;
+    Tangent( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy arcsine (std::asin)
+ */
+template< typename ArgumentExpr >
+struct Arcsine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::asin( expression_type::template eval<0>() ); }
+
+    Arcsine() = default;
+    Arcsine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy arccosine (std::acos)
+ */
+template< typename ArgumentExpr >
+struct Arccosine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::acos( expression_type::template eval<0>() ); }
+
+    Arccosine() = default;
+    Arccosine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy arctangent (std::atan)
+ */
+template< typename ArgumentExpr >
+struct Arctangent : Expression< result_of< ArgumentExpr >, ArgumentExpr >
+{
+    using expression_type = Expression< result_of< ArgumentExpr >, 
+        ArgumentExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::atan( expression_type::template eval<0>() ); }
+
+    Arctangent() = default;
+    Arctangent( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
+};
+
+/**
+ * Represents lazy arctangent with two arguments (std::atan2)
+ */
+template< typename NumeratorExpr, typename DenominatorExpr >
+requires same_expression_result_types< NumeratorExpr, DenominatorExpr >
+struct Arctangent2 : Expression< result_of< NumeratorExpr >, 
+    NumeratorExpr, DenominatorExpr >
+{
+    using expression_type = Expression< result_of< NumeratorExpr >, 
+        NumeratorExpr, DenominatorExpr >;
+
+    expression_type::result_type operator()() const
+    { return std::atan2( expression_type::template eval<0>(), expression_type::template eval<1>() ); }
+
+    Arctangent2() = default;
+    Arctangent2( NumeratorExpr numerator_expr, DenominatorExpr denominator_expr ) :
+        expression_type{ numerator_expr, denominator_expr }
+    { }
+};
+
+/**
+ * TODO: hyperbolics, error functions, gamma functions
+ */
+
+/**
+ * TODO: integer functions
+ * NOTE: integer functions would require implementing the simplex method in C++ meta-programming... ugh...
+ */
+
+/**
+ * TODO: implement isinf, isnan, etc
+ */
+
+/**
+ * Derivations
+ */
+template< typename >
+struct Derivation;
+
+template< continuous_expression Expr >
+using derive = Derivation< Expr >::type;
+
+template< typename DerivedExpr, typename Var >
+struct PartialDerivation;
+
+template< typename DerivedExpr, typename Var >
+requires ( not depends_on< DerivedExpr, Var > )
+struct PartialDerivation< DerivedExpr, Var >
+{ using type = constant_zero_expr< result_of< DerivedExpr >>; };
+
+template< typename Var >
+struct PartialDerivation< Var, Var >
+{ using type = constant_one_expr< result_of< Var >>; };
+
+template< continuous ResultType, typename... Exprs, typename Var >
+struct PartialDerivation< Expression< ResultType, Exprs... >, Var >
+{ using type = Expression< ResultType, PartialDerivation< Exprs, Var >... >; };
+
+namespace detail {
+
+template< typename Expr >
+struct DerivationOfHelper
+{  
+    using type = derive< Expr >;
+    static constexpr type value( Expr expr )
+    { return { expr }; }
+};
+
+template< typename TupleType, typename Seq >
+struct DerivationOfTuple;
+
+template< typename TupleType, size_t... Is >
+struct DerivationOfTuple< TupleType, seq< Is... >>
+{
+    using type = tuple< derive< tuple_element_t< Is, TupleType >>... >;
+    static constexpr type value( TupleType tup )
+    { return { get< Is >( tup )... }; }
+};
+
+// specialization for tuples
+template< typename... Exprs >
+struct DerivationOfHelper< tuple< Exprs... >> : 
+    public DerivationOfTuple< tuple< Exprs... >, make_seq< sizeof...( Exprs )>>
+{ };
+
+} // namespace detail
+
+template< typename ExprOrTuple >
+constexpr auto derivation_of( ExprOrTuple expr_or_tuple )
+{ return detail::DerivationOfHelper< ExprOrTuple >::value( expr_or_tuple ); }
+
+template< typename Unit, Unit Value >
+struct Derivation< Constant< Unit, Value >> 
+{ using type = constant_zero_expr< Unit >; };
+
+template< typename... Exprs >
+struct Derivation< Sum< Exprs... >> : 
+    Expression< result_of< Sum< Exprs... >>, Sum< derive< Exprs >... >>
+{
+    using function_type = Sum< Exprs... >;
+    using expression_type = 
+        Expression< Sum< derive< Exprs >... >>;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>(); }
+
+    Derivation() = default;
+    // what is a clean way of doing the tuple stuff below?
+    // I think this will happen a lot
+    // f.exprs is a tuple and we want sum_of< derivation_of< Exprs >... >
+    Derivation( function_type const& f ) : 
+        expression_type{ sum_of( derivation_of( f.exprs )) }
+    { }
+};
+
+template< typename MinuendType, typename SubtractendType >
+struct Derivation< Difference< MinuendType, SubtractendType >> :
+    Expression< Difference< derive< MinuendType >, 
+        derive< SubtractendType >>>
+{
+    using function_type = Difference< MinuendType, SubtractendType >;
+    using expression_type = Expression< Difference< 
+        derive< MinuendType >, derive< SubtractendType >>>;
+
+    expression_type::result_type operator()() const 
+    { return expression_type::template eval<0>(); }
+
+    Derivation() = default;
+    Derivation( function_type const& f ) :
+        expression_type{ difference_of( derivation_of( 
+            f.minuend(), f.subtractend() )) }
+    { }
+};
+
+template< typename Expr >
+struct Derivation< Negation< Expr >> : 
+    Expression< Negation< derive< Expr >>>
+{
+    using function_type = Negation< typename Derivation< Expr >::type >;
+
+};
+
+template< typename Expr, typename... Exprs >
+struct Derivation< Product< Expr, Exprs... >>
+{
+    // product rule: d(f*g) = df*g + f*dg
+    using type = Sum< 
+        Product< typename Derivation< Expr >::type, Product< Exprs... >>,
+        Product< Expr, typename Derivation< Product< Exprs... >>::type >>;
+};
+
+template< typename NumeratorExpr, typename DenominatorExpr >
+struct Derivation< Quotient< NumeratorExpr, DenominatorExpr >>
+{
+    // quotient rule: d(f/g) = ( g*df - f*dg ) / ( g * g );
+    using type = Quotient<
+        Difference<
+            Product< typename Derivation< NumeratorExpr >::type, DenominatorExpr >,
+            Product< NumeratorExpr, typename Derivation< DenominatorExpr >::type >>,
+        Product< DenominatorExpr, DenominatorExpr >>;
+};
+
+template< typename Expr >
+struct Derivation< Exp< Expr >>
+{
+    using type = Product< Exp< Expr >, typename Derivation< Expr >::type >;
+};
+
+template< typename Expr >
+struct Derivation< Log< Expr >>
+{
+    using type = Quotient< typename Derivation< Expr >::type, Expr >;
+};
+
+// NOTE: Derivations only defined for constant powers
+// TODO: define derivations for non-constant power expressions
+template< typename BaseExpr, numeric T, T Value >
+struct Derivation< Power< BaseExpr, Constant< T, Value >>>
+{
+    // power rule: d(f^n) == nf^{n-1}df
+    using type = Product< 
+        Constant< T, Value >, 
+        Power< 
+            BaseExpr, 
+            Constant< T, Value - 1 >>,
+        typename Derivation< BaseExpr >::type >;
+    // TODO: ensure the power rule is 
+};
+
+template< typename Expr >
+struct Derivation< Sine< Expr >>
+{
+    using type = Product<
+        Cosine< Expr >,
+        typename Derivation< Expr >::type >;
+};
+
+template< typename Expr >
+struct Derivation< Cosine< Expr >>
+{
+    using type = Negation<
+        Product<
+            Sine< Expr >,
+            typename Derivation< Expr >::type >>;
+};
+
+template< typename Expr >
+struct Derivation< Tangent< Expr >>
+{
+    using type = Quotient<
+        typename Derivation< Expr >::type,
+        Product< Cosine< Expr >, Cosine< Expr >>>;
+};
+
+// TODO: arc-trig functions
+
+// helper functions
+
+/**
+ * Logical Operations
+ */
+template< boolean_expression... Exprs >
+Conjunction< Exprs... > conjunction_of( Exprs... exprs )
+{ return { exprs... }; }
+
+template< boolean_expression... Exprs >
+Disjunction< Exprs... > disjunction_of( Exprs... exprs )
+{ return { exprs... }; }
+
+template< boolean_expression Expr >
+Compliment< Expr > compliment_of( Expr expr )
+{ return { expr }; }
+
+/**
+ * Numeric comparisons
+ */
+template<typename LeftExpr, typename RightExpr >
+Equal< LeftExpr, RightExpr > equal( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+NotEqual< LeftExpr, RightExpr > not_equal( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+Less< LeftExpr, RightExpr > less_than( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+LessOrEqual< LeftExpr, RightExpr > less_than_or_equal( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+Greater< LeftExpr, RightExpr > greater_than( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+GreaterOrEqual< LeftExpr, RightExpr > greater_than_or_equal( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+/**
+ * Mathematical operations
+ */
+template< typename... Exprs >
+Sum< Exprs... > sum_of( Exprs... exprs )
+{ return { exprs... }; }
+
+template< typename MinuendExpr, typename SubtractendExpr >
+Difference< MinuendExpr, SubtractendExpr > difference_of( MinuendExpr minuend_expr, SubtractendExpr subtractend_expr )
+{ return { minuend_expr, subtractend_expr }; }
+
+template< typename Expr >
+Negation< Expr > negation_of( Expr expr )
+{ return { expr }; }
+
+template< typename... Exprs >
+Product< Exprs... > product_of( Exprs... exprs )
+{ return { exprs... }; }
+
+template< typename NumeratorExpr,
+    typename DenominatorExpr >
+Quotient< NumeratorExpr, DenominatorExpr > quotient_of( 
+    NumeratorExpr numerator_expr, DenominatorExpr denominator_expr )
+{ return { numerator_expr, denominator_expr }; }
+
+template< typename ExponentExpr >
+Exp< ExponentExpr > exp_of( ExponentExpr exponent_expr )
+{ return { exponent_expr }; }
+
+template< typename ArgumentExpr >
+Log< ArgumentExpr > log_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename BaseExpr,
+    typename ExponentExpr >
+Power< BaseExpr, ExponentExpr > power_of( BaseExpr base_expr, 
+    ExponentExpr exponent_expr )
+{ return { base_expr, exponent_expr }; }
+
+template< typename ArgumentExpr >
+Sine< ArgumentExpr > sine_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Cosine< ArgumentExpr > cosine_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Tangent< ArgumentExpr > tangent_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arcsine< ArgumentExpr > arcsine_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arccosine< ArgumentExpr > arccosine_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arctangent< ArgumentExpr > arctangent_of( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename NumeratorExpr,
+    typename DenominatorExpr >
+Arctangent2< NumeratorExpr, DenominatorExpr > arctangent2_of( 
+    NumeratorExpr numerator_expr, DenominatorExpr denominator_expr )
+{ return { numerator_expr, denominator_expr }; }
+
+
+namespace operators {
+
+/**
+ * Logical 
+ */
+template< typename LeftExpr, typename RightExpr >
+Conjunction< LeftExpr, RightExpr > operator and( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template< typename LeftExpr, typename RightExpr >
+Disjunction< LeftExpr, RightExpr > operator or(
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template< typename Expr >
+Compliment< Expr > operator!( Expr expr )
+{ return { expr }; }
+
+/**
+ * Numeric comparisons
+ */
+template<typename LeftExpr, typename RightExpr >
+Equal< LeftExpr, RightExpr > operator ==( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+NotEqual< LeftExpr, RightExpr > operator !=( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+Less< LeftExpr, RightExpr > operator <( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+LessOrEqual< LeftExpr, RightExpr > operator <=( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+Greater< LeftExpr, RightExpr > operator >( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template<typename LeftExpr, typename RightExpr >
+GreaterOrEqual< LeftExpr, RightExpr > operator <=( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+/**
+ * Mathematical operations
+ */
+template< typename LeftExpr, typename RightExpr >
+Sum< LeftExpr, RightExpr > operator + ( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template< typename MinuendExpr, typename SubtractendExpr >
+Difference< MinuendExpr, SubtractendExpr > operator - ( MinuendExpr minuend_expr, SubtractendExpr subtractend_expr )
+{ return { minuend_expr, subtractend_expr }; }
+
+template< typename Expr >
+Negation< Expr > operator - ( Expr expr )
+{ return { expr }; }
+
+template< typename LeftExpr, typename RightExpr >
+Product< LeftExpr, RightExpr > operator * ( 
+    LeftExpr left_expr, RightExpr right_expr )
+{ return { left_expr, right_expr }; }
+
+template< typename NumeratorExpr,
+    typename DenominatorExpr >
+Quotient< NumeratorExpr, DenominatorExpr > operator / ( 
+    NumeratorExpr numerator_expr, DenominatorExpr denominator_expr )
+{ return { numerator_expr, denominator_expr }; }
+
+template< typename ExponentExpr >
+Exp< ExponentExpr > exp( ExponentExpr exponent_expr )
+{ return { exponent_expr }; }
+
+template< typename ArgumentExpr >
+Log< ArgumentExpr > log( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename BaseExpr,
+    typename ExponentExpr >
+Power< BaseExpr, ExponentExpr > pow( BaseExpr base_expr, 
+    ExponentExpr exponent_expr )
+{ return { base_expr, exponent_expr }; }
+
+template< typename ArgumentExpr >
+Sine< ArgumentExpr > sin( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Cosine< ArgumentExpr > cos( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Tangent< ArgumentExpr > tan( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arcsine< ArgumentExpr > asin( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arccosine< ArgumentExpr > acos( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename ArgumentExpr >
+Arctangent< ArgumentExpr > atan( ArgumentExpr argument_expr )
+{ return { argument_expr }; }
+
+template< typename NumeratorExpr,
+    typename DenominatorExpr >
+Arctangent2< NumeratorExpr, DenominatorExpr > atan2( 
+    NumeratorExpr numerator_expr, DenominatorExpr denominator_expr )
+{ return { numerator_expr, denominator_expr }; }
+
+} // namespace operators
 
 } // namespace expressions
 
