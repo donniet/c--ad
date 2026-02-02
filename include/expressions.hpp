@@ -219,7 +219,6 @@ static constexpr bool is_constant = detail::IsConstant< Expr >::value;
 
 namespace detail {
 
-
 /**
  * stores and retrieves a variable value.  
  * 
@@ -327,16 +326,137 @@ struct DependsOn< Expression< ResultType, Exprs... >, Variable< T, Is... >>
 { static constexpr bool value = 
     ( ... or DependsOn< Exprs, Variable< T, Is... > >::value ); };
 
-template< typename Expr >
-struct MaximumVariableIndexSizeHelper;
 
-template< typename Expr, size_t maximum_index_size >
+/**
+ * Visits the Expr at compile time and returns the maximum address size
+ */
+template< typename Expr >
+struct MaximumVariableAddressSizeHelper
+{ static constexpr size_t value = 0; /* default to no variables found */ };
+
+template< typename T, size_t... Is >
+struct MaximumVariableAddressSizeHelper< Variable< T, Is... >>
+{ static constexpr size_t value = sizeof...( Is ); /* default to no variables found */ };
+
+template< typename ResultType, typename... Exprs >
+struct MaximumVariableAddressSizeHelper< Expression< ResultType, Exprs... >>
+{ static constexpr size_t value = 
+    max_v< MaximumVariableAddressSizeHelper< Exprs >::value... >; };
+
+#ifndef NDEBUG
+namespace test {
+static_assert( MaximumVariableAddressSizeHelper< 
+    constant_zero_expr< double >>::value == 0 );
+static_assert( MaximumVariableAddressSizeHelper< 
+    Variable< double, 0 >>::value == 1 );
+static_assert( MaximumVariableAddressSizeHelper< 
+    Variable< double, 0, 0 >>::value == 2 );
+static_assert( MaximumVariableAddressSizeHelper< Expression< double, 
+    Variable< double, 0 >, Variable< double, 0, 0 >, 
+    Variable< double, 0, 0, 0 >>>::value == 3 );
+} // namespace test
+#endif
+
+template< typename Expr, size_t address_component >
+struct MaximumVariableAddressAtComponent
+{ static constexpr size_t value = 0; };
+
+template< typename T, size_t... Is, size_t address_component >
+requires ( address_component < sizeof...( Is ))
+struct MaximumVariableAddressAtComponent< Variable< T, Is... >, 
+    address_component >
+{ static constexpr size_t value = 
+    sequence_at< address_component, seq< Is... >>; };
+
+template< typename T, size_t... Is, size_t address_component >
+requires ( address_component >= sizeof...( Is ))
+struct MaximumVariableAddressAtComponent< Variable< T, Is... >, 
+    address_component >
+{ static constexpr size_t value = 0; };
+
+template< typename ReturnType, typename... Exprs, size_t address_component >
+struct MaximumVariableAddressAtComponent< Expression< ReturnType, Exprs... >, 
+    address_component >
+{ static constexpr size_t value = 
+    max_v< MaximumVariableAddressAtComponent< Exprs, address_component >::value... >; };
+
+#ifndef NDEBUG
+namespace test {
+static_assert( MaximumVariableAddressAtComponent< 
+    constant_zero_expr< double >, 0 >::value == 0 );
+static_assert( MaximumVariableAddressAtComponent< 
+    Variable< double, 0 >, 0 >::value == 0 );
+static_assert( MaximumVariableAddressAtComponent< 
+    Variable< double, 1 >, 0 >::value == 1 );
+static_assert( MaximumVariableAddressAtComponent< Expression< double, 
+    Variable< double, 0 >, Variable< double, 1, 0 >, 
+    Variable< double, 2, 3, 0 >>, 0 >::value == 2 );
+static_assert( MaximumVariableAddressAtComponent< Expression< double, 
+    Variable< double, 0 >, Variable< double, 1, 0 >, 
+    Variable< double, 2, 3, 0 >>, 1 >::value == 3 );
+} // namespace test
+#endif
+
+template< typename Expr, typename IndexSeq >
 struct MaximumVariableIndicesSeqHelper;
 
-template< typename Expr, typename MaximumIndicesSeq >
-struct DependentVariablesTupleTypeHelper;
+template< typename Expr, size_t... Is >
+struct MaximumVariableIndicesSeqHelper< Expr, seq< Is... >>
+{ using type = seq< MaximumVariableAddressAtComponent< Expr, Is >::value... >; };
+
+template< typename T, size_t... Js, size_t... Is >
+struct MaximumVariableIndicesSeqHelper< Variable< T, Js... >, seq< Is... >>
+{ using type = seq< sequence_at< Is, seq< Js...>>... >; };
+
+#ifndef NDEBUG
+namespace test {
+static_assert( std::is_same_v< MaximumVariableIndicesSeqHelper< 
+    Variable< double, 6, 1, 2 >, seq< 0, 1, 2 >>::type, seq< 6, 1, 2 >> );
+} // namespace test
+#endif
+
+template< typename Expr >
+struct DependentVariablesTupleTypeHelper
+{ using type = tuple< >; };
+
+template< typename ResultType, typename... Exprs >
+struct DependentVariablesTupleTypeHelper< Expression< ResultType, Exprs... >>
+{ using type = TupleUnique< tuple_cat_t< 
+    typename DependentVariablesTupleTypeHelper< Exprs >::type... >>::type; };
+
+template< typename T, size_t... Is >
+struct DependentVariablesTupleTypeHelper< Variable< T, Is... >>
+{ using type = tuple< Variable< T, Is... >>; };
 
 } // namespace detail
+
+/**
+ * Returns a tuple of variable types the expression depends on
+ * 
+ * @tparam Expr is the expression type
+ * @returns a tuple of unique variable types
+ */
+template< typename Expr >
+using dependent_variable_tuple = 
+    detail::DependentVariablesTupleTypeHelper< Expr >::type;
+
+#ifndef NDEBUG
+namespace test {
+static_assert( is_same_v< tuple<>, dependent_variable_tuple<
+    Expression< int, constant_one_expr< int >>>> );
+static_assert( is_same_v< tuple< Variable< int, 1 >>, dependent_variable_tuple<
+    Expression< int, Variable< int, 1 >>>> );
+static_assert( is_same_v< tuple< Variable< int, 1 >>, dependent_variable_tuple<
+    Expression< int, Variable< int, 1 >, Variable< int, 1 >>>> );
+static_assert( is_same_v< tuple< Variable< int, 1 >>, dependent_variable_tuple<
+    Expression< int, Variable< int, 1 >, 
+        Expression< int, Variable< int, 1 >>>>> );
+static_assert( is_same_v< tuple< Variable< int, 1 >, Variable< int, 2 >>, 
+    dependent_variable_tuple<
+        Expression< int, Variable< int, 1 >, 
+            Expression< int, Variable< int, 2 >>>>> );
+} // namespace test
+#endif
 
 /**
  * Predicate to determine if an Expression<...> type is dependent on a 
@@ -352,17 +472,16 @@ static constexpr bool depends_on = detail::DependsOn< Expr, Var >::value;
 template< typename Expr >
 struct ExpressionTraits
 {
-    static constexpr size_t maximum_variable_index_size = 
-        detail::MaximumVariableIndexSizeHelper< Expr >::value;
+    static constexpr size_t maximum_variable_address_size = 
+        detail::MaximumVariableAddressSizeHelper< Expr >::value;
     
     using maximum_variable_indices_seq = 
         detail::MaximumVariableIndicesSeqHelper< Expr, 
-            maximum_variable_index_size >::type;
+            make_seq< maximum_variable_address_size >>::type;
   
     // tuple type referencing all types and addresses of variables found in Expr
     using dependent_variables_tuple_type = 
-        detail::DependentVariablesTupleTypeHelper< Expr, 
-            maximum_variable_indices_seq >;
+        detail::DependentVariablesTupleTypeHelper< Expr >::type;
 };
 
 /**

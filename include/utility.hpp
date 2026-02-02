@@ -8,6 +8,9 @@
 #include <type_traits>
 
 using std::size_t;
+using std::tuple;
+using std::tuple_cat;
+using std::is_same_v;
 
 /**
  * math utilities
@@ -250,6 +253,22 @@ static_assert( std::is_same_v< std::index_sequence< 0, 1, 2, 3 >,
 } // namespace test
 #endif
 
+template< size_t index, typename Seq >
+struct sequence_at_helper;
+
+template< size_t index, size_t I, size_t... Is >
+struct sequence_at_helper< index, seq< I, Is... >>
+{ static constexpr size_t value = 
+    sequence_at_helper< index-1, seq< Is... >>::value; };
+
+template< size_t I, size_t... Is >
+struct sequence_at_helper< 0, seq< I, Is... >>
+{ static constexpr size_t value = I; };
+
+template< size_t index, typename Seq >
+static constexpr size_t sequence_at = sequence_at_helper< index, Seq >::value;
+
+
 
 /**
  * Tuple helpers
@@ -404,5 +423,56 @@ remove_nth( PackType const& pack )
     static constexpr size_t pack_size = PackSize< PackType >::size;
     return detail::pack_remove_nth_helper< N >( pack, std::make_index_sequence< pack_size >{} ); 
 }
+
+template< typename... TupleTypes >
+struct TupleCat;
+
+template< typename... Ts >
+struct TupleCat< tuple< Ts... >>
+{ using type = tuple< Ts... >; };
+
+template< typename... Ts, typename... Us, typename... Rest >
+struct TupleCat< tuple< Ts... >, tuple< Us... >, Rest... >
+{ using type = TupleCat< tuple< Ts..., Us... >, Rest... >::type; };
+
+template< typename... TupleTypes >
+using tuple_cat_t = TupleCat< TupleTypes... >::type;
+
+template< typename TupleType >
+struct TupleUnique;
+
+template<>
+struct TupleUnique< tuple<> >
+{ using type = tuple<>; };
+
+template< typename T >
+struct TupleUnique< tuple< T >>
+{ using type = tuple< T >; };
+
+template< typename T, typename... Ts >
+requires ( ... and not is_same_v< T, Ts > )
+struct TupleUnique< tuple< T, Ts... >>
+{ using type = tuple_cat_t< tuple< T >, 
+    typename TupleUnique< tuple< Ts... >>::type >; };
+
+template< typename T, typename... Ts >
+requires ( ... or is_same_v< T, Ts > )
+struct TupleUnique< tuple< T, Ts... >>
+{ using type = TupleUnique< tuple< Ts... >>::type; };
+
+#ifndef NDEBUG
+namespace test {
+static_assert( is_same_v< 
+    tuple< double >, 
+    TupleUnique< tuple< double, double >>::type > );
+static_assert( is_same_v< 
+    tuple< int, double >, 
+    TupleUnique< tuple< double, int, double >>::type > );
+static_assert( is_same_v< 
+    tuple< int, float, double >, 
+    TupleUnique< tuple< double, int, float, float, float, double >>::type > );
+} // namespace test
+#endif
+
 
 #endif
