@@ -103,26 +103,6 @@ template< typename Unit >
 concept boolean_or_numeric = std::is_same_v< bool, Unit > or numeric< Unit >;
 
 /**
- * identities
- * 
- * TODO: where should these go? here, units.hpp, someplace else?
- */
-template< typename Unit >
-struct AdditiveIdentity
-{ static constexpr Unit value = 0; };
-
-template< typename Unit >
-struct MultiplicativeIdentity
-{ static constexpr Unit value = 1; };
-
-template< typename Unit >
-static constexpr auto additive_identity = AdditiveIdentity< Unit >::value;
-
-template< typename Unit >
-static constexpr auto multiplicative_identity = 
-    MultiplicativeIdentity< Unit >::value;
-
-/**
  * Base class for all expressions
  */
 template< typename ResultType, typename... Exprs >
@@ -538,6 +518,86 @@ struct Compliment : Expression< bool, Expr >
     Compliment( Expr expr ) : expression_type{ expr } { }
 };
 
+
+namespace detail {
+/**
+ * Conjunction details
+ */
+template< typename... Exprs >
+struct ConjunctionHelper
+{ using type = Conjunction< Exprs... >; };
+
+// if any expression is false the conjunction is false (left)
+template< typename... Exprs >
+struct ConjunctionHelper< Constant< bool, false >, Exprs... >
+{ using type = Constant< bool, false >; };
+
+// if the first expression is true, the result is the conjunction of the 
+// remaining expressions
+template< typename... Exprs >
+struct ConjunctionHelper< Constant< bool, true >, Exprs... >
+{ using type = ConjunctionHelper< Exprs... >::type; };
+
+// if any expression is false, the conjunction is false (right)
+template< typename Expr >
+struct ConjunctionHelper< Expr, Constant< bool, false >>
+{ using type = Constant< bool, false >; };
+
+// if it's a single constant value, then the conjunction is the value
+template< bool Value >
+struct ConjunctionHelper< Constant< bool, Value >>
+{ using type = Constant< bool, Value >; };
+
+/**
+ * Disjunction details
+ */
+template< typename... Exprs >
+struct DisjunctionHelper
+{ using type = Disjunction< Exprs... >; };
+
+// if any expression is true the disjunction is true (left)
+template< typename... Exprs >
+struct DisjunctionHelper< Constant< bool, true >, Exprs... >
+{ using type = Constant< bool, true >; };
+
+// if any expression is true the disjunction is true (right)
+template< typename Expr >
+struct DisjunctionHelper< Expr, Constant< bool, true >>
+{ using type = Constant< bool, true >; };
+
+// if the first expression is false, the value is the disjunction of the 
+// remaining expressions
+template< typename... Exprs >
+struct DisjunctionHelper< Constant< bool, false >, Exprs... >
+{ using type = DisjunctionHelper< Exprs... >::type; };
+
+// a disjunction of a constant is the constant itself
+template< bool Value >
+struct DisjunctionHelper< Constant< bool, Value >>
+{ using type = Constant< bool, Value >; };
+
+template< typename Expr >
+struct ComplimentHelper
+{ using type = Compliment< Expr >; };
+
+template< >
+struct ComplimentHelper< Constant< bool, true >>
+{ using type = Constant< bool, false >; };
+
+template< >
+struct ComplimentHelper< Constant< bool, false >>
+{ using type = Constant< bool, true >; };
+} // namespace detail
+
+template< typename... Exprs >
+using conjunction_t = detail::ConjunctionHelper< Exprs... >::type;
+
+template< typename... Exprs >
+using disjunction_t = detail::DisjunctionHelper< Exprs... >::type;
+
+template< typename Expr >
+using compliment_t = detail::ComplimentHelper< Expr >::type;
+
 /**
  * Represents a lazily evaluated operator==
  */
@@ -652,12 +712,79 @@ struct GreaterOrEqual : Expression< bool, LeftExpr, RightExpr >
     { }
 };
 
+namespace detail {
+template< typename LeftExpr, typename RightExpr >
+struct EqualHelper
+{ using type = Equal< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct EqualHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue == RightValue )>; };
+
+template< typename LeftExpr, typename RightExpr >
+struct NotEqualHelper
+{ using type = NotEqual< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct NotEqualHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue != RightValue )>; };
+
+template< typename LeftExpr, typename RightExpr >
+struct LessHelper
+{ using type = Less< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct LessHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue < RightValue )>; };
+
+template< typename LeftExpr, typename RightExpr >
+struct LessOrEqualHelper
+{ using type = LessOrEqual< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct LessOrEqualHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue <= RightValue )>; };
+
+template< typename LeftExpr, typename RightExpr >
+struct GreaterHelper
+{ using type = Greater< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct GreaterHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue > RightValue )>; };
+
+template< typename LeftExpr, typename RightExpr >
+struct GreaterOrEqualHelper
+{ using type = GreaterOrEqual< LeftExpr, RightExpr >; };
+
+template< typename T, T LeftValue, T RightValue >
+struct GreaterOrEqualHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
+{ using type = Constant< bool, ( LeftValue >= RightValue )>; };
+} // namespace detail
+
+template< typename LeftExpr, typename RightExpr >
+using equal_t = detail::EqualHelper< LeftExpr, RightExpr >::type;
+
+template< typename LeftExpr, typename RightExpr >
+using not_equal_t = detail::NotEqualHelper< LeftExpr, RightExpr >::type;
+
+template< typename LeftExpr, typename RightExpr >
+using less_t = detail::LessHelper< LeftExpr, RightExpr >::type;
+
+template< typename LeftExpr, typename RightExpr >
+using less_or_equal_t = detail::LessOrEqualHelper< LeftExpr, RightExpr >::type;
+
+template< typename LeftExpr, typename RightExpr >
+using greater_t = detail::GreaterHelper< LeftExpr, RightExpr >::type;
+
+template< typename LeftExpr, typename RightExpr >
+using greater_or_equal_t = detail::GreaterOrEqualHelper< LeftExpr, RightExpr >::type;
+
 /**
  * Represents a lazy sum
  */
 template< typename Expr1, typename Expr2, typename... Exprs >
-// TODO: fix the requires expression
-// requires same_expression_result_types< Expr1, Expr2, Exprs... >
+requires same_expression_result_types< Expr1, Expr2, Exprs... >
 struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
 {
     using expression_type = Expression< result_of< Expr1 >, 
@@ -1105,6 +1232,19 @@ struct Arcsine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Arcsine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
 
+namespace detail {
+template< typename ArgumentExpr >
+struct ArcsineHelper
+{ using type = Arcsine< ArgumentExpr >; };
+
+template< typename T >
+struct ArcsineHelper< constant_zero_expr< T >>
+{ using type = constant_zero_expr< T >; };
+} // namespace detail
+
+template< typename ArgumentExpr >
+using arcsine_t = detail::ArcsineHelper< ArgumentExpr >::type;
+
 /**
  * Represents lazy arccosine (std::acos)
  */
@@ -1121,6 +1261,18 @@ struct Arccosine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Arccosine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
 
+namespace detail {
+template< typename ArgumentExpr >
+struct ArccosineHelper
+{ using type = Arccosine< ArgumentExpr >; };
+
+// TODO: arccos(0) == pi/2
+
+} // namespace detail
+
+template< typename ArgumentExpr >
+using arccosine_t = detail::ArccosineHelper< ArgumentExpr >::type;
+
 /**
  * Represents lazy arctangent (std::atan)
  */
@@ -1136,6 +1288,19 @@ struct Arctangent : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Arctangent() = default;
     Arctangent( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
+
+namespace detail {
+template< typename ArgumentExpr >
+struct ArctangentHelper
+{ using type = Arctangent< ArgumentExpr >; };
+
+template< typename T >
+struct ArctangentHelper< constant_zero_expr< T >>
+{ using type = constant_zero_expr< T >; };
+} // namespace detail
+
+template< typename ArgumentExpr >
+using arctangent_t = detail::ArctangentHelper< ArgumentExpr >::type;
 
 /**
  * Represents lazy arctangent with two arguments (std::atan2)
@@ -1178,15 +1343,15 @@ struct Arctangent2 : Expression< result_of< NumeratorExpr >,
  * Logical Operations
  */
 template< boolean_expression... Exprs >
-Conjunction< Exprs... > conjunction_of( Exprs... exprs )
+conjunction_t< Exprs... > conjunction_of( Exprs... exprs )
 { return { exprs... }; }
 
 template< boolean_expression... Exprs >
-Disjunction< Exprs... > disjunction_of( Exprs... exprs )
+disjunction_t< Exprs... > disjunction_of( Exprs... exprs )
 { return { exprs... }; }
 
 template< boolean_expression Expr >
-Compliment< Expr > compliment_of( Expr expr )
+compliment_t< Expr > compliment_of( Expr expr )
 { return { expr }; }
 
 /**
@@ -1513,6 +1678,7 @@ Disjunction< LeftExpr, RightExpr > operator or(
 template< typename Expr >
 Compliment< Expr > operator!( Expr expr )
 { return { expr }; }
+
 
 /**
  * Numeric comparisons
