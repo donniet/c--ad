@@ -66,8 +66,10 @@ concept expression_of = Expr::is_expression and
 
 template< typename Expr, typename... Exprs >
 struct SameExpressionResultTypes
-{ static constexpr bool value = ( std::is_same_v< typename Expr::result_type, 
-        typename Exprs::result_type > and ... ); };
+{ static constexpr bool value = 
+    ( ... and is_same_v< typename Expr::result_type, 
+        typename Exprs::result_type > ); };
+
 
 template< typename Expr >
 struct SameExpressionResultTypes< Expr >
@@ -293,7 +295,7 @@ struct Variable : public Expression< T >
     static constexpr bool is_variable = true;
     using unique_identifier = seq< I, Is... >;
     using expression_type = Expression< T >;
-    using value_type = T;
+    using result_type = T;
 
     // DT: weird having a const setter, isn't it? see set_variable_value...
     constexpr void set( T value ) const
@@ -320,9 +322,13 @@ template< boolean_or_numeric T, size_t... Is >
 struct DependsOn< Variable< T, Is... >, Variable< T, Is... >>
 { static constexpr bool value = true; };
 
-template< typename ResultType, typename... Exprs, 
+template< boolean_or_numeric T, size_t... Is, size_t... Js >
+struct DependsOn< Variable< T, Is... >, Variable< T, Js... >>
+{ static constexpr bool value = false; };
+
+template< template< typename... > class Op, typename... Exprs, 
     boolean_or_numeric T, size_t... Is >
-struct DependsOn< Expression< ResultType, Exprs... >, Variable< T, Is... >>
+struct DependsOn< Op< Exprs... >, Variable< T, Is... >>
 { static constexpr bool value = 
     ( ... or DependsOn< Exprs, Variable< T, Is... > >::value ); };
 
@@ -650,7 +656,8 @@ struct GreaterOrEqual : Expression< bool, LeftExpr, RightExpr >
  * Represents a lazy sum
  */
 template< typename Expr1, typename Expr2, typename... Exprs >
-requires same_expression_result_types< Expr1, Expr2, Exprs... >
+// TODO: fix the requires expression
+// requires same_expression_result_types< Expr1, Expr2, Exprs... >
 struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
 {
     using expression_type = Expression< result_of< Expr1 >, 
@@ -658,7 +665,7 @@ struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
 
     expression_type::result_type operator()() const
     { return expression_type::fold_left( std::plus<>{}, 
-        additive_identity< typename expression_type::result_type > ); }
+        constant_zero< typename expression_type::result_type > ); }
 
     template< size_t I >
     auto term() { return get< I >( expression_type::exprs ); }
@@ -672,6 +679,61 @@ struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
     { }
 };
 
+namespace detail {
+template< typename... Exprs >
+struct SumHelper
+{ using type = Sum< Exprs... >; };
+
+template< typename Expr >
+struct SumHelper< Expr >
+{ using type = Expr; };
+
+template< typename T, T... Values >
+struct SumHelper< Constant< T, Values >... >
+{ using type = Constant< T, ( ... + Values )>; };
+
+template< typename Expr, typename T >
+requires( not is_constant< Expr >)
+struct SumHelper< Expr, constant_zero_expr< T >>
+{ using type = Expr; };
+
+template< typename T, typename Expr, typename... Exprs >
+requires( not is_constant< Expr >)
+struct SumHelper< constant_zero_expr< T >, Expr, Exprs... >
+{ using type = SumHelper< Exprs... >::type; };
+} // namespace detail
+
+template< typename... Exprs >
+using sum_t = detail::SumHelper< Exprs... >::type;
+
+/**
+ * Represents a lazy nullary operator-()
+ */
+template< typename Expr >
+struct Negation : Expression< result_of< Expr >, Expr >
+{
+    using expression_type = Expression< result_of< Expr >, Expr >;
+
+    expression_type::result_type operator()() const
+    { return -expression_type::template eval<0>(); }
+
+    Negation() = default;
+    Negation( Expr expr ) : expression_type{ expr } { }
+};
+
+namespace detail {
+template< typename Expr >
+struct NegationHelper
+{ using type = Negation< Expr >; };
+
+template< typename T, T Value >
+struct NegationHelper< Constant< T, Value >>
+{ using type = Constant< T, -Value >; };
+} // namespace detail
+
+template< typename Expr >
+using negation_t = detail::NegationHelper< Expr >::type;
+
 /**
  * Represents the lazy binary operator-(a,b)
  * 
@@ -684,7 +746,8 @@ struct Sum : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
  *                               == 5 - 6 + 7 - 8 + 9
  */
 template< typename MinuendExpr, typename SubtractendExpr >
-requires same_expression_result_types< MinuendExpr, SubtractendExpr >
+// TODO: fix the requires expression
+// requires same_expression_result_types< MinuendExpr, SubtractendExpr >
 struct Difference : Expression< result_of< MinuendExpr >, 
     MinuendExpr, SubtractendExpr >
 {
@@ -704,27 +767,38 @@ struct Difference : Expression< result_of< MinuendExpr >,
     { }
 };
 
-/**
- * Represents a lazy nullary operator-()
- */
+namespace detail {
+template< typename MinuendExpr, typename SubtractendExpr >
+struct DifferenceHelper
+{ using type = Difference< MinuendExpr, SubtractendExpr >; };
+
+template< typename MinuendExpr, typename T >
+requires( not is_constant< MinuendExpr >)
+struct DifferenceHelper< MinuendExpr, constant_zero_expr< T >>
+{ using type = MinuendExpr; };
+
+template< typename T, typename MinuendExpr >
+struct DifferenceHelper< constant_zero_expr< T >, MinuendExpr >
+{ using type = negation_t< MinuendExpr >; };
+
+template< typename T, T MinuendValue, T SubtractendValue >
+struct DifferenceHelper< Constant< T, MinuendValue >, 
+    Constant< T, SubtractendValue >>
+{ using type = Constant< T, MinuendValue - SubtractendValue >; };
+
 template< typename Expr >
-struct Negation : Expression< result_of< Expr >, Expr >
-{
-    using expression_type = Expression< result_of< Expr >, Expr >;
+struct DifferenceHelper< Expr, Expr >
+{ using type = constant_zero_expr< result_of< Expr >>; };
+} // namespace detail
 
-    expression_type::result_type operator()() const
-    { return -expression_type::template eval<0>(); }
-
-    Negation() = default;
-    Negation( Expr expr ) : expression_type{ expr } { }
-};
+template< typename... Exprs >
+using difference_t = detail::DifferenceHelper< Exprs... >::type;
 
 /**
  * Represents a lazy product
  */
 template< typename Expr1, typename Expr2, typename... Exprs >
-requires same_expression_result_types< result_of< Expr1 >, Expr1, Expr2, 
-    Exprs... >
+requires same_expression_result_types< Expr1, Expr2, Exprs... >
 struct Product : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
 {
     using expression_type = Expression< result_of< Expr1 >, Expr1, Expr2, 
@@ -732,7 +806,7 @@ struct Product : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
 
     expression_type::result_type operator()() const
     { return expression_type::fold_left( std::multiplies<>{}, 
-        multiplicative_identity< typename expression_type::result_type > ); }
+        constant_one< typename expression_type::result_type > ); }
 
     Product() = default;
     constexpr Product( tuple< Expr1, Expr2, Exprs... > expr_tuple ) :
@@ -742,6 +816,39 @@ struct Product : Expression< result_of< Expr1 >, Expr1, Expr2, Exprs... >
         expression_type{ expr1, expr2, exprs... } 
     { }
 };
+
+namespace detail {
+template< typename... Exprs >
+struct ProductHelper
+{ using type = Product< Exprs... >; };
+
+template< typename Expr >
+struct ProductHelper< Expr >
+{ using type = Expr; };
+
+template< typename T, T... Values >
+struct ProductHelper< Constant< T, Values >... >
+{ using type = Constant< T, ( ... * Values )>; };
+
+template< typename T, typename... Exprs >
+struct ProductHelper< constant_zero_expr< T >, Exprs... >
+{ using type = constant_zero_expr< T >; };
+
+template< typename T, typename... Exprs >
+struct ProductHelper< constant_one_expr< T >, Exprs... >
+{ using type = ProductHelper< Exprs... >::type; };
+
+template< typename Expr, typename T >
+struct ProductHelper< Expr, constant_zero_expr< T >>
+{ using type = constant_zero_expr< T >; };
+
+template< typename Expr, typename T >
+struct ProductHelper< Expr, constant_one_expr< T >>
+{ using type = Expr; };
+} // namespace detail
+
+template< typename... Exprs >
+using product_t = detail::ProductHelper< Exprs... >::type;
 
 /**
  * Represents a lazy quotient
@@ -764,6 +871,25 @@ struct Quotient : Expression< result_of< NumeratorExpr >,
     { }
 };
 
+namespace detail {
+template< typename NumeratorExpr, typename DenominatorExpr >
+struct QuotientHelper
+{ using type = Quotient< NumeratorExpr, DenominatorExpr >; };
+
+template< typename NumeratorExpr, typename T >
+struct QuotientHelper< NumeratorExpr, constant_one_expr< T >>
+{ using type = NumeratorExpr; };
+
+template< typename T, typename DenominatorExpr >
+struct QuotientHelper< constant_zero_expr< T >, DenominatorExpr >
+{ using type = constant_zero_expr< T >; };
+
+// TODO: handle infinities and div-by-zero
+} // namespace detail
+
+template< typename NumeratorExpr, typename DenominatorExpr >
+using quotient_t = detail::QuotientHelper< NumeratorExpr, DenominatorExpr >::type;
+
 /**
  * Represents lazy exponentiation (std::exp)
  */
@@ -780,6 +906,19 @@ struct Exp : Expression< result_of< ExponentExpr >, ExponentExpr >
     Exp( ExponentExpr exponent_expr ) : expression_type{ exponent_expr } { }
 };
 
+namespace detail {
+template< typename ExponentExpr >
+struct ExpHelper
+{ using type = Exp< ExponentExpr >; };
+
+template< typename T, T Value >
+struct ExpHelper< Constant< T, Value >>
+{ using type = Constant< T, std::exp( Value ) >; };
+} //namespace detail
+
+template< typename ExponentExpr >
+using exp_t = detail::ExpHelper< ExponentExpr >::type;
+
 /**
  * Represents lazy exponentiation (std::log)
  */
@@ -795,6 +934,19 @@ struct Log : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Log() = default;
     Log( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
+
+namespace detail {
+template< typename ArgumentExpr >
+struct LogHelper
+{ using type = Log< ArgumentExpr >; };
+
+template< typename T, T Value >
+struct LogHelper< Constant< T, Value >>
+{ using type = Constant< T, std::log( Value ) >; };
+} //namespace detail
+
+template< typename ArgumentExpr >
+using log_t = detail::LogHelper< ArgumentExpr >::type;
 
 /**
  * Represents lazy power function (std::pow)
@@ -816,6 +968,40 @@ struct Power : Expression< result_of< BaseExpr >, BaseExpr, ExponentExpr >
     { }
 };
 
+namespace detail {
+template< typename BaseExpr, typename ExponentExpr >
+struct PowerHelper
+{ using type = Power< BaseExpr, ExponentExpr >; };
+
+template< typename T, typename ExponentExpr >
+requires( not is_constant< ExponentExpr >)
+struct PowerHelper< constant_zero_expr< T >, ExponentExpr >
+{ using type = constant_zero_expr< T >; };
+
+template< typename T, typename ExponentExpr >
+requires( not is_constant< ExponentExpr >)
+struct PowerHelper< constant_one_expr< T >, ExponentExpr >
+{ using type = constant_one_expr< T >; };
+
+template< typename BaseExpr, typename T >
+requires( not is_constant< BaseExpr >)
+struct PowerHelper< BaseExpr, constant_zero_expr< T >>
+{ using type = constant_one_expr< T >; };
+
+template< typename BaseExpr, typename T >
+requires( not is_constant< BaseExpr >)
+struct PowerHelper< BaseExpr, constant_one_expr< T >>
+{ using type = BaseExpr; };
+
+template< typename T, T BaseValue, T ExponentValue >
+struct PowerHelper< Constant< T, BaseValue >, Constant< T, ExponentValue >>
+{ using type = Constant< T, std::pow( BaseValue, ExponentValue )>; };
+
+} // namespace detail
+
+template< typename BaseExpr, typename ExponentExpr >
+using power_t = detail::PowerHelper< BaseExpr, ExponentExpr >::type;
+
 /**
  * Represents lazy sine (std::sin)
  */
@@ -831,6 +1017,19 @@ struct Sine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Sine() = default;
     Sine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
+
+namespace detail {
+template< typename ArgumentExpr >
+struct SineHelper 
+{ using type = Sine< ArgumentExpr >; };
+
+template< typename T >
+struct SineHelper< constant_zero_expr< T >>
+{ using type = constant_zero_expr< T >; };
+} // namespace detail
+
+template< typename ArgumentExpr >
+using sine_t = detail::SineHelper< ArgumentExpr >::type;
 
 /**
  * Represents lazy cosine (std::cos)
@@ -848,6 +1047,19 @@ struct Cosine : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Cosine( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
 
+namespace detail {
+template< typename ArgumentExpr >
+struct CosineHelper 
+{ using type = Cosine< ArgumentExpr >; };
+
+template< typename T >
+struct CosineHelper< constant_zero_expr< T >>
+{ using type = constant_one_expr< T >; };
+} // namespace detail
+
+template< typename ArgumentExpr >
+using cosine_t = detail::CosineHelper< ArgumentExpr >::type;
+
 /**
  * Represents lazy tangent (std::tan)
  */
@@ -863,6 +1075,19 @@ struct Tangent : Expression< result_of< ArgumentExpr >, ArgumentExpr >
     Tangent() = default;
     Tangent( ArgumentExpr argument_expr ) : expression_type{ argument_expr } { }
 };
+
+namespace detail {
+template< typename ArgumentExpr >
+struct TangentHelper 
+{ using type = Tangent< ArgumentExpr >; };
+
+template< typename T >
+struct TangentHelper< constant_zero_expr< T >>
+{ using type = constant_zero_expr< T >; };
+} // namespace detail
+
+template< typename ArgumentExpr >
+using tangent_t = detail::TangentHelper< ArgumentExpr >::type;
 
 /**
  * Represents lazy arcsine (std::asin)
@@ -945,188 +1170,7 @@ struct Arctangent2 : Expression< result_of< NumeratorExpr >,
  * TODO: implement isinf, isnan, etc
  */
 
-/**
- * Derivations
- */
-template< typename >
-struct Derivation;
 
-template< continuous_expression Expr >
-using derive = Derivation< Expr >::type;
-
-template< typename DerivedExpr, typename Var >
-struct PartialDerivation;
-
-template< typename DerivedExpr, typename Var >
-requires ( not depends_on< DerivedExpr, Var > )
-struct PartialDerivation< DerivedExpr, Var >
-{ using type = constant_zero_expr< result_of< DerivedExpr >>; };
-
-template< typename Var >
-struct PartialDerivation< Var, Var >
-{ using type = constant_one_expr< result_of< Var >>; };
-
-template< continuous ResultType, typename... Exprs, typename Var >
-struct PartialDerivation< Expression< ResultType, Exprs... >, Var >
-{ using type = Expression< ResultType, PartialDerivation< Exprs, Var >... >; };
-
-namespace detail {
-
-template< typename Expr >
-struct DerivationOfHelper
-{  
-    using type = derive< Expr >;
-    static constexpr type value( Expr expr )
-    { return { expr }; }
-};
-
-template< typename TupleType, typename Seq >
-struct DerivationOfTuple;
-
-template< typename TupleType, size_t... Is >
-struct DerivationOfTuple< TupleType, seq< Is... >>
-{
-    using type = tuple< derive< tuple_element_t< Is, TupleType >>... >;
-    static constexpr type value( TupleType tup )
-    { return { get< Is >( tup )... }; }
-};
-
-// specialization for tuples
-template< typename... Exprs >
-struct DerivationOfHelper< tuple< Exprs... >> : 
-    public DerivationOfTuple< tuple< Exprs... >, make_seq< sizeof...( Exprs )>>
-{ };
-
-} // namespace detail
-
-template< typename ExprOrTuple >
-constexpr auto derivation_of( ExprOrTuple expr_or_tuple )
-{ return detail::DerivationOfHelper< ExprOrTuple >::value( expr_or_tuple ); }
-
-template< typename Unit, Unit Value >
-struct Derivation< Constant< Unit, Value >> 
-{ using type = constant_zero_expr< Unit >; };
-
-template< typename... Exprs >
-struct Derivation< Sum< Exprs... >> : 
-    Expression< result_of< Sum< Exprs... >>, Sum< derive< Exprs >... >>
-{
-    using function_type = Sum< Exprs... >;
-    using expression_type = 
-        Expression< Sum< derive< Exprs >... >>;
-
-    expression_type::result_type operator()() const
-    { return expression_type::template eval<0>(); }
-
-    Derivation() = default;
-    // what is a clean way of doing the tuple stuff below?
-    // I think this will happen a lot
-    // f.exprs is a tuple and we want sum_of< derivation_of< Exprs >... >
-    Derivation( function_type const& f ) : 
-        expression_type{ sum_of( derivation_of( f.exprs )) }
-    { }
-};
-
-template< typename MinuendType, typename SubtractendType >
-struct Derivation< Difference< MinuendType, SubtractendType >> :
-    Expression< Difference< derive< MinuendType >, 
-        derive< SubtractendType >>>
-{
-    using function_type = Difference< MinuendType, SubtractendType >;
-    using expression_type = Expression< Difference< 
-        derive< MinuendType >, derive< SubtractendType >>>;
-
-    expression_type::result_type operator()() const 
-    { return expression_type::template eval<0>(); }
-
-    Derivation() = default;
-    Derivation( function_type const& f ) :
-        expression_type{ difference_of( derivation_of( 
-            f.minuend(), f.subtractend() )) }
-    { }
-};
-
-template< typename Expr >
-struct Derivation< Negation< Expr >> : 
-    Expression< Negation< derive< Expr >>>
-{
-    using function_type = Negation< typename Derivation< Expr >::type >;
-
-};
-
-template< typename Expr, typename... Exprs >
-struct Derivation< Product< Expr, Exprs... >>
-{
-    // product rule: d(f*g) = df*g + f*dg
-    using type = Sum< 
-        Product< typename Derivation< Expr >::type, Product< Exprs... >>,
-        Product< Expr, typename Derivation< Product< Exprs... >>::type >>;
-};
-
-template< typename NumeratorExpr, typename DenominatorExpr >
-struct Derivation< Quotient< NumeratorExpr, DenominatorExpr >>
-{
-    // quotient rule: d(f/g) = ( g*df - f*dg ) / ( g * g );
-    using type = Quotient<
-        Difference<
-            Product< typename Derivation< NumeratorExpr >::type, DenominatorExpr >,
-            Product< NumeratorExpr, typename Derivation< DenominatorExpr >::type >>,
-        Product< DenominatorExpr, DenominatorExpr >>;
-};
-
-template< typename Expr >
-struct Derivation< Exp< Expr >>
-{
-    using type = Product< Exp< Expr >, typename Derivation< Expr >::type >;
-};
-
-template< typename Expr >
-struct Derivation< Log< Expr >>
-{
-    using type = Quotient< typename Derivation< Expr >::type, Expr >;
-};
-
-// NOTE: Derivations only defined for constant powers
-// TODO: define derivations for non-constant power expressions
-template< typename BaseExpr, numeric T, T Value >
-struct Derivation< Power< BaseExpr, Constant< T, Value >>>
-{
-    // power rule: d(f^n) == nf^{n-1}df
-    using type = Product< 
-        Constant< T, Value >, 
-        Power< 
-            BaseExpr, 
-            Constant< T, Value - 1 >>,
-        typename Derivation< BaseExpr >::type >;
-    // TODO: ensure the power rule is 
-};
-
-template< typename Expr >
-struct Derivation< Sine< Expr >>
-{
-    using type = Product<
-        Cosine< Expr >,
-        typename Derivation< Expr >::type >;
-};
-
-template< typename Expr >
-struct Derivation< Cosine< Expr >>
-{
-    using type = Negation<
-        Product<
-            Sine< Expr >,
-            typename Derivation< Expr >::type >>;
-};
-
-template< typename Expr >
-struct Derivation< Tangent< Expr >>
-{
-    using type = Quotient<
-        typename Derivation< Expr >::type,
-        Product< Cosine< Expr >, Cosine< Expr >>>;
-};
-
-// TODO: arc-trig functions
 
 // helper functions
 
@@ -1185,9 +1229,17 @@ template< typename... Exprs >
 Sum< Exprs... > sum_of( Exprs... exprs )
 { return { exprs... }; }
 
+template< typename T, T... Values >
+Constant< T, ( ... + Values )> sum_of( Constant< T, Values >... ) { }
+
 template< typename MinuendExpr, typename SubtractendExpr >
-Difference< MinuendExpr, SubtractendExpr > difference_of( MinuendExpr minuend_expr, SubtractendExpr subtractend_expr )
+Difference< MinuendExpr, SubtractendExpr > difference_of( 
+    MinuendExpr minuend_expr, SubtractendExpr subtractend_expr )
 { return { minuend_expr, subtractend_expr }; }
+
+template< typename T, T MinuendValue, T SubtractendValue >
+Constant< T, ( MinuendValue - SubtractendValue )> difference_of(
+    Constant< T, MinuendValue >, Constant< T, SubtractendValue > ) { }
 
 template< typename Expr >
 Negation< Expr > negation_of( Expr expr )
@@ -1248,6 +1300,201 @@ Arctangent2< NumeratorExpr, DenominatorExpr > arctangent2_of(
 { return { numerator_expr, denominator_expr }; }
 
 
+/**
+ * Applies the derivation D to the continuous_expression Expr using Leibniz 
+ * rules
+ * 
+ * @tparam D is a template that takes an expression as it's singular argument
+ * and exposes a type as the return type
+ * @tparam Expr is the cntinuous expression to be differentiated
+ * @returns a type corresponding to the derivative of Expr
+ */
+template< template< typename > class D, continuous_expression Expr >
+struct Derivation
+{ using type = D< Expr >::type; };
+
+/**
+ * Derivations of functions
+ */
+template< template< typename > class D, typename Unit, Unit Value >
+struct Derivation< D, Constant< Unit, Value >> 
+{ using type = constant_zero_expr< Unit >; };
+
+template< template< typename > class D, typename... Exprs >
+struct Derivation< D, Sum< Exprs... >>
+{ using type = sum_t< typename Derivation< D, Exprs >::type... >; };
+
+template< template< typename > class D, 
+    typename MinuendType, typename SubtractendType >
+struct Derivation< D, Difference< MinuendType, SubtractendType >>
+{ using type = difference_t< typename Derivation< D, MinuendType >::type, 
+    typename Derivation< D, SubtractendType >::type>; };
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Negation< Expr >>
+{ using type = negation_t< typename Derivation< D, Expr >::type >; };
+
+template< template< typename > class D, typename Expr, typename... Exprs >
+struct Derivation< D, Product< Expr, Exprs... >>
+{
+    // product rule: d(f*g) = df*g + f*dg
+    using type = sum_t< 
+        product_t< typename Derivation< D, Expr >::type, product_t< Exprs... >>,
+        product_t< Expr, typename Derivation< D, product_t< Exprs... >>::type >>;
+};
+
+template< template< typename > class D, 
+    typename NumeratorExpr, typename DenominatorExpr >
+struct Derivation< D, Quotient< NumeratorExpr, DenominatorExpr >>
+{
+    // quotient rule: d(f/g) = ( g*df - f*dg ) / ( g * g );
+    using type = quotient_t<
+        difference_t<
+            product_t< typename Derivation< D, NumeratorExpr >::type, DenominatorExpr >,
+            product_t< NumeratorExpr, typename Derivation< D, DenominatorExpr >::type >>,
+        product_t< DenominatorExpr, DenominatorExpr >>;
+};
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Exp< Expr >>
+{ using type = product_t< Exp< Expr >, typename Derivation< D, Expr >::type >; };
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Log< Expr >>
+{ using type = quotient_t< typename Derivation< D, Expr >::type, Expr >; };
+
+// NOTE: Derivations only defined for constant powers
+// TODO: define derivations for non-constant power expressions
+template< template< typename > class D, typename BaseExpr, numeric T, T Value >
+struct Derivation< D, Power< BaseExpr, Constant< T, Value >>>
+{
+    // power rule: d(f^n) == nf^{n-1}df
+    using type = product_t< 
+        Constant< T, Value >, 
+        power_t< 
+            BaseExpr, 
+            difference_t< Constant< T, Value >, constant_one_expr< T >>>,
+        typename Derivation< D, BaseExpr >::type >;
+    // TODO: ensure the power rule is 
+};
+
+template< template< typename > class D, numeric T, T Value, typename ExponentExpr >
+struct Derivation< D, Power< Constant< T, Value >, ExponentExpr >>
+{
+    // logarithmic differentiation: v^f(x) f'(x) ln v 
+    using type = product_t< 
+        power_t< Constant< T, Value >, ExponentExpr >,
+        typename Derivation< D, ExponentExpr >::type,
+        log_t< Constant< T, Value >>>;
+    // TODO: ensure the power rule is 
+};
+
+template< template< typename > class D, typename BaseExpr, typename ExponentExpr >
+requires( not is_constant< BaseExpr > and not is_constant< ExponentExpr >)
+struct Derivation< D, Power< BaseExpr, ExponentExpr >>
+{
+    // logarithmic differentiation: f(x)^g(x) ( g'(x) ln f(x) + g(x) f'(x) / f(x) )
+    using type = product_t< 
+        power_t< BaseExpr, ExponentExpr >,
+        sum_t<
+            product_t< 
+                typename Derivation< D, ExponentExpr >::type,
+                log_t< BaseExpr >>,
+            product_t<
+                ExponentExpr,
+                quotient_t<
+                    typename Derivation< D, BaseExpr >::type,
+                    BaseExpr >>>>;
+    // TODO: ensure the power rule is 
+};
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Sine< Expr >>
+{
+    using type = product_t<
+        cosine_t< Expr >,
+        typename Derivation< D, Expr >::type >;
+};
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Cosine< Expr >>
+{
+    using type = negation_t<
+        product_t<
+            sine_t< Expr >,
+            typename Derivation< D, Expr >::type >>;
+};
+
+template< template< typename > class D, typename Expr >
+struct Derivation< D, Tangent< Expr >>
+{
+    using type = quotient_t<
+        typename Derivation< D, Expr >::type,
+        product_t< cosine_t< Expr >, cosine_t< Expr >>>;
+};
+
+// TODO: arc-trig functions
+
+
+template< template< typename > class D, continuous_expression Expr >
+using derive = Derivation< D, Expr >::type;
+
+// template< typename Var, typename Expr >
+// struct PartialDerivative;
+
+template< typename Var >
+struct PartialDerivative;
+
+template< typename T, size_t... Is >
+struct PartialDerivative< Variable< T, Is... >>
+{
+    template< typename Expr >
+    struct Of;
+
+    template< typename Expr >
+    requires ( not depends_on< Expr, Variable< T, Is... >> )
+    struct Of< Expr >
+    { using type = constant_zero_expr< result_of< Expr >>; };
+
+    template<>
+    struct Of< Variable< T, Is... >>
+    { using type = constant_one_expr< T >; };
+
+    template< template< typename... > class Op, typename... Exprs >
+    struct Of< Op< Exprs... >>
+    { using type = derive< PartialDerivative< Variable< T, Is... >>::Of, Op< Exprs... >>; };
+};
+
+template< typename Expr, typename Var >
+using partial = PartialDerivative< Var >::template Of< Expr >::type;
+
+#ifndef NDEBUG
+namespace test {
+using cf0 = Constant< float, 0.f >;
+using cf1 = Constant< float, 1.f >;
+
+using vf0 = Variable< float, 0 >;
+using vf1 = Variable< float, 1 >;
+
+static_assert( is_same_v< partial< vf0, vf0 >, cf1 >);
+static_assert( is_same_v< partial< vf0, vf1 >, cf0 >);
+static_assert( is_same_v< partial< sum_t< vf0, vf0 >, vf1 >, cf0 >);
+static_assert( is_same_v< partial< difference_t< vf0, vf0 >, vf1 >, cf0 >);
+static_assert( is_same_v< partial< difference_t< vf1, vf0 >, vf1 >, cf1 >);
+static_assert( is_same_v< partial< negation_t< vf1 >, vf1 >, 
+    Constant< float, -1.f >> );
+static_assert( is_same_v< partial< product_t< vf0, cf1 >, vf1 >, cf0 >);
+static_assert( is_same_v< partial< product_t< vf0, cf1 >, vf0 >, cf1 >);
+static_assert( is_same_v< partial< product_t< vf0, vf1 >, vf0 >, product_t< cf1, vf1 >>);
+static_assert( is_same_v< partial< quotient_t< vf1, vf0 >, vf1 >, quotient_t< vf0, product_t< vf0, vf0 >> >);
+// DT: isn't this cool? d/dx sin(x) == cos(x)
+static_assert( is_same_v< partial< sine_t< vf0 >, vf0 >, cosine_t< vf0 >>);
+} // namespace test
+#endif
+
+
+// TODO: change these to use the functions instead of returning the op types
+// directly
 namespace operators {
 
 /**
