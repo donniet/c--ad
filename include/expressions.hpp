@@ -19,7 +19,7 @@
 #ifndef __EXPRESSIONS_HPP__
 #define __EXPRESSIONS_HPP__
 
-#include "utility.hpp"
+#include "expression_base.hpp"
 
 #include <any>
 #include <vector>
@@ -28,64 +28,9 @@
 #include <utility>
 #include <functional>
 #include <cmath>
-#include <type_traits>
-#include <concepts>
 // TODO: handle floating point environments
 // #include <cfenv>
 
-namespace expressions {
-
-using std::tuple, std::get, std::tuple_element_t, std::tuple_size_v;
-using std::index_sequence, std::make_index_sequence;
-
-/**
- * Concepts
- */
-// template< typename Expr, typename ResultType >
-// concept result_is = requires( Expr expr, ResultType result )
-// { result = expr(); };
-
-
-// is the unit continuous or discrete?
-template< typename Unit >
-concept continuous = std::floating_point< Unit > or 
-    std::floating_point< typename Unit::value_type >;
-
-template< typename Unit >
-concept discrete = 
-    ( std::integral< Unit > and not std::is_same_v< Unit, bool > ) or
-    ( std::integral< typename Unit::value_type > and not 
-        std::is_same_v< typename Unit::value_type, bool > );
-
-template< typename Unit >
-concept numeric = continuous< Unit > or discrete< Unit >;
-
-template< typename Expr, typename Unit >
-concept expression_of = Expr::is_expression and 
-    std::is_same_v< typename Expr::result_type, Unit >;
-
-template< typename Expr, typename... Exprs >
-struct SameExpressionResultTypes
-{ static constexpr bool value = 
-    ( ... and is_same_v< typename Expr::result_type, 
-        typename Exprs::result_type > ); };
-
-
-template< typename Expr >
-struct SameExpressionResultTypes< Expr >
-{ static constexpr bool value = true; };
-
-template< typename... Exprs >
-static constexpr bool same_expression_result_types = 
-    SameExpressionResultTypes< Exprs... >::value;
-
-template< typename Expr, typename... Exprs >
-requires same_expression_result_types< Expr, Exprs... >
-struct ResultOf
-{ using type = typename Expr::result_type; };
-
-template< typename... Exprs >
-using result_of = typename ResultOf< Exprs... >::type;
 
 template< typename Expr >
 concept continuous_expression = Expr::is_expression and 
@@ -102,11 +47,15 @@ concept boolean_expression = Expr::is_expression and
 template< typename Unit >
 concept boolean_or_numeric = std::is_same_v< bool, Unit > or numeric< Unit >;
 
+
 /**
  * Base class for all expressions
+ * 
+ * @tparam ResultType is the return type of this expression
+ * @tparam Exprs are the types of the sub-expressions that make up this one
  */
 template< typename ResultType, typename... Exprs >
-struct Expression
+struct Expression : ExpressionBase
 {
     static constexpr bool is_expression = true;
     static constexpr size_t size = sizeof...( Exprs );
@@ -135,35 +84,17 @@ protected:
     ResultType eval() const
     { return get< I >( exprs )(); }
 
-private:
+// private:
     // executes the fold operation using an index_sequence 
     template< typename Op, size_t... Is >
     ResultType fold_left_helper( Op op, ResultType result, 
         index_sequence< Is... > ) const
     { return (( result = op( result, eval< Is >() )), ... ); }
 
-private:
+// private:
     tuple< Exprs... > exprs;
 };
 
-/**
- * Constant expression will never change it's value
- * 
- * @tparam T is the unit of this contstant
- * @tparam Value is the value of this constant
- */
-template< boolean_or_numeric T, T Value >
-struct Constant : public Expression< T >
-{
-    static constexpr bool is_constant = true;
-    using expression_type = Expression< T >;
-    using value_type = T;
-    static constexpr T value = Value;
-
-    value_type operator()() { return value; }
-
-    Constant() = default;
-};
 
 // constant aliases
 template< numeric T >
@@ -282,11 +213,14 @@ struct Variable : public Expression< T >
     { set_variable_value< T, I, Is... >( value ); }
 
     constexpr T get() const
-    { get_variable_value< T, I, Is... >(); }
+    { return get_variable_value< T, I, Is... >(); }
 
     // TODO: getters and setters that can be connected to dimensions
     constexpr expression_type::result_type operator()() const
     { return get(); }
+
+    Variable() = default;
+    Variable( T value ) { set(value); }
 };
 
 namespace detail {
@@ -405,10 +339,16 @@ template< typename Expr >
 struct DependentVariablesTupleTypeHelper
 { using type = tuple< >; };
 
-template< typename ResultType, typename... Exprs >
-struct DependentVariablesTupleTypeHelper< Expression< ResultType, Exprs... >>
-{ using type = TupleUnique< tuple_cat_t< 
+template< template< typename... > class Op, typename... Exprs >
+// requires( is_expression< Op< Exprs... >> )
+struct DependentVariablesTupleTypeHelper< Op< Exprs... >>
+{ using type = TupleUnique< tuple_cat_t<
     typename DependentVariablesTupleTypeHelper< Exprs >::type... >>::type; };
+
+// template< typename ResultType, typename... Exprs >
+// struct DependentVariablesTupleTypeHelper< Expression< ResultType, Exprs... >>
+// { using type = TupleUnique< tuple_cat_t< 
+//     typename DependentVariablesTupleTypeHelper< Exprs >::type... >>::type; };
 
 template< typename T, size_t... Is >
 struct DependentVariablesTupleTypeHelper< Variable< T, Is... >>
@@ -477,14 +417,22 @@ template< boolean_expression... Exprs >
 struct Conjunction : public Expression< bool, Exprs... >
 {
     using expression_type = Expression< bool, Exprs... >;
+    static constexpr size_t size = sizeof...( Exprs );
 
     // similar to ( ... and exprs() )
     expression_type::result_type operator()() const
     { expression_type::fold_left( std::logical_and<>{}, true ); }
 
+    template< size_t I >
+    auto conjunct() { return get< I >( expression_type::exprs ); }
+
     Conjunction() = default;
     Conjunction( Exprs... exprs ) : expression_type{ exprs... } { }
 };
+
+template< size_t I, boolean_expression... Exprs >
+auto conjunct( Conjunction< Exprs... > conj )
+{ return conj.template conjunct< I >(); }
 
 /**
  * Represents a lazily evaluated disjunction (logical OR)
@@ -618,6 +566,24 @@ struct Equal : Expression< bool, LeftExpr, RightExpr >
 };
 
 /**
+ * Represents a lazily evaluated A == 0
+ */
+template< typename Expr >
+struct EqualsZero : Expression< bool, Expr >
+{
+    using expression_type = Expression< bool, Expr >;
+
+    expression_type::result_type operator()() const
+    { return expression_type::template eval<0>() == 
+        constant_zero< result_of< Expr >>; }
+
+    Expr quantity() { return get< 0 >( expression_type::exprs ); }
+    
+    EqualsZero() = default;
+    EqualsZero( Expr expr ) : expression_type{ expr } { }
+};
+
+/**
  * Represents a lazily evaluated operator!=
  */
 template< typename LeftExpr, typename RightExpr >
@@ -721,6 +687,24 @@ template< typename T, T LeftValue, T RightValue >
 struct EqualHelper< Constant< T, LeftValue >, Constant< T, RightValue >>
 { using type = Constant< bool, ( LeftValue == RightValue )>; };
 
+template< typename Expr, typename T >
+requires ( not is_constant< Expr > )
+struct EqualHelper< Expr, constant_zero_expr< T >>
+{ using type = EqualsZero< Expr >; };
+
+template< typename T, typename Expr >
+requires ( not is_constant< Expr > )
+struct EqualHelper< constant_zero_expr< T >, Expr >
+{ using type = EqualsZero< Expr >; };
+
+template< typename Expr >
+struct EqualsZeroHelper
+{ using type = EqualsZero< Expr >; };
+
+template< typename T, T Value >
+struct EqualsZeroHelper< Constant< T, Value >>
+{ using type = Constant< bool, ( Value == constant_zero< T > )>; };
+
 template< typename LeftExpr, typename RightExpr >
 struct NotEqualHelper
 { using type = NotEqual< LeftExpr, RightExpr >; };
@@ -767,6 +751,9 @@ using equal_t = detail::EqualHelper< LeftExpr, RightExpr >::type;
 
 template< typename LeftExpr, typename RightExpr >
 using not_equal_t = detail::NotEqualHelper< LeftExpr, RightExpr >::type;
+
+template< typename Expr >
+using equals_zero_t = detail::EqualsZeroHelper< Expr >::type;
 
 template< typename LeftExpr, typename RightExpr >
 using less_t = detail::LessHelper< LeftExpr, RightExpr >::type;
@@ -871,42 +858,40 @@ using negation_t = detail::NegationHelper< Expr >::type;
  *                               == 5 - (6 - (7 - 8 + 9))
  *                               == 5 - (6 - 7 + 8 - 9)
  *                               == 5 - 6 + 7 - 8 + 9
+ * 
+ * DT: we're doing it. It's the pattern of alternating terms in a determinant
  */
-template< typename MinuendExpr, typename SubtractendExpr >
+template< typename Expr, typename... Exprs >
 // TODO: fix the requires expression
-// requires same_expression_result_types< MinuendExpr, SubtractendExpr >
-struct Difference : Expression< result_of< MinuendExpr >, 
-    MinuendExpr, SubtractendExpr >
+requires same_expression_result_types< Expr, Exprs... >
+struct Difference : Expression< result_of< Expr >, Expr, Exprs... >
 {
-    using expression_type = Expression< result_of< MinuendExpr >, 
-        MinuendExpr, SubtractendExpr >;
+    using expression_type = Expression< result_of< Expr >, Expr, Exprs... >;
 
     expression_type::result_type operator()() const
     { return expression_type::template eval<0>() - 
         expression_type::template eval<1>(); }
 
-    MinuendExpr minuend() { return get< 0 >( expression_type::exprs ); }
-    SubtractendExpr subtractend() { return get< 1 >( expression_type::exprs ); }
+    template< size_t I >
+    auto term() { return get< I >( expression_type::exprs ); }
 
     Difference() = default;
-    Difference( MinuendExpr minuend_expr, SubtractendExpr subtractend_expr ) :
-        expression_type{ minuend_expr, subtractend_expr }
-    { }
+    Difference( Expr expr, Exprs... exprs ) : expression_type{ expr, exprs... } { }
 };
 
 namespace detail {
-template< typename MinuendExpr, typename SubtractendExpr >
+template< typename... Exprs >
 struct DifferenceHelper
-{ using type = Difference< MinuendExpr, SubtractendExpr >; };
+{ using type = Difference< Exprs... >; };
 
 template< typename MinuendExpr, typename T >
 requires( not is_constant< MinuendExpr >)
 struct DifferenceHelper< MinuendExpr, constant_zero_expr< T >>
 { using type = MinuendExpr; };
 
-template< typename T, typename MinuendExpr >
-struct DifferenceHelper< constant_zero_expr< T >, MinuendExpr >
-{ using type = negation_t< MinuendExpr >; };
+template< typename T, typename... Exprs >
+struct DifferenceHelper< constant_zero_expr< T >, Exprs... >
+{ using type = negation_t< typename DifferenceHelper< Exprs... >::type >; };
 
 template< typename T, T MinuendValue, T SubtractendValue >
 struct DifferenceHelper< Constant< T, MinuendValue >, 
@@ -976,6 +961,32 @@ struct ProductHelper< Expr, constant_one_expr< T >>
 
 template< typename... Exprs >
 using product_t = detail::ProductHelper< Exprs... >::type;
+
+template< typename Expr >
+struct Inversion : Expression< result_of< Expr >, Expr >
+{
+    using expression_type = Expression< result_of< Expr >, Expr >;
+    expression_type::result_type operator()() const
+    { return constant_one< typename expression_type::result_type > / 
+        expression_type::template eval<0>(); }
+    
+    Inversion() = default;
+    Inversion( Expr expr ) : expression_type{ expr } {}
+};
+
+namespace detail {
+template< typename Expr >
+struct InversionHelper
+{ using type = Inversion< Expr >; };
+
+template< typename T, T Value >
+struct InversionHelper< Constant< T, Value >>
+{ using type = Constant< T, 1. / Value >; };
+
+} // namespace detail
+
+template< typename Expr >
+using inversion_t = detail::InversionHelper< Expr >::type;
 
 /**
  * Represents a lazy quotient
@@ -1336,12 +1347,16 @@ struct Arctangent2 : Expression< result_of< NumeratorExpr >,
  */
 
 
-
 // helper functions
 
 /**
  * Logical Operations
  */
+// TODO: the bodies of these functions will probably have to change when the 
+// return type is a constant because constants take no parameters.
+// we could have constants take multiple constructor parameters, but that seems
+// confusing.  Having multiple versions similar to the conjunction_t
+// specializations is likely the best option, but a lot of typing...
 template< boolean_expression... Exprs >
 conjunction_t< Exprs... > conjunction_of( Exprs... exprs )
 { return { exprs... }; }
@@ -1358,9 +1373,13 @@ compliment_t< Expr > compliment_of( Expr expr )
  * Numeric comparisons
  */
 template<typename LeftExpr, typename RightExpr >
-Equal< LeftExpr, RightExpr > equal( 
+equal_t< LeftExpr, RightExpr > equal( 
     LeftExpr left_expr, RightExpr right_expr )
 { return { left_expr, right_expr }; }
+
+template<typename Expr >
+equals_zero_t< Expr > equals_zero( Expr expr )
+{ return { expr }; }
 
 template<typename LeftExpr, typename RightExpr >
 NotEqual< LeftExpr, RightExpr > not_equal( 
@@ -1397,18 +1416,21 @@ Sum< Exprs... > sum_of( Exprs... exprs )
 template< typename T, T... Values >
 Constant< T, ( ... + Values )> sum_of( Constant< T, Values >... ) { }
 
-template< typename MinuendExpr, typename SubtractendExpr >
-Difference< MinuendExpr, SubtractendExpr > difference_of( 
-    MinuendExpr minuend_expr, SubtractendExpr subtractend_expr )
-{ return { minuend_expr, subtractend_expr }; }
+template< typename... Exprs >
+Difference< Exprs... > difference_of( Exprs... exprs )
+{ return { exprs... }; }
 
 template< typename T, T MinuendValue, T SubtractendValue >
 Constant< T, ( MinuendValue - SubtractendValue )> difference_of(
     Constant< T, MinuendValue >, Constant< T, SubtractendValue > ) { }
 
 template< typename Expr >
-Negation< Expr > negation_of( Expr expr )
-{ return { expr }; }
+auto negation_of( Expr expr )
+{ return negation_t< Expr >{ expr }; }
+
+template< typename T, T Value >
+auto negation_of( Constant< T, Value > )
+{ return Constant< T, -Value >{}; }
 
 template< typename... Exprs >
 Product< Exprs... > product_of( Exprs... exprs )
@@ -1679,14 +1701,23 @@ template< typename Expr >
 Compliment< Expr > operator!( Expr expr )
 { return { expr }; }
 
-
 /**
  * Numeric comparisons
  */
 template<typename LeftExpr, typename RightExpr >
-Equal< LeftExpr, RightExpr > operator ==( 
+constexpr equal_t< LeftExpr, RightExpr > operator ==( 
     LeftExpr left_expr, RightExpr right_expr )
 { return { left_expr, right_expr }; }
+
+template< numeric T, typename Expr >
+auto constexpr operator ==( 
+    const T value, Expr expr )
+{ return equals( Constant< T, value >{}, expr ); }
+
+template< typename Expr, numeric T >
+auto constexpr operator ==( 
+    Expr expr, T const value )
+{ return equals( expr, Constant< T, value >{} ); }
 
 template<typename LeftExpr, typename RightExpr >
 NotEqual< LeftExpr, RightExpr > operator !=( 
@@ -1726,8 +1757,8 @@ Difference< MinuendExpr, SubtractendExpr > operator - ( MinuendExpr minuend_expr
 { return { minuend_expr, subtractend_expr }; }
 
 template< typename Expr >
-Negation< Expr > operator - ( Expr expr )
-{ return { expr }; }
+auto operator - ( Expr expr )
+{ return negation_of( expr ); }
 
 template< typename LeftExpr, typename RightExpr >
 Product< LeftExpr, RightExpr > operator * ( 
@@ -1785,7 +1816,18 @@ Arctangent2< NumeratorExpr, DenominatorExpr > atan2(
 { return { numerator_expr, denominator_expr }; }
 
 } // namespace operators
-
 } // namespace expressions
+
+// namespace std {
+
+// template< typename Expr >
+// requires ::expressions::is_expression< Expr >
+// struct negate< Expr >
+// {
+//     constexpr auto operator()( Expr expr ) const
+//     { return negation_of( expr ); }
+// };
+
+// } // namespace std
 
 #endif

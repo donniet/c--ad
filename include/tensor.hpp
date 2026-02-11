@@ -6,6 +6,7 @@
 #define __TENSOR_HPP__
 
 #include "utility.hpp"
+#include "expressions.hpp"
 
 #include <utility>
 #include <tuple>
@@ -154,7 +155,7 @@ static_assert( is_same_v< index<1,2,3>, insert_at< index<1,3>, 1, 2 >> );
 } // namespace test
 
 // arity_of details
-namespace details {
+namespace detail {
 
 template< size_t I, typename Shape >
 struct ArityOf;
@@ -178,7 +179,7 @@ struct ArityOf< I, shape< J, Js... >>
  * @returns the size of Shape at index I
  */
 template< size_t I, typename Shape >
-static constexpr size_t arity_of = details::ArityOf< I, Shape >::value;
+static constexpr size_t arity_of = detail::ArityOf< I, Shape >::value;
 
 // dim_index_of details
 namespace detail {
@@ -432,6 +433,20 @@ using contracted_shape = detail::ContractedShape< I, J, Shape >::type;
 template< typename... Ts >
 struct types { };
 
+template< size_t Element, typename Types >
+struct TypeAtElement;
+
+template< size_t Element, typename T, typename... Ts >
+struct TypeAtElement< Element, types< T, Ts... >>
+{ using type = typename TypeAtElement< Element-1, types< Ts... >>::type; };
+
+template< typename T, typename... Ts >
+struct TypeAtElement< 0, types< T, Ts... >>
+{ using type = T; };
+
+template< size_t Element, typename Types >
+using type_at_element = typename TypeAtElement< Element, Types >::type;
+
 // types details
 namespace detail {
 template< typename T, typename Seq >
@@ -545,42 +560,73 @@ constexpr T identity( T t ) { return t; }
 // tensor operation details
 namespace detail {
 
+template< typename TensorType, typename ArgTuple, typename Seq >
+struct InvokeHelper;
+
+template< typename T, typename ArgTuple, typename Seq >
+struct InvokeElementHelper;
+
+template< typename T, typename ArgTuple, size_t... Js >
+struct InvokeElementHelper< T, ArgTuple, seq< Js... >>
+{
+    auto operator()( T x, ArgTuple args, seq< Js... > )
+    { return x( get< Js >( args )... ); }
+};
+
+template< typename T, typename ArgTuple, typename Seq >
+auto invoke_element_helper( T x, ArgTuple args, Seq seq )
+{ return InvokeElementHelper< T, ArgTuple, Seq >{}( x, args, seq ); }
+
+template< typename Shape, typename Types, typename ArgTuple, size_t... Is >
+struct InvokeHelper< Tensor< Shape, Types >, ArgTuple, seq< Is... >>
+{ 
+    static constexpr size_t arguments_size = std::tuple_size_v< ArgTuple >;
+    auto operator()( Tensor< Shape, Types > v, ArgTuple args, seq< Is... > )
+    { 
+        return make_tensor< Shape >( invoke_element_helper( 
+            get< Is >( v.values ), args, make_seq< arguments_size >{} )... );
+    }
+};
+
+template< typename Shape, typename Types, typename ArgTuple, typename Seq >
+auto invoke_helper( Tensor< Shape, Types > v, ArgTuple args, Seq seq )
+{ return InvokeHelper< Tensor< Shape, Types >, ArgTuple, Seq >{}( v, args, seq ); }
+
 template< typename Shape, typename FirstTypes, typename SecondTypes, size_t... Is >
 auto plus_helper( Tensor< Shape, FirstTypes > const& first, 
     Tensor< Shape, SecondTypes > const& second, seq< Is... > )
-{ return make_tensor< Shape >(( get< Is >( first.values ) + get< Is >( second.values ))... ); }
+{ return make_tensor< Shape >( sum_of( get< Is >( first.values ), get< Is >( second.values ))... ); }
 
 template< typename Shape, typename FirstTypes, typename SecondTypes, size_t... Is >
 auto minus_helper( Tensor< Shape, FirstTypes > const& first, 
     Tensor< Shape, SecondTypes > const& second, seq< Is... > )
-{ return make_tensor< Shape >(( get< Is >( first.values ) - get< Is >( second.values ))... ); }
+{ return make_tensor< Shape >( difference_of( get< Is >( first.values ), get< Is >( second.values ))... ); }
 
 template< size_t I, size_t J, typename Shape, typename Types >
 auto contract( Tensor< Shape, Types > const& );
 
-
 template< typename ProductShape, size_t LeftSize, typename LeftTensor, typename RightTensor, size_t... Is >
 auto multiply_helper( LeftTensor const& left, RightTensor const& right, seq< Is... > )
 { return make_tensor< ProductShape >( 
-        (get< Is / LeftSize >( left.values ) * get< Is % LeftSize >( right.values ))... ); }
+        product_of( get< Is / LeftSize >( left.values ), get< Is % LeftSize >( right.values ))... ); }
 
-template< typename Shape1, typename Types1, typename Shape2, typename Types2, size_t... Is >
-auto equality_helper( Tensor< Shape1, Types1 > const& first, 
-    Tensor< Shape2, Types2 > const& second, seq< Is... > )
-{ return (( get< Is >( first.values ) == get< Is >( second.values )) and ... ); }
+template< typename Shape, typename Types1, typename Types2, size_t... Is >
+auto equality_helper( Tensor< Shape, Types1 > const& first, 
+    Tensor< Shape, Types2 > const& second, seq< Is... > )
+{ return ( ... and equal( get< Is >( first.values ), get< Is >( second.values ))); }
 
-template< typename Shape1, typename Types1, typename Shape2, typename Types2, size_t... Is >
-auto inequality_helper( Tensor< Shape1, Types1 > const& first, 
-    Tensor< Shape2, Types2 > const& second, seq< Is... > )
-{ return (( get< Is >( first.values ) != get< Is >( second.values )) or ... ); }
+template< typename Shape, typename Types1, typename Types2, size_t... Is >
+auto inequality_helper( Tensor< Shape, Types1 > const& first, 
+    Tensor< Shape, Types2 > const& second, seq< Is... > )
+{ return ( ... or not_equal( get< Is >( first.values ), get< Is >( second.values ))); }
 
-template< typename Shape, typename Types, size_t... Is >
-auto scale_helper( long double scalar, Tensor< Shape, Types > const& v, seq< Is... > )
-{ return make_tensor< Shape >(( get< Is >( v.values ) * scalar )... ); }
+template< typename T, typename Shape, typename Types, size_t... Is >
+auto scale_helper( T scalar, Tensor< Shape, Types > const& v, seq< Is... > )
+{ return make_tensor< Shape >( product_of( get< Is >( v.values ), scalar )... ); }
 
-template< typename Shape, typename Types, size_t... Is >
-auto divide_scale_helper( long double scalar, Tensor< Shape, Types > const& v, seq< Is... > )
-{ return make_tensor< Shape >(( get< Is >( v.values ) / scalar )... ); }
+template< typename T, typename Shape, typename Types, size_t... Is >
+auto divide_scale_helper( T scalar, Tensor< Shape, Types > const& v, seq< Is... > )
+{ return make_tensor< Shape >( quotient_of( get< Is >( v.values ), scalar )... ); }
 
 } // namespace detail (tensor operations)
 
@@ -606,6 +652,14 @@ struct Tensor< shape< Is... >, types< Ts... >>
     using shape_type = shape< Is... >;
     static constexpr size_t size = sizeof...( Ts ); // == ( Is * ... )
     static constexpr size_t arity = sizeof...( Is ); // how many dimensions
+
+    template< typename IndexType >
+    auto at() const 
+    { return std::get< element_from< shape_type, IndexType >>( values ); }
+
+    template< typename... Us >
+    auto operator()( Us... ts )
+    { return detail::invoke_helper( *this, std::make_tuple( ts... ), make_seq< size >{}); }
 
     template< typename Types > 
     auto operator+( Tensor< shape_type, Types > const& other )
@@ -634,10 +688,12 @@ struct Tensor< shape< Is... >, types< Ts... >>
     auto operator!=( Tensor< shape_type, Types2 > const& other ) const
     { return detail::inequality_helper( *this, other, make_seq< size >{} ); }
 
-    auto scale( long double scalar ) const
+    template< typename T >
+    auto scale( T scalar ) const
     { return detail::scale_helper( scalar, *this, make_seq< size >{} ); }
 
-    auto divide_scale( long double scalar ) const
+    template< typename T >
+    auto divide_scale( T scalar ) const
     { return detail::divide_scale_helper( scalar, *this, make_seq< size >{} ); }
 
     Tensor() : values{} { }
@@ -647,6 +703,24 @@ struct Tensor< shape< Is... >, types< Ts... >>
     values_type values;
 
 };
+
+template< typename IndexType, typename TensorType >
+struct TensorElement;
+
+template< size_t... Is, size_t... Js, typename... Ts >
+struct TensorElement< index< Is... >, Tensor< shape< Js... >, types< Ts... >>>
+{ 
+    using type = type_at_element< element_from< shape< Js... >, index< Is... >>, types< Ts... >>; 
+    static constexpr type value( Tensor< shape< Js... >, types< Ts... >> v ) 
+    { return v.template at< index< Is... >>(); }
+};
+
+template< typename IndexType, typename TensorType >
+using tensor_element_t = TensorElement< IndexType, TensorType >::type;
+
+template< typename IndexType, typename TensorType >
+constexpr auto tensor_element( TensorType t ) 
+{ return t.template at< IndexType >(); }
 
 /**
  * UniformTensor wraps a tuple of (Ds*...) instances of T
@@ -938,15 +1012,27 @@ auto sub_tensor( Tensor< Shape, Types > const& v )
     make_seq< detail::sub_tensor_shape< Shape >::elements_size >{} ); }
 
 // forward declaration of transpose
-template< size_t N, typename Types >
-auto transpose( Tensor< shape< N, N >, Types > const& v );
+template< size_t Rows, size_t Cols, typename Types >
+auto transpose( Tensor< shape< Rows, Cols >, Types > const& v );
 
 // transpose details
 namespace detail {
 
-template< size_t N, typename Types, size_t... Is >
-auto transpose_helper( Tensor< shape< N, N >, Types > const& v, seq< Is... > )
-{ return make_tensor< shape< N, N >>( get< ( Is % N ) * N + Is / N >( v.values )... ); }
+/**
+ * constructs the transpose using the 1-d tuple indices of the values of the
+ * input matrix.  
+ * 
+ * @tparam Rows is the number of rows of the input matrix
+ * @tparam Cols is the number of columns in the input matrix
+ * @tparam Types is the types<...> pack of types in the input matrix
+ * @tparam Is are the [0...Rows*Cols) sequence of 1-d indices of each element
+ * 
+ * We treat Is as indices into the (Cols,Rows) output matrix.  The row of the 
+ * output matrix is therefore ( Is % Rows ) * Cols and the column is Is / Rows
+ */
+template< size_t Rows, size_t Cols, typename Types, size_t... Is >
+auto transpose_helper( Tensor< shape< Rows, Cols >, Types > const& v, seq< Is... > )
+{ return make_tensor< shape< Cols, Rows >>( get< ( Is % Rows ) * Cols + Is / Rows >( v.values )... ); }
 
 } // namespace detail (transpose)
 
@@ -959,9 +1045,9 @@ auto transpose_helper( Tensor< shape< N, N >, Types > const& v, seq< Is... > )
  * @param v the tensor to be transposed
  * @returns the transpose of the square NxN tensor v
  */
-template< size_t N, typename Types >
-auto transpose( Tensor< shape< N, N >, Types > const& v )
-{ return detail::transpose_helper( v, make_seq< N * N >{} ); }
+template< size_t Rows, size_t Cols, typename Types >
+auto transpose( Tensor< shape< Rows, Cols >, Types > const& v )
+{ return detail::transpose_helper< Rows, Cols >( v, make_seq< Rows * Cols >{} ); }
 
 // forward declaration of determinant
 template< size_t N, typename Types >
@@ -974,11 +1060,10 @@ namespace detail {
 template< size_t N, typename Types, size_t... Ns >
 auto det_helper( Tensor< shape< N, N >, Types > const& v, seq< Ns... > )
 {
-    return ((( Ns % 2 == 0 ? 1. : -1. ) *            // alternating terms
-                get< element_from<                   // v[0,Ns]
-                    shape< N, N >, index< 0, Ns >>>( v.values ) * 
-                determinant(                          // det of submatrix[0,Ns]
-                    sub_tensor< index< 0, Ns >>( v ))) + ... );
+    // determinant is the alternating sum of th product of the 
+    return difference_of(  
+        product_of( v.template at< index< 0, Ns >>(),
+            determinant( sub_tensor< index< 0, Ns >>( v )))... );
 }
 
 // the determinant of a 1x1 matrix is the value of the only element
@@ -1002,24 +1087,77 @@ template< size_t N, typename Types >
 auto determinant( Tensor< shape< N, N >, Types > const& v )
 { return detail::det_helper( v, make_seq< N >{} ); }
 
+// forward declaration of minor
+template< size_t N, typename Types >
+auto minor( Tensor< shape< N, N >, Types > const& v );
+
+// minor details
+namespace detail {
+template< typename Shape, typename Types, size_t... Is >
+auto minor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
+{
+    /**
+     * the minor of an element of a square matrix is the determinant of the sub 
+     * matrix formed by removing the row and column of the given element
+     */
+    return make_tensor< Shape >( 
+        determinant(                                        // det(sub(i,j))
+            sub_tensor< index_from< Shape, Is >>( v ))... );
+}
+} // namespace detail
+
+/**
+ * Calculates the minor matrix of a square NxN tensor
+ * 
+ * @tparam N the size of one side of a square tensor
+ * @tparam Types the types<...> holder of a parameter pack of the types of the 
+ *  square tensor
+ * @param v the square tensor to calculate the minor matrix
+ * @returns the minor matrix of the square tensor v
+ */
+template< size_t N, typename Types >
+auto minor( Tensor< shape< N, N >, Types > const& v )
+{ return detail::minor_helper( v, make_seq< shape< N, N >::elements_size >{} ); }
+
 // forward declaration of cofactor
 template< size_t N, typename Types >
 auto cofactor( Tensor< shape< N, N >, Types > const& v );
 
 // cofactor details
 namespace detail {
+
+template< typename Expr >
+auto negate_expr( Expr expr )
+{ return std::negate< Expr >{}( expr ); }
+
+// DT: I don't think I can get away with not including the expressions.hpp in
+// the tensor library.  I can't think of a way to infer the type of a negate_t
+// expression using only std::negate or ::operator-(auto). 
+// My first attempt tried to use make_tensor with std::negate in a ?: ternary 
+// expression.  That doesn't work because ?: requires the types of the true and
+// false outputs to be the same.  We need to explictly define the type of the
+// returned tensor to be a negation, and so we need to include negate_t and
+// so we need to #include "expressions.hpp"
 template< typename Shape, typename Types, size_t... Is >
-auto cofactor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
+auto cofactor_helper( Tensor< Shape, Types > minor, seq< Is... > )
 {
+    using expressions::negation_t;
     /**
      * the cofactor of an element of a square matrix is the alternating
      * determinant of the sub matrix formed by removing the row and column
-     * of the given element
+     * of the given element, in other words, the alternating minor
      */
-    return make_tensor< Shape >( 
-        (( index_from< Shape, Is >::is_even ? 1. : -1. ) *  // alternating term
-        determinant(                                        // det(sub(i,j))
-            sub_tensor< index_from< Shape, Is >>( v )))... );
+    using cofactor_tensor_types = types< std::conditional_t< 
+        index_from< Shape, Is >::is_even,
+        type_at_element< Is, Types >,
+        negation_t< type_at_element< Is, Types >>>... >;
+    using cofactor_type = Tensor< Shape, cofactor_tensor_types >;
+
+    // TODO: if the Ith value is an expression
+    return cofactor_type{ make_values_of( 
+        (type_at_element< Is, cofactor_tensor_types >{ 
+            get< Is >( minor.values )})... )};
+    // return cofactor_type{};
 }
 } // namespace detail
 
@@ -1034,7 +1172,7 @@ auto cofactor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
  */
 template< size_t N, typename Types >
 auto cofactor( Tensor< shape< N, N >, Types > const& v )
-{ return detail::cofactor_helper( v, make_seq< shape< N, N >::elements_size >{} ); }
+{ return detail::cofactor_helper( minor( v ), make_seq< shape< N, N >::elements_size >{} ); }
 
 /**
  * Calculates the inverse of an NxN square tensor such that V * inv{V} == I

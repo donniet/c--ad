@@ -15,6 +15,20 @@ namespace units
     /**
      * Concepts
      */
+    // is the unit continuous or discrete?
+    template< typename Unit >
+    concept continuous = std::floating_point< Unit > or 
+        std::floating_point< typename Unit::value_type >;
+
+    template< typename Unit >
+    concept discrete = 
+        ( std::integral< Unit > and not std::is_same_v< Unit, bool > ) or
+        ( std::integral< typename Unit::value_type > and not 
+            std::is_same_v< typename Unit::value_type, bool > );
+
+    template< typename Unit >
+    concept numeric = continuous< Unit > or discrete< Unit >;
+    
     template< typename U >
     concept unit = requires ( U a, U b ) 
     {  
@@ -286,6 +300,7 @@ namespace units
 
     static_assert( std::is_same_v< Space< Length, Length, Length >, ProductType< Space< Length, Length >, Length >::type > );
 }
+
 
 namespace std {
     using namespace units;

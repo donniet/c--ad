@@ -427,6 +427,10 @@ remove_nth( PackType const& pack )
 template< typename... TupleTypes >
 struct TupleCat;
 
+template<>
+struct TupleCat<> 
+{ using type = tuple<>; };
+
 template< typename... Ts >
 struct TupleCat< tuple< Ts... >>
 { using type = tuple< Ts... >; };
@@ -473,6 +477,8 @@ static_assert( is_same_v<
     TupleUnique< tuple< double, int, float, float, float, double >>::type > );
 } // namespace test
 #endif
+
+
 
 
 #endif
