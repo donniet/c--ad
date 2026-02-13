@@ -33,8 +33,8 @@ struct StaticExpression
     using result_type = T;
 
     operator result_type() const { return value; };
-    StaticExpression() = default;
-    StaticExpression( result_type value ) : value{ value } { }
+    constexpr StaticExpression() = default;
+    constexpr StaticExpression( result_type value ) : value{ value } { }
 
     result_type value;
 };

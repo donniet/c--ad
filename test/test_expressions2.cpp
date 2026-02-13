@@ -1,5 +1,6 @@
 #include "expressions/expression_base.hpp"
 #include "expressions/expression_ops.hpp"
+#include "expressions/units.hpp"
 // #include "expressions/tensor_field.hpp"
 // #include "expressions/tensor_field_ops.hpp"
 // #include "expressions/tensor_contraction.hpp"
@@ -13,12 +14,11 @@ int main( int ac, char * av[] )
     using std::sin, std::cos;
     using namespace std::numbers;
     using namespace expressions;
+    using namespace expressions::units;
     using namespace expressions::operators;
 
-    auto one = make_static( 1.f );
-    auto zero = make_static( 0.f );
 
-    auto f = one + zero + one + zero;
+    auto f = 1_scalar + 0_scalar + 1_scalar + 0_scalar;
 
     println("{}", typeid(f).name() );
     println("{}", invoke( f ));
