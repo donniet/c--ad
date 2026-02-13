@@ -1,8 +1,8 @@
 #include "expressions/expression_base.hpp"
 #include "expressions/expression_ops.hpp"
-#include "expressions/tensor_field.hpp"
-#include "expressions/tensor_field_ops.hpp"
-#include "expressions/tensor_contraction.hpp"
+// #include "expressions/tensor_field.hpp"
+// #include "expressions/tensor_field_ops.hpp"
+// #include "expressions/tensor_contraction.hpp"
 
 #include <print>
 #include <cmath>
@@ -15,35 +15,53 @@ int main( int ac, char * av[] )
     using namespace expressions;
     using namespace expressions::operators;
 
-    println("{}", av[0] );
+    auto one = make_static( 1.f );
+    auto zero = make_static( 0.f );
 
-    using mat2 = Tensor< Shape< 2, 2 >, float, float, float, float >;
-    using vec2 = Tensor< Shape< 2 >, float, float >;
+    auto f = one + zero + one + zero;
+
+    println("{}", typeid(f).name() );
+    println("{}", invoke( f ));
+
+    // println("{}", av[0] );
+
+    // using ten22 = UniformTensor< Shape< 2, 2 >, float >;
+    // using ten2 = UniformTensor< Shape< 2 >, float >;
     
-    auto m = mat2{ 1.f, 0.f, 
-                   0.f, 1.f };
+    // auto m = ten22{ 1.f, 0.f, 
+    //                0.f, 1.f };
 
-    auto n = mat2{ cosf( pi / 3.f ), -sinf( pi / 3.f ), 
-                   sinf( pi / 3.f ),  cosf( pi / 3.f ) };
+    // auto n = ten22{ cosf( pi / 3.f ), -sinf( pi / 3.f ), 
+    //                 sinf( pi / 3.f ),  cosf( pi / 3.f ) };
 
-    auto v = vec2{ 0.f, 1.f };
-    auto w = invoke( v );
+    // auto v = ten2{ 0.f, 1.f };
+    // auto w = invoke( v );
 
-    auto x = m * v ;
+    // auto x = m * v ;
 
-    if( x.template subscript< 0, 0, 0 >() != 0.f or 
-        x.template subscript< 0, 0, 1 >() != 1.f or 
-        x.template subscript< 0, 1, 0 >() != 0.f or 
-        x.template subscript< 0, 1, 1 >() != 0.f or 
-        x.template subscript< 1, 0, 0 >() != 0.f or 
-        x.template subscript< 1, 0, 1 >() != 0.f or 
-        x.template subscript< 1, 1, 0 >() != 0.f or 
-        x.template subscript< 1, 1, 1 >() != 1.f )
-        throw std::logic_error( "tensor multiplication failed." );
+    // auto x1 = UniformTensor< Shape< 2, 2, 2 >, float >{
+    //     0.f, 1.f,   0.f, 0.f,
+    //     0.f, 0.f,   0.f, 1.f
+    // };
 
-    // println( "w = {}", w );
+    // if( x != x1 )
+    //     throw std::logic_error( "equality test failed" );
 
-    static_assert( expression_traits< mat2 >::is_static_expression );
+    // using mat2 = UniformMatrix< 2, 2, float >;
+    // using vec2 = UniformVector< 2, float >;
+
+    // auto g = mat2{ 1.f, 0.f,
+    //                0.f, 1.f };
+    // auto h = mat2{ 1.f, 2.f,
+    //                3.f, 4.f };
+
+    // auto y = g * h;
+    // if( y != h )
+    //     throw std::logic_error( "identity matrix multiplication failed" );
+
+    // // println( "w = {}", w );
+
+    // static_assert( expression_traits< ten22 >::is_static_expression );
 
     return 0;
 }

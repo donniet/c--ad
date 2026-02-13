@@ -26,11 +26,35 @@ using std::vector;
 struct Expression
 { };
 
+template< typename T >
+struct StaticExpression
+{
+    static constexpr bool is_static_expression = true;
+    using result_type = T;
+
+    operator result_type() const { return value; };
+    StaticExpression() = default;
+    StaticExpression( result_type value ) : value{ value } { }
+
+    result_type value;
+};
+
+template< typename T >
+StaticExpression< T > make_static( T value )
+{ return { value }; }
+
 /**
  * traits of expressions
  */
 template< typename T >
-struct expression_traits
+struct expression_traits;
+
+template< typename T >
+concept expression = requires
+{ typename expression_traits< T >; };
+
+template< typename T >
+struct expression_traits< StaticExpression< T >>
 {
     using result_type = T;
     // by default the expression is a static one
@@ -43,15 +67,16 @@ struct expression_traits
 template< typename... Ts >
 struct DependsOn : Expression
 { 
-    using dependent_types = tuple< Ts... >;
+    using dependent_types = 
+        tuple_cat_t< typename expression_traits< Ts >::dependent_types... >;
 
     static constexpr bool is_static_expression = 
         ( ... and expression_traits< Ts >::is_static_expression );
 
-    dependent_types exprs;
+    tuple< Ts... > exprs;
 
     DependsOn() = default;
-    explicit DependsOn( DependsOn const& ) = default;
+    DependsOn( DependsOn const& ) = default;
     DependsOn( Ts... ts ) : exprs{ ts... } { }
 };
 
@@ -67,13 +92,13 @@ requires ( is_base_of_v< Expression, T > )
 struct expression_traits< T >
 { 
     using result_type = T::result_type;
-    static constexpr bool is_static_expression = T::is_static_expression;
+    static constexpr bool is_static_expression = false;
     static constexpr bool is_compound_expression = true;
     static constexpr bool is_variable = false;
     using dependent_types = T::dependent_types;
 };
 
-template< typename... Ts >
+template< expression... Ts >
 struct expression_traits< tuple< Ts... >>
 { 
     using result_type = tuple< 
@@ -171,19 +196,19 @@ struct expression_traits< Variable< T, I >>
 /**
  * trait to determine if a given type is a variable
  */
-template< typename V >
+template< expression V >
 constexpr bool is_variable_v = expression_traits< V >::is_variable;
 
 template< typename V >
 concept variable = is_variable_v< V >;
 
-template< typename V >
-constexpr bool is_static_expr_v = expression_traits< V >::is_static_expression;
+// template< typename V >
+// constexpr bool is_static_expr_v = expression_traits< V >::is_static_expression;
 
-template< typename V >
-concept static_expr = is_static_expr_v< V >;
+// template< typename V >
+// concept static_expr = is_static_expr_v< V >;
 
-template< typename V >
+template< expression V >
 constexpr bool is_compound_v = expression_traits< V >::is_compound_expression;
 
 template< typename V >
@@ -196,12 +221,11 @@ concept compound = is_compound_v< V >;
  * @tparam V variable to be searched for
  * @returns true if expression E uses variable V as a subtype
  */
-template< variable V, typename E >
+template< variable V, expression E >
 struct depends_on;
 
-template< variable V, typename E>
-requires static_expr< E >
-struct depends_on< V, E >
+template< variable V, typename T >
+struct depends_on< V, StaticExpression< T >>
 { static constexpr bool value = false; };
 
 template< typename T, size_t I, typename U, size_t J >
@@ -211,12 +235,12 @@ struct depends_on< Variable< T, I >, Variable< U, J >>
 template< variable V, typename TupleT >
 struct depends_on_compound_helper;
 
-template< variable V, typename... Ts >
+template< variable V, expression... Ts >
 struct depends_on_compound_helper< V, tuple< Ts... >>
-{ static constexpr bool value = ( ... or depends_on< Ts, V >::value ); };
+{ static constexpr bool value = ( ... or depends_on< V, Ts >::value ); };
 
-template< variable V, typename T >
-requires ( compound< T > and not static_expr< T > )
+template< variable V, expression T >
+requires ( compound< T > and not expression_traits< T >::is_static_expression )
 struct depends_on< V, T >
 { 
     using dependent_types = expression_traits< T >::dependent_types;
@@ -293,7 +317,10 @@ static_assert( is_same_v< variable_type_t< 0, tuple< Variable< int, 1 >,
 #endif
 
 template< typename E >
-struct max_variable_index
+struct max_variable_index;
+
+template< typename T >
+struct max_variable_index< StaticExpression< T >>
 { static constexpr size_t value = 0; };
 
 template< typename T, size_t I >
@@ -301,9 +328,15 @@ struct max_variable_index< Variable< T, I >>
 { static constexpr size_t value = I; };
 
 template< compound E >
+requires ( isgreater( tuple_size_v< typename expression_traits< E >::dependent_types >, 0 ))
 struct max_variable_index< E >
 { static constexpr size_t value = max_variable_index< 
     typename expression_traits< E >::dependent_types >::value; };
+
+template< compound E >
+requires ( tuple_size_v< typename expression_traits< E >::dependent_types > == 0 )
+struct max_variable_index< E >
+{ static constexpr size_t value = 0; };
 
 template< typename... Ts >
 struct max_variable_index< tuple< Ts... >>
@@ -366,7 +399,7 @@ private:
 };
 
 template< typename T >
-requires static_expr< T >
+requires expression_traits< T >::is_static_expression
 struct Invoker< T >
 {
     T operator()( T value, variable_values const& ) 
