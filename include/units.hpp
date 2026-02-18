@@ -1,9 +1,12 @@
 #ifndef __UNITS_HPP__
 #define __UNITS_HPP__
 
+#include "utility.hpp"
+
 #include <cmath>
 #include <numeric>
 #include <array>
+#include <type_traits>
 
 // formatting
 #include <algorithm>
@@ -16,14 +19,15 @@
 
 namespace units {
 
-using std::gcd;
+using std::gcd, std::isgreater, std::isless;
 using std::pair, std::tuple;
 using std::string;
+using std::conditional_t;
 
 // conversion factors for units
 constexpr long double meters_per_inch = 0.0254;
 constexpr long double meters_per_foot = meters_per_inch * 12.;
-constexpr long double meters_per_mile = meters_per_foot *- 5280.;
+constexpr long double meters_per_mile = meters_per_foot * 5280.;
 constexpr long double meters_per_second = 299'792'458; // c
 
 // NOTE: we allow for a max of 16 units
@@ -54,6 +58,8 @@ using prime_unit_t = prime_unit< I >::type;
  */
 using unit_id_type = pair< unsigned long long, unsigned long long >;
 
+constexpr unit_id_type scalar_unit_id = { 1, 1 };
+
 consteval unit_id_type operator* ( unit_id_type left, unit_id_type right )
 { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
     left.second / gcd( left.second, right.first ) * right.second / gcd( right.second, left.first ) }; }
@@ -81,7 +87,6 @@ static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 
 template< typename T >
 struct unit_traits;
 
-
 template< typename T >
 concept unit = requires
 { typename unit_traits< T >; };
@@ -99,6 +104,9 @@ struct unit_product
     constexpr unit_product() : value{0.} { }
     constexpr unit_product( unit_product const& other ) : value{ other.value } { }
     constexpr unit_product( scalar_type value ) : value{ value } { }
+
+    constexpr scalar_type get_value() const
+    { return value; }
 
     scalar_type value;
 };
@@ -126,6 +134,9 @@ struct unit_quotient
     constexpr unit_quotient( unit_quotient const& other ) : value{ other.value } { }
     constexpr unit_quotient( scalar_type value ) : value{ value } { }
 
+    constexpr scalar_type get_value() const
+    { return value; }
+
     scalar_type value;
 };
 
@@ -138,11 +149,42 @@ struct unit_traits< unit_quotient< Us... >>
     static constexpr bool is_continuous = not is_discrete;
 };
 
+template< unit U >
+struct unit_inverse
+{
+    using unit_type = U;
+    using scalar_type = unit_traits< U >::scalar_type;
+
+    constexpr unit_inverse& operator=( unit_inverse const& other )
+    { value = other.value; return *this; }
+    constexpr unit_inverse& operator=( scalar_type const& other )
+    { value = other; return *this; }
+    constexpr unit_inverse() : value{0.} { }
+    constexpr unit_inverse( unit_inverse const& other ) : value{ other.value } { }
+    constexpr unit_inverse( scalar_type value ) : value{ value } { }
+
+    constexpr scalar_type get_value() const
+    { return value; }
+
+    scalar_type value;
+};
+
+template< unit U >
+struct unit_traits< unit_inverse< U >>
+{ 
+    static constexpr unit_id_type id = ( scalar_unit_id / unit_traits< U >::id ); 
+    using scalar_type = unit_traits< U >::scalar_type;
+    static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
+    static constexpr bool is_continuous = not is_discrete;
+};
+
 template< unit LeftU, unit RightU >
 constexpr unit_product< LeftU, RightU > operator* ( LeftU left, RightU right )
-{  
-    
-}
+{ return { left.get_value() * right.get_value() }; }
+
+template< unit LeftU, unit RightU >
+constexpr unit_quotient< LeftU, RightU > operator/ ( LeftU left, RightU right )
+{ return { left.get_value() / right.get_value() }; }
 
 /**
  * represents a dimensionless floating point value
@@ -159,6 +201,9 @@ struct Scalar
     constexpr Scalar( Scalar const& other ) : value{ other.value } { }
     constexpr Scalar( scalar_type value ) : value{ value } { }
 
+    constexpr scalar_type get_value() const
+    { return value; }
+
     scalar_type value;
 };
 
@@ -171,6 +216,41 @@ struct unit_traits< Scalar >
     static constexpr bool is_continuous = true;
 };
 
+template< unit U, typename Seq >
+struct PositivePowerUnitHelper;
+
+template< unit U, size_t... Is >
+struct PositivePowerUnitHelper< U, seq< Is... >>
+{ using type = unit_product< conditional_t< Is == Is, U, U >... >; };
+
+template< unit U, typename Seq >
+struct NegativePowerUnitHelper;
+
+template< unit U, size_t... Is >
+struct NegativePowerUnitHelper< U, seq< Is... >>
+{ using type = unit_inverse< unit_product< conditional_t< Is == Is, U, U >... >>; };
+
+template< int Power, unit U >
+struct PowerUnit;
+
+template< int Power, unit U >
+requires( isgreater( Power, 0 ))
+struct PowerUnit< Power, U >
+{ using type = typename PositivePowerUnitHelper< U, make_seq< (size_t)Power >>::type; };
+
+template< int Power, unit U >
+requires( isless( Power, 0 ))
+struct PowerUnit< Power, U >
+{ using type = typename NegativePowerUnitHelper< U, make_seq< (size_t)-Power >>::type; };
+
+template< unit U >
+struct PowerUnit< 0, U >
+{ using type = Scalar; };
+
+template< int Power, unit U >
+using power_unit_t = PowerUnit< Power, U >::type;
+
+
 /**
  * represents an non-negative integer value
  */
@@ -182,9 +262,14 @@ struct Cardinal
     { value = other.value; return *this; }
     constexpr Cardinal& operator=( scalar_type other )
     { value = other; return *this; }
+    constexpr operator bool() const
+    { return value != 0; }
     constexpr Cardinal() : value{0} { }
     constexpr Cardinal( Cardinal const& other ) : value{ other.value } { }
     constexpr Cardinal( scalar_type value ) : value{ value } { }
+
+    constexpr scalar_type get_value() const
+    { return value; }
 
     scalar_type value;
 };
@@ -209,9 +294,14 @@ struct Boolean
     { value = other.value; return *this; }
     constexpr Boolean& operator=( scalar_type other )
     { value = other; return *this; }
+    constexpr operator bool() const
+    { return value; }
     constexpr Boolean() : value{ false } { }
     constexpr Boolean( Boolean const& other ) : value{ other.value } { }
     constexpr Boolean( scalar_type value ) : value{ value } { }
+
+    constexpr scalar_type get_value() const
+    { return value; }
 
     scalar_type value;
 };
@@ -359,6 +449,38 @@ Boolean operator >( Scalar const& left, Cardinal const& right )
 Boolean operator >=( Scalar const& left, Cardinal const& right )
 { return { left.value >= (long double)right.value }; }
 
+// general unit comparison
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator ==( LeftU const& left, RightU const& right )
+{ return left.get_value() == right.get_value(); }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator !=( LeftU const& left, RightU const& right )
+{ return left.get_value() != right.get_value(); }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator <( LeftU const& left, RightU const& right )
+{ return left.get_value() < right.get_value(); }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator <=( LeftU const& left, RightU const& right )
+{ return left.get_value() <= right.get_value(); }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator >( LeftU const& left, RightU const& right )
+{ return left.get_value() > right.get_value(); }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+Boolean operator >=( LeftU const& left, RightU const& right )
+{ return left.get_value() >= right.get_value(); }
+
+
 // scalar and cardinal arithmetic
 Scalar operator +( Scalar const& left, Cardinal const& right )
 { return { left.value + (long double)right.value }; }
@@ -376,7 +498,41 @@ Scalar operator /( Scalar const& left, Cardinal const& right )
 { return { left.value / (long double)right.value }; }
 Scalar operator /( Cardinal const& left, Scalar const& right )
 { return { (long double)left.value / right.value }; }
-// TODO: trig, pow and log functions of Scalars and Cardinals
+
+// powers (compile time)
+template< int Power, unit U >
+constexpr power_unit_t< Power, U > pow( U const& u )
+{ return { std::pow( u.get_value(), Power )}; }
+
+// general unit arithmetic
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+constexpr LeftU operator +( LeftU const& left, RightU const& right )
+{ return { left.get_value() + right.get_value() }; }
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+constexpr LeftU operator -( LeftU const& left, RightU const& right )
+{ return { left.get_value() - right.get_value() }; }
+
+constexpr Scalar sin( Scalar const& u )
+{ return { std::sin( u.get_value() )}; }
+constexpr Scalar cos( Scalar const& u )
+{ return { std::cos( u.get_value() )}; }
+constexpr Scalar tan( Scalar const& u )
+{ return { std::tan( u.get_value() )}; }
+
+constexpr Scalar asin( Scalar const& arg )
+{ return { std::asin( arg.get_value() ) }; }
+constexpr Scalar acos( Scalar const& arg )
+{ return { std::acos( arg.get_value() ) }; }
+constexpr Scalar atan( Scalar const& arg )
+{ return { std::atan( arg.get_value() ) }; }
+
+template< unit NumeratorU, unit DenominatorU >
+requires( unit_traits< NumeratorU >::id == unit_traits< DenominatorU >::id )
+constexpr Scalar atan2( NumeratorU const& num, DenominatorU const& den )
+{ return { std::atan2( num.get_value(), den.get_value()) }; }
 
 /**
  * represents a length in meters
@@ -392,6 +548,9 @@ struct Length
     constexpr Length() : meters{0.} { }
     constexpr Length( Length const& other ) : meters{ other.meters } { }
     constexpr Length( long double meters ) : meters{ meters } { }
+
+    constexpr scalar_type get_value() const
+    { return meters; }
 
     scalar_type meters;
 };
@@ -456,12 +615,6 @@ constexpr long double length_value( Length length, length_unit u )
 }
 
 // length arithmetic
-Length operator +( Length const& left, Length const& right )
-{ return { left.meters + right.meters }; }
-Length operator -( Length const& left, Length const& right )
-{ return { left.meters - right.meters }; }
-Scalar operator /( Length const& left, Length const& right )
-{ return { left.meters / right.meters }; }
 Scalar operator %( Length const& left, Length const& right )
 { return { left.meters - 
     ( right.meters * std::floor( left.meters / right.meters )) }; }
@@ -621,6 +774,8 @@ struct formatter< units::Length, char > : formatter< long double, char >
             ctx.out() ).out;
     }
 };
+
+// TODO: format unit products and quotients
 
 } // namespace std
 
