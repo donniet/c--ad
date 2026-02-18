@@ -22,8 +22,8 @@ using std::string;
 
 // conversion factors for units
 constexpr long double meters_per_inch = 0.0254;
-constexpr long double meters_per_foot = meters_per_inch / 12.;
-constexpr long double meters_per_mile = meters_per_foot / 5280.;
+constexpr long double meters_per_foot = meters_per_inch * 12.;
+constexpr long double meters_per_mile = meters_per_foot *- 5280.;
 constexpr long double meters_per_second = 299'792'458; // c
 
 // NOTE: we allow for a max of 16 units

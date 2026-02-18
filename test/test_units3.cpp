@@ -31,6 +31,9 @@ int main( int ac, char* av[] )
     println( "5km == {}", five_km );
     println( runtime_format("5km == {:km}"), five_km );
     println( runtime_format("5km == {:km:10f}"), five_km );
+    println( runtime_format("5km == {:mi:10f}"), five_km );
+    println( runtime_format("5km == {:ft:10f}"), five_km );
+    println( runtime_format("5km == {:millimeters:10f}"), five_km );
 
     return 0;
 }
