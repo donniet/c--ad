@@ -2,386 +2,627 @@
 #define __UNITS_HPP__
 
 #include <cmath>
+#include <numeric>
+#include <array>
+
+// formatting
+#include <algorithm>
+#include <format>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 #include <string>
-#include <chrono>
-#include <functional>
+#include <string_view>
 
-namespace units 
+namespace units {
+
+using std::gcd;
+using std::pair, std::tuple;
+using std::string;
+
+// conversion factors for units
+constexpr long double meters_per_inch = 0.0254;
+constexpr long double meters_per_foot = meters_per_inch / 12.;
+constexpr long double meters_per_mile = meters_per_foot / 5280.;
+constexpr long double meters_per_second = 299'792'458; // c
+
+// NOTE: we allow for a max of 16 units
+constexpr size_t total_units = 16;
+using ull_t = unsigned long long;
+
+// powers of higher units will be severely limited due to Godel numbering
+constexpr std::array< ull_t, total_units > primes = 
+/*0  1  2  3  4   5   6   7   8   9   10  11  12  13  14  15 */
+{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+
+template< size_t I >
+struct prime_unit;
+
+template< size_t I >
+using prime_unit_t = prime_unit< I >::type;
+
+// TODO: undefined and automatic
+// struct undefined_t { };
+// constexpr const undefined_t undefined = {};
+// struct automatic_t { };
+// constexpr const automatic_t automatic = {};
+
+/**
+ * A unit_id is a fraction of two unsigned integers.  
+ * 
+ * TODO: handle null units (automatics)
+ */
+using unit_id_type = pair< unsigned long long, unsigned long long >;
+
+consteval unit_id_type operator* ( unit_id_type left, unit_id_type right )
+{ return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
+    left.second / gcd( left.second, right.first ) * right.second / gcd( right.second, left.first ) }; }
+
+consteval unit_id_type operator/ ( unit_id_type left, unit_id_type right )
+{ return left * unit_id_type{ right.second, right.first }; }
+
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 } );
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 } );
+static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 } ) == unit_id_type{ 2, 3 } );
+static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 4, 3 } );
+
+/**
+ * unit traits are defined on types that are considered units.  Must declare
+ * a static ull member `id` which is a prime number.  Godel numbering will be
+ * used to create unique ids for powers of units.  quotients of units will be 
+ * 
+ * This will ensure that compound units will have unique ids.  
+ * 
+ * the IDs of scalars and cardinal numbers will be 1 so that raised to any power
+ * they stay 1. 
+ * 
+ * TODO: IDs of automatic expressions will be 0
+ */
+template< typename T >
+struct unit_traits;
+
+
+template< typename T >
+concept unit = requires
+{ typename unit_traits< T >; };
+
+template< unit... Us >
+struct unit_product
+{ 
+    using units_tuple = tuple< Us... >; 
+    using scalar_type = std::common_type_t< typename unit_traits< Us >::scalar_type... >;
+
+    constexpr unit_product& operator=( unit_product const& other )
+    { value = other.value; return *this; }
+    constexpr unit_product& operator=( scalar_type const& other )
+    { value = other; return *this; }
+    constexpr unit_product() : value{0.} { }
+    constexpr unit_product( unit_product const& other ) : value{ other.value } { }
+    constexpr unit_product( scalar_type value ) : value{ value } { }
+
+    scalar_type value;
+};
+
+template< unit... Us >
+struct unit_traits< unit_product< Us... >>
+{ 
+    static constexpr unit_id_type id = ( unit_traits< Us >::id * ... ); 
+    using scalar_type = std::common_type_t< typename unit_traits< Us >::scalar_type... >;
+    static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
+    static constexpr bool is_continuous = not is_discrete;
+};
+
+template< unit... Us >
+struct unit_quotient
+{ 
+    using units_tuple = tuple< Us... >; 
+    using scalar_type = std::common_type_t< typename unit_traits< Us >::scalar_type... >;
+
+    constexpr unit_quotient& operator=( unit_quotient const& other )
+    { value = other.value; return *this; }
+    constexpr unit_quotient& operator=( scalar_type const& other )
+    { value = other; return *this; }
+    constexpr unit_quotient() : value{0.} { }
+    constexpr unit_quotient( unit_quotient const& other ) : value{ other.value } { }
+    constexpr unit_quotient( scalar_type value ) : value{ value } { }
+
+    scalar_type value;
+};
+
+template< unit... Us >
+struct unit_traits< unit_quotient< Us... >>
+{ 
+    static constexpr unit_id_type id = ( unit_traits< Us >::id / ... ); 
+    using scalar_type = std::common_type_t< typename unit_traits< Us >::scalar_type... >;
+    static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
+    static constexpr bool is_continuous = not is_discrete;
+};
+
+template< unit LeftU, unit RightU >
+constexpr unit_product< LeftU, RightU > operator* ( LeftU left, RightU right )
+{  
+    
+}
+
+/**
+ * represents a dimensionless floating point value
+ */
+struct Scalar 
 {
-    struct undefined_t { };
+    using scalar_type = long double;
 
-    static constexpr const undefined_t undefined = {};
+    constexpr Scalar& operator=( Scalar const& other )
+    { value = other.value; return *this; }
+    constexpr Scalar& operator=( scalar_type other )
+    { value = other; return *this; }
+    constexpr Scalar() : value{0.} { }
+    constexpr Scalar( Scalar const& other ) : value{ other.value } { }
+    constexpr Scalar( scalar_type value ) : value{ value } { }
 
-    /**
-     * Concepts
-     */
-    // is the unit continuous or discrete?
-    template< typename Unit >
-    concept continuous = std::floating_point< Unit > or 
-        std::floating_point< typename Unit::value_type >;
+    scalar_type value;
+};
 
-    template< typename Unit >
-    concept discrete = 
-        ( std::integral< Unit > and not std::is_same_v< Unit, bool > ) or
-        ( std::integral< typename Unit::value_type > and not 
-            std::is_same_v< typename Unit::value_type, bool > );
+template< >
+struct unit_traits< Scalar >
+{ 
+    static constexpr unit_id_type id = { 1, 1 }; 
+    using scalar_type = long double;
+    static constexpr bool is_discrete = false;
+    static constexpr bool is_continuous = true;
+};
 
-    template< typename Unit >
-    concept numeric = continuous< Unit > or discrete< Unit >;
-    
-    template< typename U >
-    concept unit = requires ( U a, U b ) 
-    {  
-        a *= 1.0;
-        a = b;
-        a += b;
-        a -= b;
-        a = undefined;
-    };
+/**
+ * represents an non-negative integer value
+ */
+struct Cardinal
+{
+    using scalar_type = unsigned long long;
 
-    namespace detail
-    {
-        template< typename T, typename U >
-        auto span_expression( T, U );
+    constexpr Cardinal& operator=( Cardinal const& other )
+    { value = other.value; return *this; }
+    constexpr Cardinal& operator=( scalar_type other )
+    { value = other; return *this; }
+    constexpr Cardinal() : value{0} { }
+    constexpr Cardinal( Cardinal const& other ) : value{ other.value } { }
+    constexpr Cardinal( scalar_type value ) : value{ value } { }
+
+    scalar_type value;
+};
+
+template< >
+struct unit_traits< Cardinal >
+{ 
+    static constexpr unit_id_type id = { 1, 1 }; 
+    using scalar_type = unsigned long long;
+    static constexpr bool is_discrete = true;
+    static constexpr bool is_continuous = false;
+};
+
+/**
+ * represents the result of a comparison or logical operation
+ */
+struct Boolean
+{
+    using scalar_type = bool;
+
+    constexpr Boolean& operator=( Boolean const& other )
+    { value = other.value; return *this; }
+    constexpr Boolean& operator=( scalar_type other )
+    { value = other; return *this; }
+    constexpr Boolean() : value{ false } { }
+    constexpr Boolean( Boolean const& other ) : value{ other.value } { }
+    constexpr Boolean( scalar_type value ) : value{ value } { }
+
+    scalar_type value;
+};
+
+template< >
+struct unit_traits< Boolean >
+{ 
+    static constexpr unit_id_type id = { 1, 1 }; 
+    using scalar_type = bool;
+    static constexpr bool is_discrete = true;
+    static constexpr bool is_continuous = false;
+};
+
+// true and false expressions
+constexpr Boolean true_bool = true;
+constexpr Boolean false_bool = false;
+
+// literals and construction methods for scalars
+Scalar operator ""_scalar( long double x )
+{ return { x }; }
+Scalar operator ""_scalar( unsigned long long x )
+{ return { (long double)x }; }
+Scalar scalar( long double x )
+{ return { x }; }
+Scalar operator ""_percent( long double x )
+{ return { 0.01 * x }; }
+Scalar operator ""_percent( unsigned long long x )
+{ return { 0.01 * (long double)x }; }
+Scalar percent( Cardinal n )
+{ return { 0.01 * (long double)n.value }; }
+Scalar percent( unsigned long long n )
+{ return { 0.01 * (long double)n }; }
+Scalar percent( long double x )
+{ return { 0.01 * x }; }
+
+// literals and construction methods for cardinals
+Cardinal operator ""_cardinal( unsigned long long n )
+{ return { n }; }
+Cardinal cardinal( Scalar x )
+{ return { (unsigned long long)x.value }; }
+Cardinal cardinal( long double x )
+{ return { (unsigned long long)x }; }
+Cardinal cardinal( unsigned long long n )
+{ return { n }; }
+
+// logical operations
+Boolean operator and( Boolean const& left, Boolean const& right )
+{ return { left.value and right.value }; }
+Boolean operator or( Boolean const& left, Boolean const& right )
+{ return { left.value or right.value }; }
+Boolean operator not( Boolean const& arg )
+{ return { not arg.value }; }
+
+// scalar arithmetic
+Scalar operator +( Scalar const& left, Scalar const& right )
+{ return { left.value + right.value }; }
+Scalar operator -( Scalar const& left, Scalar const& right )
+{ return { left.value - right.value }; }
+Scalar operator -( Scalar const& arg )
+{ return { -arg.value }; }
+Scalar operator *( Scalar const& left, Scalar const& right )
+{ return { left.value * right.value }; }
+Scalar operator /( Scalar const& left, Scalar const& right )
+{ return { left.value / right.value }; }
+
+// TODO: add exceptions for negative numbers and infinity
+Cardinal operator +( Cardinal const& left, Cardinal const& right )
+{ return { left.value + right.value }; }
+Cardinal operator -( Cardinal const& left, Cardinal const& right )
+{ return { left.value - right.value }; }
+Cardinal operator *( Cardinal const& left, Cardinal const& right )
+{ return { left.value * right.value }; }
+Cardinal operator /( Cardinal const& left, Cardinal const& right )
+{ return { left.value / right.value }; }
+Cardinal operator %( Cardinal const& left, Cardinal const& right )
+{ return { left.value % right.value }; }
+Cardinal operator ~( Cardinal const& arg )
+{ return { ~arg.value }; }
+Cardinal operator |( Cardinal const& left, Cardinal const& right )
+{ return { left.value | right.value }; }
+Cardinal operator &( Cardinal const& left, Cardinal const& right )
+{ return { left.value & right.value }; }
+Cardinal operator ^( Cardinal const& left, Cardinal const& right )
+{ return { left.value ^ right.value }; }
+Cardinal operator >>( Cardinal const& left, Cardinal const& right )
+{ return { left.value >> right.value }; }
+Cardinal operator <<( Cardinal const& left, Cardinal const& right )
+{ return { left.value << right.value }; }
+Cardinal operator >>( Cardinal const& left, unsigned long long bits )
+{ return { left.value >> bits }; }
+Cardinal operator <<( Cardinal const& left, unsigned long long bits )
+{ return { left.value << bits }; }
+
+// scalar comparison
+Boolean operator ==( Scalar const& left, Scalar const& right )
+{ return { left.value == right.value }; }
+Boolean operator !=( Scalar const& left, Scalar const& right )
+{ return { left.value != right.value }; }
+Boolean operator <( Scalar const& left, Scalar const& right )
+{ return { left.value < right.value }; }
+Boolean operator <=( Scalar const& left, Scalar const& right )
+{ return { left.value <= right.value }; }
+Boolean operator >( Scalar const& left, Scalar const& right )
+{ return { left.value > right.value }; }
+Boolean operator >=( Scalar const& left, Scalar const& right )
+{ return { left.value >= right.value }; }
+
+// cardinal comparison
+Boolean operator ==( Cardinal const& left, Cardinal const& right )
+{ return { left.value == right.value }; }
+Boolean operator !=( Cardinal const& left, Cardinal const& right )
+{ return { left.value != right.value }; }
+Boolean operator <( Cardinal const& left, Cardinal const& right )
+{ return { left.value < right.value }; }
+Boolean operator <=( Cardinal const& left, Cardinal const& right )
+{ return { left.value <= right.value }; }
+Boolean operator >( Cardinal const& left, Cardinal const& right )
+{ return { left.value > right.value }; }
+Boolean operator >=( Cardinal const& left, Cardinal const& right )
+{ return { left.value >= right.value }; }
+
+// cardinal to scalar comparison
+Boolean operator ==( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value == right.value }; }
+Boolean operator !=( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value != right.value }; }
+Boolean operator <( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value < right.value }; }
+Boolean operator <=( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value <= right.value }; }
+Boolean operator >( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value > right.value }; }
+Boolean operator >=( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value >= right.value }; }
+Boolean operator ==( Scalar const& left, Cardinal const& right )
+{ return { left.value == (long double)right.value }; }
+Boolean operator !=( Scalar const& left, Cardinal const& right )
+{ return { left.value != (long double)right.value }; }
+Boolean operator <( Scalar const& left, Cardinal const& right )
+{ return { left.value < (long double)right.value }; }
+Boolean operator <=( Scalar const& left, Cardinal const& right )
+{ return { left.value <= (long double)right.value }; }
+Boolean operator >( Scalar const& left, Cardinal const& right )
+{ return { left.value > (long double)right.value }; }
+Boolean operator >=( Scalar const& left, Cardinal const& right )
+{ return { left.value >= (long double)right.value }; }
+
+// scalar and cardinal arithmetic
+Scalar operator +( Scalar const& left, Cardinal const& right )
+{ return { left.value + (long double)right.value }; }
+Scalar operator +( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value + right.value }; }
+Scalar operator -( Scalar const& left, Cardinal const& right )
+{ return { left.value - (long double)right.value }; }
+Scalar operator -( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value - right.value }; }
+Scalar operator *( Scalar const& left, Cardinal const& right )
+{ return { left.value * (long double)right.value }; }
+Scalar operator *( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value * right.value }; }
+Scalar operator /( Scalar const& left, Cardinal const& right )
+{ return { left.value / (long double)right.value }; }
+Scalar operator /( Cardinal const& left, Scalar const& right )
+{ return { (long double)left.value / right.value }; }
+// TODO: trig, pow and log functions of Scalars and Cardinals
+
+/**
+ * represents a length in meters
+ */
+struct Length
+{ 
+    using scalar_type = long double;
+
+    constexpr Length& operator=( Length const& other )
+    { meters = other.meters; return *this; }
+    constexpr Length& operator=( scalar_type other )
+    { meters = other; return *this; }
+    constexpr Length() : meters{0.} { }
+    constexpr Length( Length const& other ) : meters{ other.meters } { }
+    constexpr Length( long double meters ) : meters{ meters } { }
+
+    scalar_type meters;
+};
+
+template< >
+struct unit_traits< Length >
+{ 
+    static constexpr unit_id_type id = { 2, 1 }; 
+    using scalar_type = Length::scalar_type;
+    static constexpr bool is_discrete = false;
+    static constexpr bool is_continuous = true;
+};
+
+static_assert( unit_traits< unit_product< Length, Length >>::id == unit_id_type{ 4, 1 } );
+static_assert( unit_traits< unit_quotient< Length, Length >>::id == unit_traits< Scalar >::id );
+
+// length measurement units
+Length operator""_in(long double inches)
+{ return { inches * meters_per_inch }; }
+Length operator""_in(unsigned long long inches)
+{ return { (long double)inches * meters_per_inch }; }
+Length operator""_ft(long double feet)
+{ return { feet * meters_per_foot }; }
+Length operator""_ft(unsigned long long feet)
+{ return { (long double)feet * meters_per_foot }; }
+Length operator""_mi(long double miles)
+{ return { miles * meters_per_mile }; }
+Length operator""_mi(unsigned long long miles)
+{ return { (long double)miles * meters_per_mile }; }
+Length operator""_m(long double meters)
+{ return { meters }; }
+Length operator""_m(unsigned long long meters)
+{ return { (long double)meters }; }
+Length operator""_mm(long double millimeters)
+{ return { 0.001 * millimeters }; }
+Length operator""_mm(unsigned long long millimeters)
+{ return { 0.001 * (long double)millimeters }; }
+Length operator""_km(long double kilometers)
+{ return { 1000. * kilometers }; }
+Length operator""_km(unsigned long long kilometers)
+{ return { 1000. * (long double)kilometers }; } 
+
+enum class length_unit : size_t
+{ meters = 0, millimeters, kilometers, inches, feet, miles };
+
+static constexpr string length_unit_names[] = 
+{ "m", "mm", "km", "in", "ft", "mi" };
+
+static constexpr string length_unit_long_names[] = 
+{ "meters", "millimeters", "kilometers", "inches", "feet", "miles" };
+
+constexpr long double length_value( Length length, length_unit u )
+{
+    switch( u ) {
+    case length_unit::meters: return length.meters;
+    case length_unit::millimeters: return 1000. * length.meters;
+    case length_unit::kilometers: return 0.001 * length.meters;
+    case length_unit::inches: return length.meters / meters_per_inch;
+    case length_unit::feet: return length.meters / meters_per_foot;
+    case length_unit::miles: return length.meters / meters_per_mile;
     }
-
-    /** Dimensions */
-    struct Length 
-    { 
-        static constexpr const long double undefined_value = 
-            std::numeric_limits< long double >::min();
-
-        operator long double() const { return meters; }
-
-        Length& operator-=( Length const& other )
-        {
-            meters -= other.meters;
-            return *this;
-        }
-        Length operator-( Length const& other ) const
-        {
-            Length ret = *this;
-            return ret -= other;
-        }
-        Length& operator+=( Length const& other )
-        {
-            meters += other.meters;
-            return *this;
-        }
-        Length operator+( Length const& other ) const
-        {
-            Length ret = *this;
-            return ret += other;
-        }
-        Length& operator*=( long double other )
-        {
-            meters *= other;
-            return *this;
-        }
-        Length operator*( long double other )
-        {
-            Length ret = *this;
-            return ret *= other;
-        }
-        Length& operator/=( long double other )
-        {
-            meters *= other;
-            return *this;
-        }
-        Length operator/( long double other )
-        {
-            Length ret = *this;
-            return ret /= other;
-        }
-
-        Length() : meters{ 0 } { }
-        Length( undefined_t ) : meters{ undefined_value } { }
-        Length( int value ) : meters{ (long double)value } { }
-        Length( unsigned value ) : meters{ (long double)value } { }
-        Length( unsigned long long value ) : meters{ (long double)value } { }
-        Length( long long value ) : meters{ (long double)value } { }
-        Length( long double value ) : meters{ (long double)value } { }
-
-        long double meters; 
-    };
-
-    template< typename Unit >
-    struct Interval : std::pair< Unit, Unit >
-    { };
-
-    template< typename Unit >
-    Unit default_expression_for() { return {}; }
-
-
-    /** Units */
-    static constexpr long double meters_per_inch = 0.0254;
-    static constexpr long double meters_per_foot = meters_per_inch / 12.;
-    static constexpr long double meters_per_mile = meters_per_foot / 5280.;
-    static constexpr long double meters_per_second = 299'792'458; // c
-
-    namespace literals
-    {
-        using namespace std::chrono_literals;
-
-        Length operator""_in(long double inches)
-        { return { inches * meters_per_inch }; }
-        Length operator""_in(unsigned long long inches)
-        { return { (long double)inches * meters_per_inch }; }
-        Length operator""_ft(long double feet)
-        { return { feet * meters_per_foot }; }
-        Length operator""_ft(unsigned long long feet)
-        { return { (long double)feet * meters_per_foot }; }
-        Length operator""_mi(long double miles)
-        { return { miles * meters_per_mile }; }
-        Length operator""_mi(unsigned long long miles)
-        { return { (long double)miles * meters_per_mile }; }
-        Length operator""_m(long double meters)
-        { return { meters }; }
-        Length operator""_m(unsigned long long meters)
-        { return { (long double)meters }; }
-        Length operator""_mm(long double millimeters)
-        { return { 0.001 * millimeters }; }
-        Length operator""_mm(unsigned long long millimeters)
-        { return { 0.001 * (long double)millimeters }; }
-        Length operator""_km(long double kilometers)
-        { return { 1000. * kilometers }; }
-        Length operator""_km(unsigned long long kilometers)
-        { return { 1000. * (long double)kilometers }; } 
-    }
-
-    template< typename ToType, typename FromType >
-    struct Projector;
-
-    template< typename... UnitTypes >
-    struct Space : std::tuple< UnitTypes... >
-    { 
-        template< size_t I >
-        using element_t = std::tuple_element_t< I, std::tuple< UnitTypes... >>;
-
-        Space& operator-=( Space const& other )
-        {
-            subtract_helper( other, 
-                std::make_index_sequence< sizeof...( UnitTypes ) >{} );
-            return *this;
-        }
-
-        Space operator-( Space const& other ) const
-        { 
-            Space ret = *this;
-            return ret -= other;
-        }
-
-        static Space zero() 
-        { return zero_helper( 
-            std::make_index_sequence< sizeof...( UnitTypes )>{} ); }
-
-        template< typename... UnitTypes2 >
-        Space( Space< UnitTypes2... > const& projection )
-        { copy_helper( projection, std::make_index_sequence<
-            sizeof...( UnitTypes ) < sizeof...( UnitTypes2 ) ? 
-                sizeof...( UnitTypes ) : sizeof...( UnitTypes2 )>{} ); }
-
-        Space( std::tuple< UnitTypes... > units ) : 
-            std::tuple< UnitTypes... >{ units }
-        { }
-        Space() : std::tuple< UnitTypes... >{ zero() } { }
-
-    private:
-        template< size_t... Is >
-        static Space zero_helper( std::index_sequence< Is... > )
-        { return { std::make_tuple( element_t< Is >{ 0 }... )}; }
-
-        template< typename ProjectedType, size_t... Is >
-        void copy_helper( ProjectedType const& other,
-             std::index_sequence< Is... > )
-        { (( std::get< Is >( *this ) = std::get< Is >( other )), ... ); }
-
-
-        template< typename OtherType, size_t... Is >
-        void subtract_helper( OtherType const& other, std::index_sequence< Is... > )
-        { (( std::get< Is >( *this ) -= std::get< Is >( other )), ... ); }
-    };
-
-    template< typename UnitType >
-    struct Dimensionality { static constexpr size_t value = 1; };
-
-    template<>
-    struct Dimensionality<void> { static constexpr size_t value = 0; };
-
-    template< typename... UnitTypes >
-    struct Dimensionality< Space< UnitTypes... >>
-    { static constexpr size_t value = sizeof...( UnitTypes ); };
-
-    template< typename UnitType >
-    using dimensionality_of = Dimensionality< UnitType >::value;
-
-    // template< typename UnitType >
-    // static constexpr size_t dimensionality_of( UnitType )
-    // { return Dimensionality< UnitType >::value; }
-
-    template< > 
-    struct Space< > 
-    { 
-        template< size_t I >
-        using element_t = void; 
-
-        bool operator==( Space< > const& ) const { return true; }
-    };
-
-
-    template< typename UnitType >
-    struct Projector< UnitType, UnitType >
-    { UnitType operator()( UnitType unit ) { return unit; } };
-
-    template< typename... UnitTypes1, typename... UnitTypes2 >
-    struct Projector< Space< UnitTypes1... >, Space< UnitTypes2... >>
-    {
-        Space< UnitTypes1... > operator()( Space< UnitTypes2... > other ) const
-        { return project_helper< Space< UnitTypes1... >>( other, 
-            std::make_index_sequence< 
-                sizeof...( UnitTypes1 ) < sizeof...( UnitTypes2 ) ?
-                    sizeof...( UnitTypes1 ) : sizeof...( UnitTypes2 ) >{} ); }
-
-    private:
-        template< typename ReturnType, size_t... Is >
-        Space< typename Space< UnitTypes1... >::template element_t< Is >... > 
-        project_helper( Space< UnitTypes2... > const& other, 
-            std::index_sequence< Is... > ) const
-        { return { std::get< Is >( other )... }; }
-    };
-
-    template< typename ToType, typename FromType >
-    ToType project( FromType from )
-    { return Projector< ToType, FromType >{}( from ); }
-
-    template< typename... UnitTypes >
-    struct ProductType;
-
-    template< typename... UnitTypes >
-    using product_of = ProductType< UnitTypes... >::type;
-
-    template< typename Product1, typename Product2 >
-    struct ProductConcatenate;
-
-    template< typename... UnitTypes1, typename... UnitTypes2 >
-    struct ProductConcatenate< Space< UnitTypes1... >, Space< UnitTypes2... > >
-    { using type = Space< UnitTypes1..., UnitTypes2... >; };
-
-    template< >
-    struct ProductType< >
-    { using type = Space< >; };
-
-    // associativity
-    template< typename... UnitTypes1, typename... UnitTypes2 >
-    struct ProductType< Space< UnitTypes1... >, UnitTypes2... >
-    { using type = ProductType< UnitTypes1..., UnitTypes2... >::type; };
-
-    template< typename UnitType, typename... UnitTypes >
-    struct ProductType< UnitType, UnitTypes... >
-    { using type = ProductConcatenate< Space< UnitType >, typename ProductType< UnitTypes... >::type >::type; };
-
-    template< typename UnitType >
-    long double distance( UnitType x, UnitType y )
-    { return y - x; }
-
-    template< typename... UnitTypes >
-    long double distance( Space< UnitTypes... > x, Space< UnitTypes... > y )
-    { return distance_helper( x, y, 
-        std::make_index_sequence< sizeof...( UnitTypes )>{}); }
-
-    template< typename UnitType, size_t... Is >
-    long double distance_helper( UnitType x, UnitType y, 
-        std::index_sequence< Is... > )
-    {
-        UnitType u = y - x;
-        long double val = (( std::get< Is >( u ) * std::get< Is >( u )) + ... );
-        return std::sqrt(val);
-    }
-
-    static_assert( std::is_same_v< Space< Length, Length, Length >, ProductType< Space< Length, Length >, Length >::type > );
 }
 
+// length arithmetic
+Length operator +( Length const& left, Length const& right )
+{ return { left.meters + right.meters }; }
+Length operator -( Length const& left, Length const& right )
+{ return { left.meters - right.meters }; }
+Scalar operator /( Length const& left, Length const& right )
+{ return { left.meters / right.meters }; }
+Scalar operator %( Length const& left, Length const& right )
+{ return { left.meters - 
+    ( right.meters * std::floor( left.meters / right.meters )) }; }
 
+// length scaling
+Length operator *( Scalar const& left, Length const& right )
+{ return { left.value * right.meters }; }
+Length operator *( Length const& left, Scalar const& right )
+{ return { left.meters * right.value }; }
+Length operator /( Length const& left, Scalar const& right )
+{ return { left.meters / right.value }; }
+
+// length comparison
+Boolean operator ==( Length const& left, Length const& right )
+{ return left.meters == right.meters; }
+Boolean operator !=( Length const& left, Length const& right )
+{ return left.meters != right.meters; }
+Boolean operator <( Length const& left, Length const& right )
+{ return left.meters < right.meters; }
+Boolean operator <=( Length const& left, Length const& right )
+{ return left.meters <= right.meters; }
+Boolean operator >( Length const& left, Length const& right )
+{ return left.meters > right.meters; }
+Boolean operator >=( Length const& left, Length const& right )
+{ return left.meters >= right.meters; }
+
+
+} // namespace units
+
+// formating of units
 namespace std {
-    using namespace units;
-
-    string to_string( Length value )
-    { return to_string( (long double)value ) + "m"; }
-
-    template< size_t N >
-    constexpr string repeat( string str )
-    { return str + repeat<N-1>( str ); }
-
-    template< >
-    constexpr string repeat<0>( string str )
-    { return ""; }
-
-    // template< size_t I, size_t Dots >
-    // string to_string( Variable<I,Dots> var )
-    // { return var.variable_name + repeat<Dots>("'"); }
-
-    template< size_t I, size_t Dots >
-    string to_string( Expression< Variable<Dots> > unit );
-    template< typename UnitType >
-    string to_string( Expression< Scale< UnitType >> unit );
-    template< typename UnitType >
-    string to_string( Expression< Exp< UnitType >> unit );
-    template< typename UnitType >
-    string to_string( Expression< Log< UnitType >> unit );
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Product< UnitType1, UnitType2 >> unit );
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Quotient< UnitType1, UnitType2 >> unit );
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Sum< UnitType1, UnitType2 >> unit );
-
-
-    template< size_t Dots >
-    string to_string( Expression< Variable<Dots> > unit )
-    { return unit.value.variable_name + repeat<Dots>("'"); }
-
-    template< typename UnitType >
-    string to_string( Expression< Scale< UnitType >> unit )
-    { return to_string( unit.value.second ) + to_string( expression_of( unit.value.first )); }
-
-    template< typename UnitType >
-    string to_string( Expression< Exp< UnitType >> unit )
-    { return "exp(" + to_string( expression_of( unit.value.operand )) + ")"; }
-
-    template< typename UnitType >
-    string to_string( Expression< Log< UnitType >> unit )
-    { return "log(" + to_string( expression_of( unit.value.operand )) + ")"; }
-
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Sum< UnitType1, UnitType2 >> unit )
-    { return "(" + to_string( expression_of( unit.value.first )) + " + " + to_string( expression_of( unit.value.second )) + ")"; }
-
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Product< UnitType1, UnitType2 >> unit )
-    { return "(" + to_string( expression_of( unit.value.first )) + " * " + to_string( expression_of( unit.value.second )) + ")"; }
-
-    template< typename UnitType1, typename UnitType2 >
-    string to_string( Expression< Quotient< UnitType1, UnitType2 >> unit )
-    { return "((" + to_string( expression_of( unit.value.first )) + ")/(" + to_string( expression_of( unit.value.second )) + "))"; }
-
-
-    template< typename Tuple, size_t... Is >
-    Tuple exp_helper( Tuple const& x, index_sequence< Is... > )
-    { return { exp( get< Is >( x ))... }; }
     
-    template< typename... Ts >
-    tuple< Ts... > exp( tuple< Ts... > const& x )
-    { return exp_helper( x, std::make_index_sequence< sizeof...( Ts )>{} ); }
+template<>
+struct formatter< units::Boolean, char >
+{
+    bool as_integer = false;
 
-    template< typename Tuple, size_t... Is >
-    Tuple log_helper( Tuple const& x, index_sequence< Is... > )
-    { return { log( get< Is >( x ))... }; }
+    template< class ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end())
+            return it;
+ 
+        if (*it == 'i')
+        {
+            as_integer = true;
+            ++it;
+        }
+        if (it != ctx.end() && *it != '}')
+            throw format_error("Invalid format args for Boolean.");
+ 
+        return it;
+    }
+ 
+    template< class FmtContext >
+    FmtContext::iterator format( units::Boolean s, FmtContext& ctx ) const
+    {
+        ostringstream out;
+        if( as_integer )
+            out << s.value;
+        else
+            out << boolalpha << s.value;
+ 
+        return ranges::copy( std::move(out).str(), ctx.out() ).out;
+    }
+};
+
+// scalars and cardinals use the appropriate std::formatter
+template<>
+struct formatter< units::Scalar, char > : formatter< long double, char >
+{
+    template< class ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { return formatter< long double, char >::parse( ctx ); }
     
-    template< typename... Ts >
-    tuple< Ts... > log( tuple< Ts... > const& x )
-    { return log_helper( x, std::make_index_sequence< sizeof...( Ts )>{} ); }
+    template< class FmtContext >
+    FmtContext::iterator format( units::Scalar s, FmtContext& ctx ) const
+    { return formatter< long double, char >::format( s.value, ctx ); }
+};
 
-}
+template<>
+struct formatter< units::Cardinal, char > : formatter< unsigned long long, char >
+{
+    template< class ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { return formatter< unsigned long long, char >::parse( ctx ); }
+    
+    template< class FmtContext >
+    FmtContext::iterator format( units::Cardinal s, FmtContext& ctx ) const
+    { return formatter< unsigned long long, char >::format( s.value, ctx ); }
+};
+
+template<>
+struct formatter< units::Length, char > : formatter< long double, char >
+{
+    units::length_unit format_unit = units::length_unit::meters;
+    bool use_long_name = false;
+
+    constexpr void set_unit_name( string name )
+    {
+        if( name == "")
+            return;
+
+        auto i = find( begin( units::length_unit_names ), 
+            end( units::length_unit_names ), name );
+        if( i != end(units::length_unit_names) )
+        {
+            format_unit = (units::length_unit)distance( 
+                begin( units::length_unit_names), i );
+            use_long_name = false;
+        }
+        else 
+        {
+            auto j = find( begin( units::length_unit_long_names ), 
+                end( units::length_unit_long_names ), name );
+            
+            // this is a consteval function so we can't throw exceptions
+            // if ( j == end( units::length_unit_long_names ))
+            //     throw format_error( "invalid format args for Length " );
+
+            format_unit = (units::length_unit)distance( 
+                begin( units::length_unit_long_names), j );
+            use_long_name = true;
+        }
+    }
+
+    template< class ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { 
+        auto it = ctx.begin();
+        string u = "";
+        while( it != ctx.end() and *it != '}' and *it != ':' )
+            u += *it++;
+        
+        set_unit_name( u );
+        if( it != ctx.end() and *it == ':' )
+            it++;
+
+        ctx.advance_to( it );
+        return formatter< long double, char >::parse( ctx ); 
+    }
+
+    // TODO: write non-consteval version which throws an exception
+    
+    template< class FmtContext >
+    FmtContext::iterator format( units::Length const& s, FmtContext& ctx ) const
+    { 
+        formatter< long double, char >::format( 
+            units::length_value( s.meters, format_unit ), ctx );
+
+        if( use_long_name )
+            return ranges::copy( units::length_unit_long_names[ (size_t)format_unit ], 
+                ctx.out() ).out;
+
+        return ranges::copy( units::length_unit_names[ (size_t)format_unit ], 
+            ctx.out() ).out;
+    }
+};
+
+} // namespace std
 
 
 #endif
