@@ -36,6 +36,21 @@ int main( int ac, char* av[] )
     println( runtime_format("5km == {:ft:10f}"), five_km );
     println( runtime_format("5km == {:millimeters:10f}"), five_km );
 
+    auto ten_sec = 10_s;
+    auto two_years = 2_y;
+
+    println( "10s == {}", 10_s );
+    println( "2years == {}", 2_y );
+    println( runtime_format("2years == {:y}"), 2_y );
+    println( runtime_format("2years == {:ms:10f}"), 2_y );
+
+    auto five_pounds = 5_lb;
+    auto five_kg = 5_kg;
+
+    println( "5pounds == {}", 5_lb );
+    println( runtime_format("5pounds == {:kg:10f}"), 5_lb );
+    println( runtime_format("5pounds == {:lb}"), 5_lb );
+
     assert( 1_mi == 5280_ft );
 
     // unit products and quotients
@@ -51,9 +66,11 @@ int main( int ac, char* av[] )
     assert( 5_km / 5_km == one );
 
     auto hectar = 0.01_scalar * 1_km * 1_km;
-    assert( hectar == 0.1_km * 0.1_km );
-    assert( hectar == pow<2>( 0.1_km ) );
+    assert( hectar == 0.1_km * 0.1_km and hectar == pow<2>( 0.1_km ));
+    // assert( hectar == pow<2>( 0.1_km ) );
     assert( one == pow<0>( 0.1_km ));
+
+
     
 
     return 0;
