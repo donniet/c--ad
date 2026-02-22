@@ -8,71 +8,98 @@
 #define __EXPRESSION_OPS_HPP__
 
 #include "expressions/expression_base.hpp"
+#include "units.hpp"
 
 namespace expressions {
 
-// template< typename Seq, template< size_t > class Index, template< typename... > class Op >
-// struct gather_op;
-
-// template< size_t... Is, template< size_t > class Index, template< typename... > class Op >
-// struct gather_op< seq< Is... >, Index, Op >
-// { using type = Op< Index< Is >::type... >; };
-
-// template< typename Seq, template< size_t > class Index, template< typename... > classs Op >
-// using gather_op_t = gather_op< Seq, Index, Op >::type;
-
-template< expression... Ts >
-struct Conjunction : DependsOn< Ts... >
+template< expression T, expression... Ts >
+struct Conjunction : DependsOn< T, Ts... >
 { 
+    using dependent_types = tuple< T, Ts... >;
     using result_type = bool; 
+
+    Conjunction() = default;
+    Conjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
 };
 
-template< expression... Ts >
-struct Disjunction : DependsOn< Ts... >
+template< expression T, expression... Ts >
+struct Disjunction : DependsOn< T, Ts... >
 { 
+    using dependent_types = tuple< T, Ts... >;
     using result_type = bool; 
+
+    Disjunction() = default;
+    Disjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
 };
 
 template< expression T >
 struct Compliment : DependsOn< T >
 { 
+    using dependent_types = tuple< T >;
     using result_type = bool; 
+
+    Compliment() = default;
+    Compliment( T t ) : DependsOn< T >{ t } { }
 };
 
 template< expression Left, expression Right >
 struct Equals : DependsOn< Left, Right >
 { 
+    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
+
+    Equals() = default;
+    Equals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
 struct NotEquals : DependsOn< Left, Right >
 { 
+    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
+
+    NotEquals() = default;
+    NotEquals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
 struct Less : DependsOn< Left, Right >
 { 
-    using result_type = bool;
+    using dependent_types = tuple< Left, Right >;
+    using result_type = bool; 
+
+    Less() = default;
+    Less( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
 struct LessOrEqual : DependsOn< Left, Right >
 { 
+    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
+
+    LessOrEqual() = default;
+    LessOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
 struct Greater : DependsOn< Left, Right >
 { 
+    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
+
+    Greater() = default;
+    Greater( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
 struct GreaterOrEqual : DependsOn< Left, Right >
 { 
+    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
+
+    GreaterOrEqual() = default;
+    GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 // TODO: should the parameters be required to be an expression?
@@ -89,47 +116,195 @@ struct Sum : DependsOn< E, Es... >
 template< expression E, expression... Es >
 struct Difference : DependsOn< E, Es... >
 { 
+    using dependent_types = tuple< E, Es... >;
     using result_type = result_t< E >; 
+
+    Difference() = default;
+    Difference( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E >
 struct Negation : DependsOn< E >
 { 
+    using dependent_types = tuple< E >;
     using result_type = result_t< E >;
+
+    Negation() = default;
+    Negation( E e ) : DependsOn< E >{ e } { }
 };
 
 template< expression E, expression... Es >
 struct Product : DependsOn< E, Es... >
 { 
-    using result_type = result_t< E >;
+    using dependent_types = tuple< E, Es... >;
+    // TODO: handle products and quotients of units
+    using result_type = unit_product< result_t< E >, result_t< Es >... >;
+
+    Product() = default;
+    Product( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E, expression... Es >
 struct Quotient : DependsOn< E, Es... >
 { 
-    using result_type = result_t< E >; 
+    using dependent_types = tuple< E, Es... >;
+    // TODO: handle products and quotients of units
+    using result_type = unit_quotient< result_t< E >, result_t< Es >... >;
+
+    Quotient() = default;
+    Quotient( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E >
 struct Inverse : DependsOn< E >
 { 
+    using dependent_types = tuple< E >;
+    // TODO: handle products and quotients of units
     using result_type = result_t< E >;
+
+    Inverse() = default;
+    Inverse( E e ) : DependsOn< E >{ e } { }
 };
 
 /**
  * Helper methods
  */
 template< typename E, typename... Es >
-Sum< E, Es... > sum( E e, Es... es )
+constexpr Conjunction< E, Es... > conjunction( E e, Es... es )
 { return { e, es... }; }
 
 template< typename E, typename... Es >
-Product< E, Es... > product( E e, Es... es )
+constexpr Disjunction< E, Es... > disjunction( E e, Es... es )
 { return { e, es... }; }
+
+template< typename E >
+constexpr Compliment< E > compliment( E e )
+{ return { e }; }
+
+template< typename Left, typename Right >
+constexpr Equals< Left, Right > equals( Left left, Right right )
+{ return { left, right }; }
+
+template< typename Left, typename Right >
+constexpr NotEquals< Left, Right > not_equals( Left left, Right right )
+{ return { left, right }; }
+
+template< typename Left, typename Right >
+constexpr Less< Left, Right > less( Left left, Right right )
+{ return { left, right }; }
+
+template< typename Left, typename Right >
+constexpr LessOrEqual< Left, Right > less_or_equal( Left left, Right right )
+{ return { left, right }; }
+
+template< typename Left, typename Right >
+constexpr Greater< Left, Right > greater( Left left, Right right )
+{ return { left, right }; }
+
+template< typename Left, typename Right >
+constexpr GreaterOrEqual< Left, Right > greater_or_equal( Left left, Right right )
+{ return { left, right }; }
+
+template< typename E, typename... Es >
+constexpr Sum< E, Es... > sum( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E, typename... Es >
+constexpr Difference< E, Es... > difference( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E >
+constexpr Negation< E > negation( E e )
+{ return { e }; }
+
+template< typename E, typename... Es >
+constexpr Product< E, Es... > product( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E, typename... Es >
+constexpr Quotient< E, Es... > quotient( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E >
+constexpr Inverse< E > inverse( E e )
+{ return { e }; }
 
 /**
  * Invokers
  */
+template< typename E, typename... Es >
+struct Invoker< Conjunction< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( Conjunction< E, Es... > expr, variable_values const& values, 
+        seq< Is... > )
+    { return ( ... and invoke( get_dependent< Is >( expr ), values )); }
+
+    auto operator()( Conjunction< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< Disjunction< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( Disjunction< E, Es... > expr, variable_values const& values, 
+        seq< Is... > )
+    { return ( ... or invoke( get_dependent< Is >( expr ), values )); }
+
+    auto operator()( Disjunction< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+};
+
+template< typename E >
+struct Invoker< Compliment< E >>
+{
+    auto operator()( Compliment< E > expr, variable_values const& values )
+    { return not invoke( expr, values ); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< Equals< Left, Right >>
+{
+    auto operator()( Equals< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) == invoke( get_dependent< 1 >( expr )); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< NotEquals< Left, Right >>
+{
+    auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) != invoke( get_dependent< 1 >( expr )); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< Less< Left, Right >>
+{
+    auto operator()( Less< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) < invoke( get_dependent< 1 >( expr )); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< LessOrEqual< Left, Right >>
+{
+    auto operator()( LessOrEqual< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) <= invoke( get_dependent< 1 >( expr )); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< Greater< Left, Right >>
+{
+    auto operator()( Greater< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) > invoke( get_dependent< 1 >( expr )); }
+};
+
+template< typename Left, typename Right >
+struct Invoker< GreaterOrEqual< Left, Right >>
+{
+    auto operator()( GreaterOrEqual< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) >= invoke( get_dependent< 1 >( expr )); }
+};
+
 template< typename E, typename... Es >
 struct Invoker< Sum< E, Es... >>
 {
@@ -141,70 +316,128 @@ struct Invoker< Sum< E, Es... >>
     { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
 };
 
+template< typename E, typename... Es >
+struct Invoker< Difference< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( Difference< E, Es... > expr, variable_values const& values, seq< Is... > )
+    { return ( ... - invoke( get_dependent< Is >( expr ), values )); }
+
+    auto operator()( Difference< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+};
+
+template< typename E >
+struct Invoker< Negation< E >>
+{
+    auto operator()( Negation< E > expr, variable_values const& values )
+    { return -invoke( expr, values ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< Product< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( Product< E, Es... > expr, variable_values const& values, seq< Is... > )
+    { return ( ... * invoke( get_dependent< Is >( expr ), values )); }
+
+    auto operator()( Product< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< Quotient< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( Quotient< E, Es... > expr, variable_values const& values, seq< Is... > )
+    { return ( ... / invoke( get_dependent< Is >( expr ), values )); }
+
+    auto operator()( Quotient< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+};
+
+template< typename E >
+struct Invoker< Inverse< E >>
+{
+    auto operator()( Inverse< E > expr, variable_values const& values )
+    { return result_t< E >{ 1. } / ( expr, values ); }
+};
+
 namespace operators {
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator and( LeftT left, RightT right )
-{ return Conjunction< LeftT, RightT >{ left, right }; }
+{ return conjunction( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< unit LeftU, expression RightT >
+constexpr auto operator and( LeftU left, RightT right )
+{ return conjunction( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator and( LeftT left, RightU right )
+{ return conjunction( left, static_expr( right )); }
+
+template< expression LeftT, expression RightT >
 constexpr auto operator or( LeftT left, RightT right )
-{ return Disjunction< LeftT, RightT >{ left, right }; }
+{ return disjunction( left, right ); }
 
-template< typename ArgT >
+template< expression ArgT >
 constexpr auto operator not( ArgT arg )
-{ return Compliment< ArgT >{ arg  }; }
+{ return compliment( arg ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator ==( LeftT left, RightT right )
-{ return Equals< LeftT, RightT >{ left, right }; }
+{ return equals( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator !=( LeftT left, RightT right )
-{ return NotEquals< LeftT, RightT >{ left, right }; }
+{ return not_equals( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator <( LeftT left, RightT right )
-{ return Less< LeftT, RightT >{ left, right }; }
+{ return less( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator <=( LeftT left, RightT right )
-{ return LessOrEqual< LeftT, RightT >{ left, right }; }
+{ return less_or_equal( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator >( LeftT left, RightT right )
-{ return Greater< LeftT, RightT >{ left, right }; }
+{ return greater( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator >=( LeftT left, RightT right )
-{ return GreaterOrEqual< LeftT, RightT >{ left, right }; }
+{ return greater_or_equal( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator +( LeftT left, RightT right )
-{ return Sum< LeftT, RightT >{ left, right }; }
+{ return sum( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator -( LeftT left, RightT right )
-{ return Difference< LeftT, RightT >{ left, right }; }
+{ return differenece( left, right ); }
 
-template< typename ArgT >
+template< expression ArgT >
 constexpr auto operator -( ArgT arg )
-{ return Negation< ArgT >{ arg  }; }
+{ return negation( arg  ); }
 
-template< typename LeftT, typename RightT >
+template< expression LeftT, expression RightT >
 constexpr auto operator *( LeftT left, RightT right )
-{ return Product< LeftT, RightT >{ left, right }; }
+{ return product( left, right ); }
 
-template< typename LeftT, typename RightT >
+template< unit LeftU, expression RightT >
+constexpr auto operator *( LeftU left, RightT right )
+{ return product( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator *( LeftT left, RightU right )
+{ return product( left, static_expr( right )); }
+
+template< expression LeftT, expression RightT >
 constexpr auto operator /( LeftT left, RightT right )
-{ return Quotient< LeftT, RightT >{ left, right }; }
-
-template< typename ArgT >
-constexpr auto inverse( ArgT arg )
-{ return Quotient< result_t< ArgT >, ArgT >{ result_t< ArgT >{ 1. }, arg }; }
+{ return quotient( left, right ); }
 
 } // namespace operators
-
 } // namespace expressions
 
 #endif

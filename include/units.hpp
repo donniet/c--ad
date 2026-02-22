@@ -95,6 +95,7 @@ static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 
 template< unit_id_type Id, arithmetic T >
 struct base_unit
 {
+    static constexpr bool is_unit = true;
     using scalar_type = T;
     static constexpr unit_id_type unit_id = Id;
 
@@ -129,22 +130,39 @@ struct base_unit
 template< typename T >
 struct unit_traits;
 
+template< typename T >
+requires is_arithmetic_v< T >
+struct unit_traits< T >
+{
+    static constexpr unit_id_type unit_id = scalar_unit_id;
+    using scalar_type = T;
+    static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
+    static constexpr bool is_continuous = not is_discrete;
+};
+
 template< unit_id_type Id, arithmetic T >
 struct unit_traits< base_unit< Id, T >>
 {
-    static constexpr unit_id_type id = Id; 
+    static constexpr unit_id_type unit_id = Id; 
     using scalar_type = T;
     static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
     static constexpr bool is_continuous = not is_discrete;
 };
 
 template< typename T >
-concept unit = requires
-{ typename unit_traits< T >; };
+struct is_unit
+{ static constexpr bool value = is_arithmetic_v< T >; };
+
+template< unit_id_type Id, arithmetic T >
+struct is_unit< base_unit< Id, T >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+concept unit = is_unit< T >::value;
 
 template< unit... Us >
 struct UnitProduct
-{ using type = base_unit< ( unit_traits< Us >::id * ... ), 
+{ using type = base_unit< ( unit_traits< Us >::unit_id * ... ), 
         std::common_type_t< typename unit_traits< Us >::scalar_type... >>; };
 
 template< unit... Us >
@@ -152,7 +170,7 @@ using unit_product = UnitProduct< Us... >::type;
 
 template< unit... Us >
 struct UnitQuotient
-{ using type = base_unit< ( unit_traits< Us >::id / ... ), 
+{ using type = base_unit< ( unit_traits< Us >::unit_id / ... ), 
         std::common_type_t< typename unit_traits< Us >::scalar_type... >>; };
 
 template< unit... Us >
@@ -264,9 +282,41 @@ template< unit LeftU, unit RightU >
 constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
 { return { left.get_value() * right.get_value() }; }
 
+template< unit U >
+constexpr unit_product< Scalar, U > operator *( long double left, U right )
+{ return { left * right.get_value() }; }
+
+template< unit U >
+constexpr unit_product< Scalar, U > operator *( long long left, U right )
+{ return { left * right.get_value() }; }
+
+template< unit U >
+constexpr unit_product< U, Scalar > operator *( U left, long double right )
+{ return { left.get_value() * right }; }
+
+template< unit U >
+constexpr unit_product< U, Scalar > operator *( U left, long long right )
+{ return { left.get_value() * right }; }
+
 template< unit LeftU, unit RightU >
 constexpr unit_quotient< LeftU, RightU > operator /( LeftU left, RightU right )
 { return { left.get_value() / right.get_value() }; }
+
+template< unit U >
+constexpr unit_quotient< Scalar, U > operator /( long double left, U right )
+{ return { left / right.get_value() }; }
+
+template< unit U >
+constexpr unit_quotient< Scalar, U > operator /( long long left, U right )
+{ return { left / right.get_value() }; }
+
+template< unit U >
+constexpr unit_quotient< U, Scalar > operator /( U left, long double right )
+{ return { left.get_value() / right }; }
+
+template< unit U >
+constexpr unit_quotient< U, Scalar > operator /( U left, long long right )
+{ return { left.get_value() / right }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
@@ -440,8 +490,8 @@ using Length = base_unit< length_unit_id, long double >;
 constexpr Length::scalar_type meters( Length length ) 
 { return length.get_value(); }
 
-static_assert( unit_traits< unit_product< Length, Length >>::id == unit_id_type{ 4, 1 } );
-static_assert( unit_traits< unit_quotient< Length, Length >>::id == unit_traits< Scalar >::id );
+static_assert( unit_traits< unit_product< Length, Length >>::unit_id == unit_id_type{ 4, 1 } );
+static_assert( unit_traits< unit_quotient< Length, Length >>::unit_id == unit_traits< Scalar >::unit_id );
 
 // length measurement units
 Length operator""_m(long double meters)
