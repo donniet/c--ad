@@ -12,14 +12,15 @@
 
 namespace expressions {
 
+// boolean operators
 template< expression T, expression... Ts >
 struct Conjunction : DependsOn< T, Ts... >
 { 
     using dependent_types = tuple< T, Ts... >;
     using result_type = bool; 
 
-    Conjunction() = default;
-    Conjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
+    constexpr Conjunction() = default;
+    constexpr Conjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
 };
 
 template< expression T, expression... Ts >
@@ -28,8 +29,8 @@ struct Disjunction : DependsOn< T, Ts... >
     using dependent_types = tuple< T, Ts... >;
     using result_type = bool; 
 
-    Disjunction() = default;
-    Disjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
+    constexpr Disjunction() = default;
+    constexpr Disjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
 };
 
 template< expression T >
@@ -38,18 +39,19 @@ struct Compliment : DependsOn< T >
     using dependent_types = tuple< T >;
     using result_type = bool; 
 
-    Compliment() = default;
-    Compliment( T t ) : DependsOn< T >{ t } { }
+    constexpr Compliment() = default;
+    constexpr Compliment( T t ) : DependsOn< T >{ t } { }
 };
 
+// comparison
 template< expression Left, expression Right >
 struct Equals : DependsOn< Left, Right >
 { 
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    Equals() = default;
-    Equals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Equals() = default;
+    constexpr Equals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
@@ -58,8 +60,8 @@ struct NotEquals : DependsOn< Left, Right >
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    NotEquals() = default;
-    NotEquals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr NotEquals() = default;
+    constexpr NotEquals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
@@ -68,8 +70,8 @@ struct Less : DependsOn< Left, Right >
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    Less() = default;
-    Less( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Less() = default;
+    constexpr Less( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
@@ -78,8 +80,8 @@ struct LessOrEqual : DependsOn< Left, Right >
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    LessOrEqual() = default;
-    LessOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr LessOrEqual() = default;
+    constexpr LessOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
@@ -88,8 +90,8 @@ struct Greater : DependsOn< Left, Right >
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    Greater() = default;
-    Greater( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Greater() = default;
+    constexpr Greater( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
 template< expression Left, expression Right >
@@ -98,19 +100,19 @@ struct GreaterOrEqual : DependsOn< Left, Right >
     using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
-    GreaterOrEqual() = default;
-    GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr GreaterOrEqual() = default;
+    constexpr GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
-// TODO: should the parameters be required to be an expression?
+// real arithmetic
 template< expression E, expression... Es >
 struct Sum : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
     using result_type = result_t< E >; 
 
-    Sum() = default;
-    Sum( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+    constexpr Sum() = default;
+    constexpr Sum( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E, expression... Es >
@@ -119,8 +121,8 @@ struct Difference : DependsOn< E, Es... >
     using dependent_types = tuple< E, Es... >;
     using result_type = result_t< E >; 
 
-    Difference() = default;
-    Difference( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+    constexpr Difference() = default;
+    constexpr Difference( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E >
@@ -129,46 +131,114 @@ struct Negation : DependsOn< E >
     using dependent_types = tuple< E >;
     using result_type = result_t< E >;
 
-    Negation() = default;
-    Negation( E e ) : DependsOn< E >{ e } { }
+    constexpr Negation() = default;
+    constexpr Negation( E e ) : DependsOn< E >{ e } { }
 };
 
 template< expression E, expression... Es >
 struct Product : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
-    // TODO: handle products and quotients of units
     using result_type = unit_product< result_t< E >, result_t< Es >... >;
 
-    Product() = default;
-    Product( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+    constexpr Product() = default;
+    constexpr Product( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E, expression... Es >
 struct Quotient : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
-    // TODO: handle products and quotients of units
     using result_type = unit_quotient< result_t< E >, result_t< Es >... >;
 
-    Quotient() = default;
-    Quotient( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+    constexpr Quotient() = default;
+    constexpr Quotient( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
 template< expression E >
 struct Inverse : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
-    // TODO: handle products and quotients of units
+    using result_type = unit_inverse< result_t< E >>;
+
+    constexpr Inverse() = default;
+    constexpr Inverse( E e ) : DependsOn< E >{ e } { }
+};
+
+// integer arithmetic
+template< expression E >
+struct BitwiseNot : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
     using result_type = result_t< E >;
 
-    Inverse() = default;
-    Inverse( E e ) : DependsOn< E >{ e } { }
+    constexpr BitwiseNot() = default;
+    constexpr BitwiseNot( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E, expression... Es >
+struct BitwiseAnd : DependsOn< E, Es... >
+{ 
+    using dependent_types = tuple< E, Es... >;
+    using result_type = result_t< E >;
+
+    constexpr BitwiseAnd() = default;
+    constexpr BitwiseAnd( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+};
+
+template< expression E, expression... Es >
+struct BitwiseOr : DependsOn< E, Es... >
+{ 
+    using dependent_types = tuple< E, Es... >;
+    using result_type = result_t< E >;
+
+    constexpr BitwiseOr() = default;
+    constexpr BitwiseOr( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+};
+
+template< expression E, expression... Es >
+struct BitwiseXor : DependsOn< E, Es... >
+{ 
+    using dependent_types = tuple< E, Es... >;
+    using result_type = result_t< E >;
+
+    constexpr BitwiseXor() = default;
+    constexpr BitwiseXor( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
+};
+
+template< expression Bits, expression Shift >
+struct BitshiftLeft : DependsOn< Bits, Shift >
+{ 
+    using dependent_types = tuple< Bits, Shift >;
+    using result_type = result_t< Bits >;
+
+    constexpr Bits bits() { return get_dependent< 0 >( *this ); }
+    constexpr Shift shift() { return get_dependent< 1 >( *this ); }
+
+    constexpr BitshiftLeft() = default;
+    constexpr BitshiftLeft( Bits bits, Shift shift ) : 
+        DependsOn< Bits, Shift >{ bits, shift } { }
+};
+
+template< expression Bits, expression Shift >
+struct BitshiftRight : DependsOn< Bits, Shift >
+{ 
+    using dependent_types = tuple< Bits, Shift >;
+    using result_type = result_t< Bits >;
+
+    constexpr Bits bits() { return get_dependent< 0 >( *this); }
+    constexpr Shift shift() { return get_dependent< 1 >( *this ); }
+
+    constexpr BitshiftRight() = default;
+    constexpr BitshiftRight( Bits bits, Shift shift ) : 
+        DependsOn< Bits, Shift >{ bits, shift } { }
 };
 
 /**
  * Helper methods
  */
+
+// boolean operators
 template< typename E, typename... Es >
 constexpr Conjunction< E, Es... > conjunction( E e, Es... es )
 { return { e, es... }; }
@@ -181,6 +251,7 @@ template< typename E >
 constexpr Compliment< E > compliment( E e )
 { return { e }; }
 
+// comparison
 template< typename Left, typename Right >
 constexpr Equals< Left, Right > equals( Left left, Right right )
 { return { left, right }; }
@@ -205,6 +276,7 @@ template< typename Left, typename Right >
 constexpr GreaterOrEqual< Left, Right > greater_or_equal( Left left, Right right )
 { return { left, right }; }
 
+// real arithmetic
 template< typename E, typename... Es >
 constexpr Sum< E, Es... > sum( E e, Es... es )
 { return { e, es... }; }
@@ -228,6 +300,31 @@ constexpr Quotient< E, Es... > quotient( E e, Es... es )
 template< typename E >
 constexpr Inverse< E > inverse( E e )
 { return { e }; }
+
+// integer arithmetic
+template< typename E >
+constexpr BitwiseNot< E > bitwise_not( E e )
+{ return { e }; }
+
+template< typename E, typename... Es >
+constexpr BitwiseAnd< E, Es... > bitwise_and( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E, typename... Es >
+constexpr BitwiseOr< E, Es... > bitwise_or( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename E, typename... Es >
+constexpr BitwiseXor< E, Es... > bitwise_xor( E e, Es... es )
+{ return { e, es... }; }
+
+template< typename Bits, typename Shift >
+constexpr BitshiftLeft< Bits, Shift > bitshift_left( Bits bits, Shift shift )
+{ return { bits, shift }; }
+
+template< typename Bits, typename Shift >
+constexpr BitshiftRight< Bits, Shift > bitshift_right( Bits bits, Shift shift )
+{ return { bits, shift }; }
 
 /**
  * Invokers
@@ -353,14 +450,69 @@ struct Invoker< Quotient< E, Es... >>
     { return ( ... / invoke( get_dependent< Is >( expr ), values )); }
 
     auto operator()( Quotient< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
 };
 
 template< typename E >
 struct Invoker< Inverse< E >>
 {
     auto operator()( Inverse< E > expr, variable_values const& values )
-    { return result_t< E >{ 1. } / ( expr, values ); }
+    { return result_t< E >{ 1. } / invoke( expr, values ); }
+};
+
+// bitwise operations
+template< typename E >
+struct Invoker< BitwiseNot< E >>
+{
+    auto operator()( BitwiseNot< E > expr, variable_values const& values )
+    { return ~invoke( expr, values ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< BitwiseAnd< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( BitwiseAnd< E, Es... > expr, variable_values const& values )
+    { return ( invoke( get_dependent< Is >( expr ), values ) & ... ); }
+
+    auto operator()( BitwiseAnd< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< BitwiseOr< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( BitwiseOr< E, Es... > expr, variable_values const& values )
+    { return ( invoke( get_dependent< Is >( expr ), values ) | ... ); }
+
+    auto operator()( BitwiseOr< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
+};
+
+template< typename E, typename... Es >
+struct Invoker< BitwiseXor< E, Es... >>
+{
+    template< size_t... Is >
+    auto helper( BitwiseXor< E, Es... > expr, variable_values const& values )
+    { return ( invoke( get_dependent< Is >( expr ), values ) ^ ... ); }
+
+    auto operator()( BitwiseXor< E, Es... > expr, variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
+};
+
+template< typename Bits, typename Shift >
+struct Invoker< BitshiftLeft< Bits, Shift >>
+{
+    auto operator()( BitshiftLeft< Bits, Shift > expr, variable_values const& values )
+    { return invoke( expr.bits() ) << invoke( expr.shift() ); }
+};
+
+template< typename Bits, typename Shift >
+struct Invoker< BitshiftRight< Bits, Shift >>
+{
+    auto operator()( BitshiftRight< Bits, Shift > expr, variable_values const& values )
+    { return invoke( expr.bits() ) >> invoke( expr.shift() ); }
 };
 
 namespace operators {

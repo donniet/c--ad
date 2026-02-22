@@ -35,8 +35,8 @@ int main( int ac, char * av[] )
     auto g_x1 = invoke( g, vars );
 
     println("{}", g_x1 );
-    // // TODO: write formatter for units
-    // // println( "{:in}", g_x1 );
+    // TODO: write formatter for units
+    println( "{:in}", g_x1 );
 
     // using mat2 = UniformMatrix< 2, 2, Scalar >;
     // using vec2 = UniformVector< 2, Scalar >;
