@@ -381,6 +381,14 @@ template< expression LeftT, expression RightT >
 constexpr auto operator or( LeftT left, RightT right )
 { return disjunction( left, right ); }
 
+template< unit LeftU, expression RightT >
+constexpr auto operator or( LeftU left, RightT right )
+{ return disjunction( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator or( LeftT left, RightU right )
+{ return disjunction( left, static_expr( right )); }
+
 template< expression ArgT >
 constexpr auto operator not( ArgT arg )
 { return compliment( arg ); }
@@ -389,33 +397,97 @@ template< expression LeftT, expression RightT >
 constexpr auto operator ==( LeftT left, RightT right )
 { return equals( left, right ); }
 
+template< unit LeftU, expression RightT >
+constexpr auto operator ==( LeftU left, RightT right )
+{ return equals( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator ==( LeftT left, RightU right )
+{ return equals( left, static_expr( right )); }
+
 template< expression LeftT, expression RightT >
 constexpr auto operator !=( LeftT left, RightT right )
 { return not_equals( left, right ); }
+
+template< unit LeftU, expression RightT >
+constexpr auto operator !=( LeftU left, RightT right )
+{ return not_equals( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator !=( LeftT left, RightU right )
+{ return not_equals( left, static_expr( right )); }
 
 template< expression LeftT, expression RightT >
 constexpr auto operator <( LeftT left, RightT right )
 { return less( left, right ); }
 
+template< unit LeftU, expression RightT >
+constexpr auto operator <( LeftU left, RightT right )
+{ return less( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator <( LeftT left, RightU right )
+{ return less( left, static_expr( right )); }
+
 template< expression LeftT, expression RightT >
 constexpr auto operator <=( LeftT left, RightT right )
 { return less_or_equal( left, right ); }
+
+template< unit LeftU, expression RightT >
+constexpr auto operator <=( LeftU left, RightT right )
+{ return less_or_equal( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator <=( LeftT left, RightU right )
+{ return less_or_equal( left, static_expr( right )); }
 
 template< expression LeftT, expression RightT >
 constexpr auto operator >( LeftT left, RightT right )
 { return greater( left, right ); }
 
+template< unit LeftU, expression RightT >
+constexpr auto operator >( LeftU left, RightT right )
+{ return greater( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator >( LeftT left, RightU right )
+{ return greater( left, static_expr( right )); }
+
 template< expression LeftT, expression RightT >
 constexpr auto operator >=( LeftT left, RightT right )
 { return greater_or_equal( left, right ); }
+
+template< unit LeftU, expression RightT >
+constexpr auto operator >=( LeftU left, RightT right )
+{ return greater_or_equal( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator >=( LeftT left, RightU right )
+{ return greater_or_equal( left, static_expr( right )); }
 
 template< expression LeftT, expression RightT >
 constexpr auto operator +( LeftT left, RightT right )
 { return sum( left, right ); }
 
+template< unit LeftU, expression RightT >
+constexpr auto operator +( LeftU left, RightT right )
+{ return sum( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator +( LeftT left, RightU right )
+{ return sum( left, static_expr( right )); }
+
 template< expression LeftT, expression RightT >
 constexpr auto operator -( LeftT left, RightT right )
 { return differenece( left, right ); }
+
+template< unit LeftU, expression RightT >
+constexpr auto operator -( LeftU left, RightT right )
+{ return difference( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator -( LeftT left, RightU right )
+{ return difference( left, static_expr( right )); }
 
 template< expression ArgT >
 constexpr auto operator -( ArgT arg )
@@ -436,6 +508,14 @@ constexpr auto operator *( LeftT left, RightU right )
 template< expression LeftT, expression RightT >
 constexpr auto operator /( LeftT left, RightT right )
 { return quotient( left, right ); }
+
+template< unit LeftU, expression RightT >
+constexpr auto operator /( LeftU left, RightT right )
+{ return quotient( static_expr( left ), right ); }
+
+template< expression LeftT, unit RightU >
+constexpr auto operator /( LeftT left, RightU right )
+{ return quotient( left, static_expr( right )); }
 
 } // namespace operators
 } // namespace expressions

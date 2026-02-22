@@ -17,7 +17,7 @@ int main( int ac, char * av[] )
     // using namespace expressions::units;
     using namespace expressions::operators;
 
-    auto f1 = 1_scalar + 0_scalar; // + 1_scalar + 0_scalar;
+    auto f1 = 1_scalar + 0_scalar + ( 1_scalar + 0_scalar);
 
     println("{}", typeid(f1).name() );
     println("{}", invoke( f1 ));
