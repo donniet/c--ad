@@ -234,6 +234,81 @@ struct BitshiftRight : DependsOn< Bits, Shift >
         DependsOn< Bits, Shift >{ bits, shift } { }
 };
 
+// trig functions
+template< expression E >
+struct Sine : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Sine() = default;
+    constexpr Sine( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E >
+struct Cosine : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Cosine() = default;
+    constexpr Cosine( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E >
+struct Tangent : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Tangent() = default;
+    constexpr Tangent( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E >
+struct Arcsine : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Arcsine() = default;
+    constexpr Arcsine( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E >
+struct Arccosine : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Arccosine() = default;
+    constexpr Arccosine( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression E >
+struct Arctangent : DependsOn< E >
+{ 
+    using dependent_types = tuple< E >;
+    using result_type = result_t< E >;
+
+    constexpr Arctangent() = default;
+    constexpr Arctangent( E e ) : DependsOn< E >{ e } { }
+};
+
+template< expression Num, expression Den >
+struct Arctangent2 : DependsOn< Num, Den >
+{ 
+    using dependent_types = tuple< Num, Den >;
+    using result_type = result_t< typename Quotient< Num, Den >::result_type >;
+
+    constexpr Num numerator() const { return get_dependent< 0 >( *this ); }
+    constexpr Den denominator() const { return get_dependent< 1 >( *this ); }
+
+    constexpr Arctangent2() = default;
+    constexpr Arctangent2( Num num, Den den ) : 
+        DependsOn< Num, Den >{ num, den } { }
+};
+
 /**
  * Helper methods
  */
@@ -325,6 +400,35 @@ constexpr BitshiftLeft< Bits, Shift > bitshift_left( Bits bits, Shift shift )
 template< typename Bits, typename Shift >
 constexpr BitshiftRight< Bits, Shift > bitshift_right( Bits bits, Shift shift )
 { return { bits, shift }; }
+
+// trig functions
+template< typename E >
+constexpr Sine< E > sine( E arg )
+{ return { arg }; }
+
+template< typename E >
+constexpr Cosine< E > cosine( E arg )
+{ return { arg }; }
+
+template< typename E >
+constexpr Tangent< E > tangent( E arg )
+{ return { arg }; }
+
+template< typename E >
+constexpr Arcsine< E > arcsine( E arg )
+{ return { arg }; }
+
+template< typename E >
+constexpr Arccosine< E > arccosine( E arg )
+{ return { arg }; }
+
+template< typename E >
+constexpr Arctangent< E > arctangent( E arg )
+{ return { arg }; }
+
+template< typename Num, typename Den >
+constexpr Arctangent2< Num, Den > arctangent2( Num num, Den den )
+{ return { num, den }; }
 
 /**
  * Invokers
@@ -515,6 +619,56 @@ struct Invoker< BitshiftRight< Bits, Shift >>
     { return invoke( expr.bits() ) >> invoke( expr.shift() ); }
 };
 
+template< typename E >
+struct Invoker< Sine< E >>
+{
+    auto operator()( Sine< E > expr, variable_values const& values )
+    { return std::sin( invoke( expr, values )); }
+};
+
+template< typename E >
+struct Invoker< Cosine< E >>
+{
+    auto operator()( Cosine< E > expr, variable_values const& values )
+    { return std::cos( invoke( expr, values )); }
+};
+
+template< typename E >
+struct Invoker< Tangent< E >>
+{
+    auto operator()( Tangent< E > expr, variable_values const& values )
+    { return std::tan( invoke( expr, values )); }
+};
+
+template< typename E >
+struct Invoker< Arcsine< E >>
+{
+    auto operator()( Arcsine< E > expr, variable_values const& values )
+    { return std::asin( invoke( expr, values )); }
+};
+
+template< typename E >
+struct Invoker< Arccosine< E >>
+{
+    auto operator()( Arccosine< E > expr, variable_values const& values )
+    { return std::acos( invoke( expr, values )); }
+};
+
+template< typename E >
+struct Invoker< Arctangent< E >>
+{
+    auto operator()( Arctangent< E > expr, variable_values const& values )
+    { return std::atan( invoke( expr, values )); }
+};
+
+template< typename Num, typename Den >
+struct Invoker< Arctangent2< Num, Den >>
+{
+    auto operator()( Arctangent2< Num, Den > expr, variable_values const& values )
+    { return std::atan2( invoke( expr.numerator(), values ), 
+        invoke( expr.denominator(), values )); }
+};
+
 namespace operators {
 
 template< expression LeftT, expression RightT >
@@ -668,6 +822,106 @@ constexpr auto operator /( LeftU left, RightT right )
 template< expression LeftT, unit RightU >
 constexpr auto operator /( LeftT left, RightU right )
 { return quotient( left, static_expr( right )); }
+
+template< expression E >
+constexpr auto operator ~( E arg )
+{ return bitwise_not( arg ); }
+
+template< expression Left, expression Right >
+constexpr auto operator &( Left left, Right right )
+{ return bitwise_and( left, right ); }
+
+template< expression Left, unit Right >
+constexpr auto operator &( Left left, Right right )
+{ return bitwise_and( left, static_expr( right )); }
+
+template< unit Left, expression Right >
+constexpr auto operator &( Left left, Right right )
+{ return bitwise_and( static_expr( left ), right ); }
+
+template< expression Left, expression Right >
+constexpr auto operator |( Left left, Right right )
+{ return bitwise_or( left, right ); }
+
+template< expression Left, unit Right >
+constexpr auto operator |( Left left, Right right )
+{ return bitwise_or( left, static_expr( right )); }
+
+template< unit Left, expression Right >
+constexpr auto operator |( Left left, Right right )
+{ return bitwise_or( static_expr( left ), right ); }
+
+template< expression Left, expression Right >
+constexpr auto operator ^( Left left, Right right )
+{ return bitwise_xor( left, right ); }
+
+template< expression Left, unit Right >
+constexpr auto operator ^( Left left, Right right )
+{ return bitwise_xor( left, static_expr( right )); }
+
+template< unit Left, expression Right >
+constexpr auto operator ^( Left left, Right right )
+{ return bitwise_xor( static_expr( left ), right ); }
+
+template< expression Left, expression Right >
+constexpr auto operator <<( Left left, Right right )
+{ return bitshift_left( left, right ); }
+
+template< expression Left, unit Right >
+constexpr auto operator <<( Left left, Right right )
+{ return bitshift_left( left, static_expr( right )); }
+
+template< unit Left, expression Right >
+constexpr auto operator <<( Left left, Right right )
+{ return bitshift_left( static_expr( left ), right ); }
+
+template< expression Left, expression Right >
+constexpr auto operator >>( Left left, Right right )
+{ return bitshift_right( left, right ); }
+
+template< expression Left, unit Right >
+constexpr auto operator >>( Left left, Right right )
+{ return bitshift_right( left, static_expr( right )); }
+
+template< unit Left, expression Right >
+constexpr auto operator >>( Left left, Right right )
+{ return bitshift_right( static_expr( left ), right ); }
+
+template< expression E >
+constexpr auto sin( E arg )
+{ return sine( arg ); }
+
+template< expression E >
+constexpr auto cos( E arg )
+{ return cosinee( arg ); }
+
+template< expression E >
+constexpr auto tan( E arg )
+{ return tangent( arg ); }
+
+template< expression E >
+constexpr auto asin( E arg )
+{ return arcsine( arg ); }
+
+template< expression E >
+constexpr auto acos( E arg )
+{ return arccosine( arg ); }
+
+template< expression E >
+constexpr auto atan( E arg )
+{ return arctangent( arg ); }
+
+template< expression Num, expression Den >
+constexpr auto atan2( Num num, Den den )
+{ return arctangent2( num, den ); }
+
+template< expression Num, unit Den >
+constexpr auto atan2( Num num, Den den )
+{ return arctangent2( num, static_expr( den )); }
+
+template< unit Num, expression Den >
+constexpr auto atan2( Num num, Den den )
+{ return arctangent2( static_expr( num ), den ); }
 
 } // namespace operators
 } // namespace expressions
