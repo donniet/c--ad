@@ -18,6 +18,35 @@ using std::is_same_v;
 template< size_t X >
 struct Identity { static constexpr size_t value = X; };
 
+template< unsigned long long Exponent, unsigned long long Base >
+struct Pow
+{ static constexpr unsigned long long value = 
+    Base * Pow< Exponent - 1, Base >::value; };
+
+template< unsigned long long Exponent >
+struct Pow< Exponent, 0 >
+{ static constexpr unsigned long long value = 0; };
+
+template< unsigned long long Base >
+struct Pow< 0, Base >
+{ static constexpr unsigned long long value = 1; };
+
+// TODO: what do we want here, 1 or 0?
+template< >
+struct Pow< 0, 0 >
+{ static constexpr unsigned long long value = 0; };
+
+template< unsigned long long Exponent, unsigned long long Base >
+constexpr unsigned long long pow_v = Pow< Exponent, Base >::value;
+
+static_assert( pow_v< 2, 2 > == 4 );
+static_assert( pow_v< 1, 2 > == 2 );
+static_assert( pow_v< 2, 3 > == 9 );
+static_assert( pow_v< 2, 5 > == 25 );
+static_assert( pow_v< 3, 2 > == 8 );
+static_assert( pow_v< 0, 2 > == 1 );
+static_assert( pow_v< 2, 0 > == 0 );
+
 // min_v and max_v details
 namespace detail {
 
@@ -149,15 +178,21 @@ static constexpr size_t maximum_is_square_value =
 } // namespace detail
 
 
-template< size_t N >
+template< unsigned long long N >
 requires ( N <= detail::maximum_is_square_value )
 struct is_square
 { static constexpr bool value = detail::IsSquareHelper< N >::value; };
 
-template< size_t N >
+template< unsigned long long N >
 requires ( N <= detail::maximum_is_square_value )
 struct square_root
-{ static constexpr size_t value = detail::SquareRootHelper< N >::value; };
+{ static constexpr unsigned long long value = detail::SquareRootHelper< N >::value; };
+
+template< unsigned long long N >
+constexpr bool is_square_v = is_square< N >::value;
+
+template< unsigned long long N >
+constexpr unsigned long long square_root_v = square_root< N >::value;
 
 static_assert( is_square< detail::maximum_is_square_value >::value );
 static_assert( square_root< detail::maximum_is_square_value >::value == 
@@ -423,6 +458,24 @@ remove_nth( PackType const& pack )
     static constexpr size_t pack_size = PackSize< PackType >::size;
     return detail::pack_remove_nth_helper< N >( pack, std::make_index_sequence< pack_size >{} ); 
 }
+
+template< typename TupleT, typename Seq >
+struct ZeroTupleHelper;
+
+template< typename TupleT, size_t... Is >
+struct ZeroTupleHelper< TupleT, seq< Is... >>
+{ static constexpr TupleT value = { ( Is - Is )... }; };
+
+template< typename TupleT >
+struct ZeroTuple;
+
+template< typename... Ts >
+struct ZeroTuple< tuple< Ts... >>
+{ static constexpr tuple< Ts... > value = 
+    ZeroTupleHelper< tuple< Ts... >, make_seq< sizeof...( Ts )>>::value; };
+
+template< typename TupleT >
+constexpr TupleT zero_tuple_v = ZeroTuple< TupleT >::value;
 
 template< typename... TupleTypes >
 struct TupleCat;
