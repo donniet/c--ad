@@ -136,6 +136,17 @@ template< typename Derived, typename Base >
 concept virtual_base_of = is_virtual_base_of< Base, Derived >::value;
 
 /**
+ * https://stackoverflow.com/questions/78234696/is-there-a-way-to-write-a-concept-to-check-if-a-type-is-a-structural-type
+ */
+template <typename T>
+concept is_structural = requires {
+    // try to instantiate a lambda with T as the structural type:
+    []<T t> {};
+};
+
+
+
+/**
  * compile time math
  */
 namespace detail {

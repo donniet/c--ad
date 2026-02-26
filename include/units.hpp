@@ -299,11 +299,11 @@ struct UnitIdProductHelper< A, B, seq< Is... >>
 
 template< unit_id A, unit_id B >
 requires( A::size == B::size )
-struct UnitIdProduct
+struct product_unit_id
 { using type = UnitIdProductHelper< A, B, make_seq< A::size >>::type; };
 
 template< unit_id A, unit_id B >
-using product_unit_id_t = UnitIdProduct< A, B >::type;
+using product_unit_id_t = product_unit_id< A, B >::type;
 
 template< unit_id A, unit_id B, typename Seq >
 struct UnitIdQuotientHelper;
@@ -365,98 +365,53 @@ static_assert( is_same_v< length_unit_id_t, product_unit_id_t< length_unit_id_t,
 static_assert( is_same_v< scalar_unit_id_t, quotient_unit_id_t< 
     length_unit_id_t, length_unit_id_t >> );
 
-/**
- * A unit_id is a fraction of two unsigned integers.  
- * 
- * TODO: handle null units (automatics)
- */
-// using unit_id_type = pair< unsigned long long, unsigned long long >;
-
-// constexpr unit_id_type scalar_unit_id = { 1, 1 };
-// constexpr unit_id_type length_unit_id = { 2, 1 };
-// constexpr unit_id_type time_unit_id = { 3, 1 };
-// constexpr unit_id_type mass_unit_id = { 5, 1 };
-
-// consteval unit_id_type operator* ( unit_id_type left, unit_id_type right )
-// { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
-//     left.second / gcd( left.second, right.first ) * right.second / gcd( right.second, left.first ) }; }
-
-// consteval unit_id_type operator/ ( unit_id_type left, unit_id_type right )
-// { return left * unit_id_type{ right.second, right.first }; }
-
-// static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 } );
-// static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 } );
-// static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 } ) == unit_id_type{ 2, 3 } );
-// static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 4, 3 } );
-
-// template< unit_id_type id >
-// struct is_unit_id_square
-// { static constexpr bool value = is_square< id.first >::value and 
-//     is_square< id.second >::value; };
-
-// static_assert( is_unit_id_square< unit_id_type{ 1, 1 }>::value );
-// static_assert( not is_unit_id_square< unit_id_type{ 2, 1 }>::value );
-// static_assert( is_unit_id_square< unit_id_type{ 9, 1 }>::value );
-// static_assert( not is_unit_id_square< unit_id_type{ 1, 2 }>::value );
-// static_assert( not is_unit_id_square< unit_id_type{ 2, 2 }>::value );
-// static_assert( not is_unit_id_square< unit_id_type{ 3, 4 }>::value );
-// static_assert( is_unit_id_square< unit_id_type{ 4, 1 }>::value );
-// static_assert( is_unit_id_square< unit_id_type{ 1, 4 }>::value );
-// static_assert( is_unit_id_square< unit_id_type{ 4, 9 }>::value );
-
-// template< unit_id_type id >
-// requires is_unit_id_square< id >::value
-// struct unit_id_square_root
-// { static constexpr unit_id_type value = { square_root< id.first >::value, 
-//     square_root< id.second >::value }; };
-
 template< unit_id Id, typename ValueType >
 struct base_unit;
 
-template< unit_id Id, arithmetic... Ts >
+template< unit_id Id, typename... Ts >
 requires( Id::size == sizeof...( Ts ) )
 struct base_unit< Id, tuple< Ts... >>
 {
-    using scalar_type = tuple< Ts... >;
+    using value_type = tuple< Ts... >;
     using unit_id_type = Id;
 
     constexpr base_unit& operator=( base_unit const& other )
     { value = other.value; return *this; }
-    constexpr base_unit& operator=( scalar_type const& other )
+    constexpr base_unit& operator=( value_type const& other )
     { value = other; return *this; }
-    constexpr operator scalar_type() const
+    constexpr operator value_type() const
     { return value; }
-    constexpr base_unit() : value{ zero_tuple_v< scalar_type > } { }
+    constexpr base_unit() : value{ zero_tuple_v< value_type > } { }
     constexpr base_unit( base_unit const& other ) : value{ other.value } { }
-    constexpr base_unit( scalar_type value ) : value{ value } { }
+    constexpr base_unit( value_type value ) : value{ value } { }
 
-    constexpr scalar_type get_value() const
+    constexpr value_type get_value() const
     { return value; }
 
-    scalar_type value;
+    value_type value;
 };
 
-template< unit_id Id, arithmetic T >
+template< unit_id Id, typename T >
 requires( Id::size == 1 )
 struct base_unit< Id, T >
 {
-    using scalar_type = T;
+    using value_type = T;
     using unit_id_type = Id;
 
     constexpr base_unit& operator=( base_unit const& other )
     { value = other.value; return *this; }
-    constexpr base_unit& operator=( scalar_type const& other )
+    constexpr base_unit& operator=( value_type const& other )
     { value = other; return *this; }
-    constexpr operator scalar_type() const
+    constexpr operator value_type() const
     { return value; }
     constexpr base_unit() : value{ 0. } { }
     constexpr base_unit( base_unit const& other ) : value{ other.value } { }
     explicit constexpr base_unit( T t ) : value{ t } { }
 
-    constexpr scalar_type get_value() const
+    constexpr value_type get_value() const
     { return value; }
 
-    scalar_type value;
+    value_type value;
 };
 
 /**
@@ -479,14 +434,14 @@ requires is_arithmetic_v< T >
 struct unit_traits< T >
 {
     using unit_id_type = scalar_unit_id_t;
-    using scalar_type = T;
+    using value_type = T;
 };
 
 template< unit_id Id, typename T >
 struct unit_traits< base_unit< Id, T >>
 {
     using unit_id_type = Id; 
-    using scalar_type = T;
+    using value_type = T;
 };
 
 template< typename T >
@@ -504,7 +459,28 @@ struct is_unit< base_unit< Id, tuple< Ts... >>>
 { static constexpr bool value = true; };
 
 template< typename T >
+struct UnitValue
+{ using type = T; };
+
+template< typename T >
 concept unit = is_unit< T >::value;
+
+template< typename T >
+requires( unit< T > )
+struct UnitValue< T >
+{ using type = unit_traits< T >::value_type; };
+
+template< typename T >
+using unit_value_t = UnitValue< T >::type;
+
+template< typename T >
+auto unit_value( T t )
+{ return t; }
+
+template< unit_id Id, typename T >
+auto unit_value( base_unit< Id, T > u)
+{ return u.get_value(); }
+
 
 template< unit U >
 using unit_id_t = unit_traits< U >::unit_id_type;
@@ -514,28 +490,28 @@ requires is_square_unit_id_v< typename unit_traits< U >::unit_id_type >::value
 struct SquareRootUnit
 { using type = base_unit< 
     square_root_unit_id_t< typename unit_traits< U >::unit_id >, 
-    typename unit_traits< U >::scalar_type >; };
+    typename unit_traits< U >::value_type >; };
 
 template< unit U >
 using unit_square_root_t = SquareRootUnit< U >::type;
 
 // TODO: use a better scalar type than just the first one
 template< unit U, unit... Us >
-struct UnitProduct
+struct unit_product
 { 
     using unit_id_type = product_unit_id_t< 
         typename unit_traits< U >::unit_id_type, 
-            unit_id_t< typename UnitProduct< Us... >::type >>;
+            unit_id_t< typename unit_product< Us... >::type >>;
     using type = base_unit< unit_id_type, 
-        typename unit_traits< U >::scalar_type >; 
+        typename unit_traits< U >::value_type >; 
 };
 
 template< unit U >
-struct UnitProduct< U >
+struct unit_product< U >
 { using type = U; };
 
 template< unit... Us >
-using unit_product_t = UnitProduct< Us... >::type;
+using unit_product_t = unit_product< Us... >::type;
 
 // TODO: use a better scalar type than just the first one
 template< unit U, unit... Us >
@@ -545,7 +521,7 @@ struct UnitQuotient
     typename unit_traits< U >::unit_id_type, 
         unit_id_t< typename UnitQuotient< Us... >::type >>;
     using type = base_unit< unit_id_type,
-        typename unit_traits< U >::scalar_type >; 
+        typename unit_traits< U >::value_type >; 
 };
 
 template< unit U >
@@ -560,9 +536,9 @@ struct UnitInverse
 { 
     using unit_id_type = inverse_unit_id_t< 
         typename unit_traits< U >::unit_id_type >;
-    using scalar_type = unit_traits< U >::scalar_type;
+    using value_type = unit_traits< U >::value_type;
 
-    using type = base_unit< unit_id_type, scalar_type >;
+    using type = base_unit< unit_id_type, value_type >;
 };
 
 template< unit U >
@@ -874,7 +850,7 @@ constexpr Scalar atan2( NumeratorU const& num, DenominatorU const& den )
  */
 using Length = base_unit< length_unit_id_t, long double >;
 
-constexpr Length::scalar_type meters( Length length ) 
+constexpr Length::value_type meters( Length length ) 
 { return length.get_value(); }
 
 static_assert( is_equal_unit_id_v< typename unit_product_t< Length, Length >::unit_id_type, 
@@ -1004,7 +980,7 @@ constexpr long double length_value( Length length, length_unit u )
 // TODO: interop with std::duration
 using Time = base_unit< time_unit_id_t, long double >;
 
-Time::scalar_type seconds( Time time )
+Time::value_type seconds( Time time )
 { return time.get_value(); }
 
 // time measurement units
@@ -1083,7 +1059,7 @@ constexpr long double time_value( Time time, time_unit u )
  */
 using Mass = base_unit< mass_unit_id_t, long double >;
 
-Time::scalar_type kilograms( Mass mass )
+Time::value_type kilograms( Mass mass )
 { return mass.get_value(); }
 
 Mass operator""_kg( long double kilograms )

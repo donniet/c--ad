@@ -32,13 +32,29 @@ using std::map;
  * All non-staic expressions inherit from this class
  */
 struct Expression
-{ };
+{ 
+    constexpr Expression() { }
+};
+
+static_assert( is_structural< Expression > );
 
 /**
  * traits of expressions
  */
 template< typename T >
 struct expression_traits;
+
+template< unit U, U Value >
+struct ConstExpression : Expression 
+{
+    using result_type = U;
+    static constexpr result_type value = Value;
+
+    constexpr operator result_type() const
+    { return value; }
+    constexpr ConstExpression() = default;
+    constexpr ConstExpression( ConstExpression const& ) = default;
+};
 
 template< unit U >
 struct StaticExpression : Expression
@@ -49,6 +65,9 @@ struct StaticExpression : Expression
     { return value; }
     constexpr StaticExpression() = default;
     constexpr StaticExpression( StaticExpression const& ) = default;
+    // template< result_type Value >
+    // constexpr StaticExpression( ConstExpression< result_type, Value > const & ) :
+    //     value { Value } { }
     constexpr StaticExpression( result_type value ) : value{ value } { }
 
     result_type value;
@@ -74,7 +93,7 @@ struct is_expression
 // a tuple of expressions is also an expression
 template< typename... Ts >
 struct is_expression< tuple< Ts... >>
-{ static constexpr bool value = ( is_expression< Ts >::value and ... ); };
+{ static constexpr bool value = ( is_expression< Ts >::value or ... ); };
 
 template< typename T >
 constexpr bool is_expression_v = is_expression< T >::value;
@@ -92,10 +111,14 @@ struct DependsOn : Expression
 
     tuple< Ts... > exprs;
 
-    DependsOn() = default;
-    DependsOn( DependsOn const& ) = default;
-    DependsOn( Ts... ts ) : exprs{ ts... } { }
+    constexpr DependsOn() = default;
+    constexpr DependsOn( DependsOn const& ) = default;
+    constexpr DependsOn( Ts... ts ) : exprs{ ts... } { }
+    constexpr ~DependsOn() { };
 };
+
+// static_assert( is_structural< tuple< float, float >> );
+// static_assert( is_structural< DependsOn< float, float >> );
 
 template< typename DepTuple >
 struct DependsFromTuple;
@@ -138,7 +161,15 @@ struct expression_traits< tuple< Ts... >>
 };
 
 template< typename T >
-using result_t = expression_traits< T >::result_type;
+struct result 
+{ using type = expression_traits< T >::result_type; };
+
+template< unit U >
+struct result< U >
+{ using type = U; };
+
+template< typename T >
+using result_t = result< T >::type;
 
 /**
  * get an element from a type that inherits from DependsOn<...>

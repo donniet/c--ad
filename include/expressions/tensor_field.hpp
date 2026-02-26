@@ -1,7 +1,8 @@
 #ifndef __TENSOR_FIELD_HPP__
 #define __TENSOR_FIELD_HPP__
 
-#include "expression_ops.hpp"
+#include "units.hpp"
+#include "expressions/expression_ops.hpp"
 
 #if !NO_TENSOR_PRINTING
 #include <format>
@@ -235,6 +236,8 @@ requires( S::elements_size == sizeof...( Es ))
 struct Tensor : DependsOn< Es... >
 { 
     using shape_type = S;
+    // HACK: fix unit ids so that we don't need to assume that the unit_id of subelements has a single member
+    // using unit_id_type = units::UnitId< get_unit_id_element_t< 0, units::unit_id_t< Es >>... >;
     using result_type = Tensor< shape_type, result_t< Es >... >; 
     using elements_tuple_type = tuple< Es... >;
     static constexpr size_t elements_size = S::elements_size;
@@ -260,11 +263,11 @@ struct Tensor : DependsOn< Es... >
     constexpr auto all( Op&& op ) const
     { return all_helper( op, make_seq< elements_size >{} ); }
 
-    Tensor() = default;
-    Tensor( Tensor const& ) = default;
-    Tensor( Es... es ) : DependsOn< Es... >{ es... } { }
+    constexpr Tensor() = default;
+    constexpr Tensor( Tensor const& ) = default;
+    constexpr Tensor( Es... es ) : DependsOn< Es... >{ es... } { }
 
-private:
+public:
     template< typename Op, size_t... Is >
     constexpr auto each_helper( Op& op, seq< Is... > ) const;
 
@@ -273,9 +276,19 @@ private:
     { return op( elem< Is >()... ); }
 };
 
+static_assert( tensor_like< Tensor< Shape< 2, 2 >, float, float, float, float >>);
+
+
+// static_assert( std::is_literal_type_v< Tensor< Shape< 2, 2 >, float, float, float, float >> );
+// static_assert( is_structural< Tensor< Shape< 2, 2 >, float, float, float, float >> );
+
+// template< shape S, typename... Es >
+// struct is_expression< Tensor< S, Es... >>
+// { static constexpr bool value = ( is_expression< Es >::value or ... ); };
+
 template< shape S, typename... Es >
-Tensor< S, Es... > make_tensor( Es... es )
-{ return { es... }; }
+Tensor< S, unit_value_t< Es >... > make_tensor( Es... es )
+{ return { unit_value( es )... }; }
 
 template< shape S, typename... Es >
 requires( S::elements_size == sizeof...( Es ))
@@ -350,6 +363,18 @@ struct tensor_index< D, Tensor< S, Ts... >>
 template< index D, size_t Beg, typename Seq >
 struct subindex_helper;
 
+template< shape S, typename... Ts >
+struct is_expression< Tensor< S, Ts... >>
+{ static constexpr bool value = ( is_expression_v< Ts > or ... ); };
+
+// template< shape S, typename... Ts >
+// struct expression_traits< Tensor< S, Ts... >>
+// {
+//     using result_type = Tensor< S, Ts... >::result_type;
+
+// };
+
+
 template< index D, size_t Beg, size_t... Is >
 struct subindex_helper< D, Beg, seq< Is... >>
 { using type = Index< index_at_v< Beg + Is, D >... >; };
@@ -369,16 +394,18 @@ struct UniformTensorOf
 template< shape S, typename T >
 using UniformTensor = UniformTensorOf< S, T >::type;
 
-template< size_t Rows, size_t Cols, typename... Ts >
-requires( Rows * Cols == sizeof...( Ts ))
-struct Matrix : Tensor< Shape< Rows, Cols >, Ts... >
-{ 
-    using tensor_type = Tensor< Shape< Rows, Cols >, Ts... >;
+// template< size_t Rows, size_t Cols, typename... Ts >
+// requires( Rows * Cols == sizeof...( Ts ))
+// struct Matrix : Tensor< Shape< Rows, Cols >, Ts... >
+// { 
+//     using tensor_type = Tensor< Shape< Rows, Cols >, Ts... >;
 
-    Matrix() = default;
-    Matrix( Matrix const& ) = default;
-    Matrix( Ts... ts ) : tensor_type{ ts... } { }
-};
+//     Matrix() = default;
+//     Matrix( Matrix const& ) = default;
+//     Matrix( Ts... ts ) : tensor_type{ ts... } { }
+// };
+template< size_t Rows, size_t Cols, typename... Ts >
+using Matrix = Tensor< Shape< Rows, Cols >, Ts... >;
 
 template< size_t I, size_t R, size_t C, typename... Ts >
 struct tensor_element< I, Matrix< R, C, Ts... >>
@@ -394,7 +421,7 @@ struct is_matrix
 { static constexpr bool value = false; };
 
 template< size_t Rows, size_t Cols, typename... Ts >
-struct is_matrix< Matrix< Rows, Cols, Ts... >>
+struct is_matrix< Tensor< Shape< Rows, Cols >, Ts... >>
 { static constexpr bool value = true; };
 
 template< typename T >
@@ -402,58 +429,44 @@ concept matrix = is_matrix< T >::value;
 
 template< size_t Rows, size_t Cols, typename... Ts >
 requires( Rows * Cols == sizeof...( Ts ))
-Matrix< Rows, Cols, Ts... > make_matrix( Ts... ts )
-{ return { ts... }; }
-
-template< size_t Rows, size_t Cols, typename T, typename Seq >
-struct UniformMatrixHelper;
-
-template< size_t Rows, size_t Cols, typename T, size_t... Is >
-struct UniformMatrixHelper< Rows, Cols, T, seq< Is... >>
-{ using type = Matrix< Rows, Cols, conditional_t< Is == Is, T, T >... >; };
+Matrix< Rows, Cols, unit_value_t< Ts >... > make_matrix( Ts... ts )
+{ return make_tensor< Shape< Rows, Cols >>( ts... ); }
 
 template< size_t Rows, size_t Cols, typename T >
-struct UniformMatrixOf
-{ using type = UniformMatrixHelper< Rows, Cols, T, make_seq< Rows * Cols >>::type; };
+using UniformMatrix = UniformTensor< Shape< Rows, Cols >, T >;
 
-template< size_t Rows, size_t Cols, typename T >
-struct UniformMatrix : UniformMatrixOf< Rows, Cols, T >::type
-{ 
-    using matrix_type = UniformMatrixOf< Rows, Cols, T >::type;
+template< size_t Rows, size_t Cols, typename T, typename... Ts >
+requires( Rows * Cols == sizeof...( Ts ))
+UniformMatrix< Rows, Cols, unit_value_t< T >> make_uniform_matrix( Ts... ts )
+{ return make_tensor< Shape< Rows, Cols >>( ts... ); }
 
-    UniformMatrix() = default;
-    UniformMatrix( UniformMatrix const& ) = default;
-    template< typename... Ts >
-    requires( sizeof...( Ts ) == Rows * Cols )
-    UniformMatrix( Ts... ts ) : matrix_type{ static_cast< T >( ts )... } { }
-};
+// template< size_t Rows, size_t Cols, typename T >
+// struct is_matrix< UniformMatrix< Rows, Cols, T >>
+// { static constexpr bool value = true; };
 
-template< size_t Rows, size_t Cols, typename T >
-struct is_matrix< UniformMatrix< Rows, Cols, T >>
-{ static constexpr bool value = true; };
+// template< size_t I, size_t R, size_t C, typename T >
+// struct tensor_element< I, UniformMatrix< R, C, T >>
+// { 
+//     using tensor_type = UniformMatrix< R, C, T >;
+//     using base_type = UniformMatrixOf< R, C, T >::type;
+//     using type = T; 
+//     static constexpr type value( tensor_type x )
+//     { return get_tensor_element< I >( static_cast< base_type >( x )); }
+// };
 
-template< size_t I, size_t R, size_t C, typename T >
-struct tensor_element< I, UniformMatrix< R, C, T >>
-{ 
-    using tensor_type = UniformMatrix< R, C, T >;
-    using base_type = UniformMatrixOf< R, C, T >::type;
-    using type = T; 
-    static constexpr type value( tensor_type x )
-    { return get_tensor_element< I >( static_cast< base_type >( x )); }
-};
+// template< size_t Rows, typename... Ts >
+// requires( Rows == sizeof...( Ts ))
+// struct Vector : Tensor< Shape< Rows >, Ts... >
+// { 
+//     using tensor_type = Tensor< Shape< Rows >, Ts... >;
 
-
+//     Vector() = default;
+//     Vector( Vector const& ) = default;
+//     Vector( Ts... ts ) : tensor_type{ ts... } { }
+// };
 
 template< size_t Rows, typename... Ts >
-requires( Rows == sizeof...( Ts ))
-struct Vector : Tensor< Shape< Rows >, Ts... >
-{ 
-    using tensor_type = Tensor< Shape< Rows >, Ts... >;
-
-    Vector() = default;
-    Vector( Vector const& ) = default;
-    Vector( Ts... ts ) : tensor_type{ ts... } { }
-};
+using Vector = Tensor< Shape< Rows >, Ts... >;
 
 template< typename T >
 struct is_vect
@@ -468,26 +481,59 @@ concept vect = is_vect< T >::value;
 
 template< size_t Rows, typename... Ts >
 requires( Rows == sizeof...( Ts ))
-Vector< Rows, Ts... > make_vector( Ts... ts )
-{ return { ts... }; }
-
-template< size_t Rows, typename T, typename Seq >
-struct UniformVectorHelper;
-
-template< size_t Rows, typename T, size_t... Is >
-struct UniformVectorHelper< Rows, T, seq< Is... >>
-{ using type = Vector< Rows, conditional_t< Is == Is, T, T >... >; };
+Vector< Rows, unit_value_t< Ts >... > make_vector( Ts... ts )
+{ return make_tensor< Shape< Rows >>( ts... ); }
 
 template< size_t Rows, typename T >
-struct UniformVectorOf
-{ using type = UniformVectorHelper< Rows, T, make_seq< Rows >>::type; };
+using UniformVector = UniformTensor< Shape< Rows >, T >;
 
-template< size_t Rows, typename T >
-struct UniformVector : UniformVectorOf< Rows, T >::type
-{ };
+template< size_t Rows, typename T, typename... Ts >
+requires( Rows == sizeof...( Ts ))
+UniformVector< Rows, unit_value_t< T >> make_uniform_vector( Ts... ts )
+{ return make_tensor< Shape< Rows >>( ts... ); }
 
 
 } // namespace expressions
+
+// tensors are units too!
+namespace units {
+
+template< expressions::shape S, typename... Ts >
+struct is_unit< expressions::Tensor< S, Ts... >>
+{ static constexpr bool value = ( is_unit< Ts >::value and ... ); };
+
+template< expressions::shape S, typename... Ts >
+struct unit_traits< expressions::Tensor< S, Ts... >>
+{ 
+    // assumes 0 dimensional sub-units
+    using unit_id_type = UnitId< get_unit_id_element_t< 0, unit_id_t< Ts >>... >;
+    using scalar_type = tuple< unit_value_t< Ts >... >;
+};
+
+template< unit_id Id, expressions::shape S, typename... Ts >
+requires( Id::size == S::elements_size )
+struct base_unit< Id, expressions::Tensor< S, Ts... >>
+{
+    using value_type = expressions::Tensor< S, Ts... >;
+    using unit_id_type = Id;
+
+    constexpr base_unit& operator=( base_unit const& other )
+    { value = other.value; return *this; }
+    constexpr base_unit& operator=( value_type const& other )
+    { value = other; return *this; }
+    constexpr operator value_type() const
+    { return value; }
+    constexpr base_unit() : value{} { }
+    constexpr base_unit( base_unit const& other ) : value{ other.value } { }
+    explicit constexpr base_unit( value_type t ) : value{ t } { }
+
+    constexpr value_type get_value() const
+    { return value; }
+
+    value_type value;
+};
+
+} // namespace unit
 
 #if !NO_TENSOR_PRINTING
 namespace std {
