@@ -363,7 +363,8 @@ struct TensorProductHelper< LeftT, RightT, seq< Is... >>
     using shape_type = shape_cat_t< shape_of_t< left_type >, 
         shape_of_t< right_type >>;
 
-    using type = Tensor< shape_type, tensor_product_element_t< Is, left_type, right_type >... >;
+    using type = Tensor< shape_type, unit_value_t< 
+        tensor_product_element_t< Is, left_type, right_type >>... >;
     using result_type = result_t< type >;
 
     template< size_t I >
@@ -374,7 +375,7 @@ struct TensorProductHelper< LeftT, RightT, seq< Is... >>
     static constexpr size_t right_element = right_prod_element_v< I, 
         left_shape, right_shape >;
 
-    static constexpr result_type product( result_t< left_type > left, 
+    static constexpr result_type product_helper( result_t< left_type > left, 
         result_t< right_type > right )
     { return {( get_tensor_element< left_element< Is >>( left ) * 
             get_tensor_element< right_element< Is >>( right ))... }; }
@@ -386,18 +387,30 @@ struct Product< E > : DependsOn< E >
     using tensor_type = Product;
     using shape_type = E::shape_type;
     using result_type = result_t< E >;
-    static constexpr result_type product( result_t< E > x )
-    { return x; }
-    constexpr result_type operator()( result_t< E > x )
-    { return product( x ); }
 };
 
 // TODO: this uses right-side precedence.  Convert to left precedence
 // DT: does it matter for tenser outer products?
-template< tensor_like E, tensor_like... Es >
-struct Product< E, Es... > : DependsOn< E, Es... >
+template< shape S, typename... Ts, expression... Es >
+struct Product< Tensor< S, Ts... >, Es... > : 
+    DependsOn< Tensor< S, Ts...>, Es... >
 {
-    using left_type = E;
+    using left_type = Tensor< S, Ts... >;
+    using left_shape = shape_of_t< left_type >;
+    using right_type = Product< Es... >;
+    using right_shape = shape_of_t< right_type >;
+    // not sure this should be result_type...
+    using helper_type = TensorProductHelper< left_type, right_type, 
+        make_seq< left_shape::elements_size * right_shape::elements_size >>;
+    using shape_type = helper_type::shape_type;
+    using result_type = helper_type::result_type;
+};
+
+template< shape S, typename... Ts, expression... Es >
+struct Product< StaticExpression< Tensor< S, Ts... >>, Es... > : 
+    DependsOn< Tensor< S, Ts...>, Es... >
+{
+    using left_type = Tensor< S, Ts... >;
     using left_shape = shape_of_t< left_type >;
     using right_type = Product< Es... >;
     using right_shape = shape_of_t< right_type >;
@@ -426,20 +439,42 @@ struct tensor_element< I, Product< E, Es... >>
     { return get_tensor_element< I >( get< 0 >( x.exprs )); }
 };
 
-template< matrix A, matrix B >
-requires( shape_at_v< 1, shape_of_t< A >> == shape_at_v< 0, shape_of_t< B >> )
-struct Product< A, B > : Contract< 1, 2, Product< typename A::tensor_type, 
-    typename B::tensor_type >>
-{
-    using left_shape = shape_of_t< A >;
-    using right_shape = shape_of_t< B >;
-    static constexpr size_t rows = shape_at_v< 0, left_shape >;
-    static constexpr size_t cols = shape_at_v< 1, right_shape >;
+template< tensor_like E >
+constexpr E product( E e )
+{ return e; }
 
-    using tensor_product_type = Product< typename A::tensor_type, 
-        typename B::tensor_type >;
-    using contraction_type = Contract< 1, 2, tensor_product_type >;
-};
+template< tensor_like E, tensor_like... Es >
+constexpr Product< E, Es... > product( E e, Es... es )
+{ return Product< E, Es... >::product( e, es... ); }
+
+// template< matrix A, matrix B >
+// requires( shape_at_v< 1, shape_of_t< A >> == shape_at_v< 0, shape_of_t< B >> )
+// struct Product< A, B > : Contract< 1, 2, Product< typename A::tensor_type, 
+//     typename B::tensor_type >>
+// {
+//     using left_shape = shape_of_t< A >;
+//     using right_shape = shape_of_t< B >;
+//     static constexpr size_t rows = shape_at_v< 0, left_shape >;
+//     static constexpr size_t cols = shape_at_v< 1, right_shape >;
+
+//     using tensor_product_type = Product< typename A::tensor_type, 
+//         typename B::tensor_type >;
+//     using contraction_type = Contract< 1, 2, tensor_product_type >;
+// };
+
+/**
+ * tensor product
+ */
+// template< typename LeftT, typename RightT >
+// struct TensorProduct
+// { 
+//     using dependent_types = tuple< LeftT, RightT >;
+//     using result_type = 
+// };
+
+template< tensor_like LeftT, tensor_like RightT, size_t... Is >
+auto product_helper( LeftT left, RightT right, seq< Is... > )
+{ return TensorProductHelper< LeftT, RightT, seq< Is... >>::product_helper( left, right ); }
 
 namespace operators {
 
@@ -448,8 +483,74 @@ constexpr auto contract( A a )
 { return Contract< I, J, A >{ a }; }
 
 } // namespace operators
-
-
 } // namespace expressions
+
+namespace units {
+
+template< unit_id A, expressions::shape ShpA, 
+    unit_id B, expressions::shape ShpB, typename Seq >
+struct TensorProductUnitIdHelper;
+
+template< unit_id A, expressions::shape ShpA, 
+    unit_id B, expressions::shape ShpB, size_t... Is >
+struct TensorProductUnitIdHelper< A, ShpA, B, ShpB, seq< Is... >>
+{
+    template< size_t I >
+    static constexpr size_t left_i = expressions::left_prod_element_v< I, 
+        ShpA, ShpB >;
+
+    template< size_t I >
+    static constexpr size_t right_i = expressions::right_prod_element_v< I, 
+        ShpA, ShpB >;
+
+    using type = UnitId< product_unit_id_element_t< 
+        get_unit_id_element_t< left_i< Is >, A >,
+        get_unit_id_element_t< right_i< Is >, B >>... >;
+};
+
+/**
+ * multiply each element pairwise using the tensor indexing
+ */
+template< unit_id A, expressions::shape ShpA, 
+    unit_id B, expressions::shape ShpB >
+struct tensor_product_unit_id
+{ using type = TensorProductUnitIdHelper< A, ShpA, B, ShpB, 
+    make_seq< A::size * B::size >>::type; };
+
+template< expressions::shape LeftS, typename... Ls, 
+    expressions::shape RightS, typename... Rs >
+struct unit_product< expressions::Tensor< LeftS, Ls... >, 
+    expressions::Tensor< RightS, Rs... >>
+{
+    using left_shape = LeftS;
+    using right_shape = RightS;
+    using left_type = expressions::Tensor< left_shape, Ls... >;
+    using right_type = expressions::Tensor< right_shape, Rs... >;
+
+    using left_unit_id_type = unit_traits< left_type >::unit_id_type;
+    using right_unit_id_type = unit_traits< right_type >::unit_id_type;
+
+    using unit_id_type = tensor_product_unit_id< left_unit_id_type, left_shape, 
+        right_unit_id_type, right_shape >::type;
+
+    using helper_type = expressions::TensorProductHelper< left_type, right_type, 
+        make_seq< left_shape::elements_size * right_shape::elements_size >>;
+
+    using type = base_unit< unit_id_type, typename helper_type::type >;
+
+};
+
+/**
+ * This is all sort of a mess.  Are tensors units?  Maybe units are non-
+ * dimensional and a tensor can be composed of units? 
+ */
+template< expressions::shape LeftS, typename... Ls, 
+    expressions::shape RightS, typename... Rs >
+constexpr auto operator *( expressions::Tensor< LeftS, Ls... > left, 
+    expressions::Tensor< RightS, Rs... > right )
+{ return expressions::product_helper( left, right, 
+    make_seq< LeftS::elements_size * RightS::elements_size >{} ); }
+
+} // namespace units
 
 #endif
