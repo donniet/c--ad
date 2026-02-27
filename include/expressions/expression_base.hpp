@@ -86,10 +86,6 @@ template< typename... Ts >
 struct DependsOn : Expression
 { 
     using dependent_types = tuple< Ts... >;
-
-    static constexpr bool is_static_expression = 
-        ( ... and expression_traits< Ts >::is_static_expression );
-
     tuple< Ts... > exprs;
 
     DependsOn() = default;
