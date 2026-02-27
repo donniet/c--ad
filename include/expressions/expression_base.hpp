@@ -108,9 +108,6 @@ template< typename T >
 struct expression_traits< StaticExpression< T >>
 {
     using result_type = T;
-    static constexpr bool is_static_expression = true;
-    static constexpr bool is_compound_expression = false;
-    static constexpr bool is_variable = false;
     using dependent_types = tuple<>;
 };
 
@@ -119,9 +116,6 @@ requires ( is_base_of_v< Expression, T > )
 struct expression_traits< T >
 { 
     using result_type = T::result_type;
-    static constexpr bool is_static_expression = false;
-    static constexpr bool is_compound_expression = true;
-    static constexpr bool is_variable = false;
     using dependent_types = T::dependent_types;
 };
 
@@ -130,13 +124,12 @@ struct expression_traits< tuple< Ts... >>
 { 
     using result_type = tuple< 
         typename expression_traits< Ts >::result_type... >;
-    static constexpr bool is_static_expression = 
-        ( ... and expression_traits< Ts >::is_static_expression );
-    static constexpr bool is_compound_expression = not is_static_expression;
-    static constexpr bool is_variable = false;
     using dependent_types = tuple< Ts... >;
 };
 
+/**
+ * Trait to determine the result of an expression.
+ */
 template< typename T >
 struct Result
 { using type = T; };
@@ -198,21 +191,21 @@ struct Variable;
 /**
  * accessor for the value of variable I with type T
  */
-template< typename T, size_t I >
-struct VariableHarness
-{
-    friend Invoker< Variable< T, I >>;
+// template< typename T, size_t I >
+// struct VariableHarness
+// {
+//     friend Invoker< Variable< T, I >>;
 
-    operator T() const
-    { return any_cast< T >(( *m_values )[I]); }
+//     operator T() const
+//     { return any_cast< T >(( *m_values )[I]); }
 
-    VariableHarness& operator=( T const& other )
-    { ( *m_values )[I] = other; return *this; }
+//     VariableHarness& operator=( T const& other )
+//     { ( *m_values )[I] = other; return *this; }
 
-private:
-    VariableHarness( variable_values const* values ) : m_values{ values } { }
-    variable_values const* m_values;
-};
+// private:
+//     VariableHarness( variable_values const* values ) : m_values{ values } { }
+//     variable_values const* m_values;
+// };
 
 /**
  * Expressions whose value may change
@@ -225,17 +218,14 @@ private:
 template< typename T, size_t I >
 struct Variable : Expression
 { 
-    using result_type = VariableHarness< T, I >; 
+    using result_type = T; 
 };
 
 template< typename T, size_t I >
 struct expression_traits< Variable< T, I >>
 { 
     using result_type = T;
-    static constexpr bool is_static_expression = false;
-    static constexpr bool is_compound_expression = false;
-    // static constexpr bool is_variable = true;
-    using dependent_expressions = tuple<>;
+    using dependent_types = tuple<>;
 };
 
 /**
@@ -255,14 +245,10 @@ constexpr bool is_variable_v = is_variable< V >::value;
 template< typename V >
 concept variable = is_variable_v< V >;
 
-// template< typename V >
-// constexpr bool is_static_expr_v = expression_traits< V >::is_static_expression;
-
-// template< typename V >
-// concept static_expr = is_static_expr_v< V >;
-
 template< expression V >
-constexpr bool is_compound_v = expression_traits< V >::is_compound_expression;
+constexpr bool is_compound_v = 
+    isgreater( tuple_size_v< 
+        typename expression_traits< V >::dependent_types >, 0 );
 
 template< typename V >
 concept compound = is_compound_v< V >;
@@ -293,7 +279,7 @@ struct depends_on_compound_helper< V, tuple< Ts... >>
 { static constexpr bool value = ( ... or depends_on< V, Ts >::value ); };
 
 template< variable V, expression T >
-requires ( compound< T > and not expression_traits< T >::is_static_expression )
+requires ( compound< T > )
 struct depends_on< V, T >
 { 
     using dependent_types = expression_traits< T >::dependent_types;
@@ -445,8 +431,16 @@ template< unit U >
 U invoke( U expr, variable_values const& )
 { return expr; }
 
+template< typename T >
+T invoke( StaticExpression< T > expr, variable_values const& )
+{ return expr; }
+
 template< unit U >
 U invoke( U expr )
+{ return expr; }
+
+template< typename T >
+T invoke( StaticExpression< T > expr )
 { return expr; }
 
 template< expression T >
@@ -457,9 +451,8 @@ result_t< T > invoke( T expr )
 template< typename T, size_t I >
 struct Invoker< Variable< T, I >>
 { 
-    VariableHarness< T, I > operator()( Variable< T, I >, 
-        variable_values const& values )
-    { return { &values }; }
+    T operator()( Variable< T, I >, variable_values const& values )
+    { return any_cast< T >( values[I] ); }
 };
 
 // /**
