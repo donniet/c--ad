@@ -40,7 +40,8 @@ template< typename T >
 concept shape = is_shape_v< T >;
 
 template< typename T >
-concept tensor_like = is_shape_v< typename T::shape_type >;
+concept tensor_like = requires
+{ typename T::shape_type; };
 
 template< typename T >
 concept scalar_like = not tensor_like< T >;

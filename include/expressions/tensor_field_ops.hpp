@@ -380,32 +380,35 @@ struct TensorProductHelper< LeftT, RightT, seq< Is... >>
             get_tensor_element< right_element< Is >>( right ))... }; }
 };
 
-template< tensor_like E >
-struct Product< E > : DependsOn< E >
+template< shape S, typename... Ts >
+struct Product< Tensor< S, Ts... >> : DependsOn< Tensor< S, Ts... >>
 {
-    using tensor_type = Product;
-    using shape_type = E::shape_type;
-    using result_type = result_t< E >;
-    static constexpr result_type product( result_t< E > x )
-    { return x; }
-    constexpr result_type operator()( result_t< E > x )
-    { return product( x ); }
+    using shape_type = Tensor< S, Ts... >::shape_type;
+    using result_type = result_t< Tensor< S, Ts... >>;
+
+    Product( Tensor< S, Ts... > arg ) : DependsOn< Tensor< S, Ts... >>{ arg }
+    { }
 };
 
-// TODO: this uses right-side precedence.  Convert to left precedence
-// DT: does it matter for tenser outer products?
-template< tensor_like E, tensor_like... Es >
-struct Product< E, Es... > : DependsOn< E, Es... >
+template< shape S, typename... Ts, typename... Es >
+struct Product< Tensor< S, Ts... >, Es... > : 
+    DependsOn< Tensor< S, Ts... >, Es... >
 {
-    using left_type = E;
+    using left_type = Tensor< S, Ts... >;
     using left_shape = shape_of_t< left_type >;
     using right_type = Product< Es... >;
     using right_shape = shape_of_t< right_type >;
     // not sure this should be result_type...
     using helper_type = TensorProductHelper< left_type, right_type, 
         make_seq< left_shape::elements_size * right_shape::elements_size >>;
+    
+    // required for tensor_like objects
     using shape_type = helper_type::shape_type;
     using result_type = helper_type::result_type;
+
+    Product( Tensor< S, Ts... > arg, Es... es ) : 
+        DependsOn< Tensor< S, Ts... >, Es... >{ arg, es... }
+    { }
 };
 
 template< size_t I, tensor_like E >
@@ -426,20 +429,7 @@ struct tensor_element< I, Product< E, Es... >>
     { return get_tensor_element< I >( get< 0 >( x.exprs )); }
 };
 
-template< matrix A, matrix B >
-requires( shape_at_v< 1, shape_of_t< A >> == shape_at_v< 0, shape_of_t< B >> )
-struct Product< A, B > : Contract< 1, 2, Product< typename A::tensor_type, 
-    typename B::tensor_type >>
-{
-    using left_shape = shape_of_t< A >;
-    using right_shape = shape_of_t< B >;
-    static constexpr size_t rows = shape_at_v< 0, left_shape >;
-    static constexpr size_t cols = shape_at_v< 1, right_shape >;
 
-    using tensor_product_type = Product< typename A::tensor_type, 
-        typename B::tensor_type >;
-    using contraction_type = Contract< 1, 2, tensor_product_type >;
-};
 
 namespace operators {
 

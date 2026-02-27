@@ -13,88 +13,85 @@
 namespace expressions {
 
 // boolean operators
-template< expression T, expression... Ts >
-struct Conjunction : DependsOn< T, Ts... >
-{ 
-    using dependent_types = tuple< T, Ts... >;
-    using result_type = bool; 
-
-    constexpr Conjunction() = default;
-    constexpr Conjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
+template< typename... Ts >
+struct Conjunction : DependsOn< Ts... >
+{
+    using result_type = bool;
+    constexpr Conjunction( Ts... ts ) :
+        DependsOn< Ts... >{ ts... }
+    { }
 };
 
-template< expression T, expression... Ts >
-struct Disjunction : DependsOn< T, Ts... >
-{ 
-    using dependent_types = tuple< T, Ts... >;
-    using result_type = bool; 
-
-    constexpr Disjunction() = default;
-    constexpr Disjunction( T t, Ts... ts ) : DependsOn< T, Ts... >{ t, ts... } { }
+template< typename... Ts >
+struct Disjunction : DependsOn< Ts... >
+{
+    using result_type = bool;
+    constexpr Disjunction( Ts... ts ) :
+        DependsOn< Ts... >{ ts... }
+    { }
 };
 
-template< expression T >
+template< typename T >
 struct Compliment : DependsOn< T >
 { 
-    using dependent_types = tuple< T >;
-    using result_type = bool; 
-
-    constexpr Compliment() = default;
-    constexpr Compliment( T t ) : DependsOn< T >{ t } { }
+    using result_type = bool;
+    constexpr Compliment( T arg ) : DependsOn< T >{ arg } { }
 };
 
 // comparison
-template< expression Left, expression Right >
+template< typename Left, typename Right >
 struct Equals : DependsOn< Left, Right >
 { 
-    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
     constexpr Equals() = default;
-    constexpr Equals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Equals( Left left, Right right ) : 
+        DependsOn< Left, Right >{ left, right } { }
 };
 
-template< expression Left, expression Right >
+template< typename Left, typename Right >
 struct NotEquals : DependsOn< Left, Right >
 { 
-    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
     constexpr NotEquals() = default;
-    constexpr NotEquals( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr NotEquals( Left left, Right right ) : 
+        DependsOn< Left, Right >{ left, right } { }
 };
 
-template< expression Left, expression Right >
+template< typename Left, typename Right >
 struct Less : DependsOn< Left, Right >
 { 
-    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
     constexpr Less() = default;
-    constexpr Less( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Less( Left left, Right right ) : 
+        DependsOn< Left, Right >{ left, right } { }
 };
 
-template< expression Left, expression Right >
+
+template< typename Left, typename Right >
 struct LessOrEqual : DependsOn< Left, Right >
 { 
-    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
     constexpr LessOrEqual() = default;
-    constexpr LessOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr LessOrEqual( Left left, Right right ) : 
+        DependsOn< Left, Right >{ left, right } { }
 };
 
-template< expression Left, expression Right >
+
+template< typename Left, typename Right >
 struct Greater : DependsOn< Left, Right >
 { 
-    using dependent_types = tuple< Left, Right >;
     using result_type = bool; 
 
     constexpr Greater() = default;
-    constexpr Greater( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
+    constexpr Greater( Left left, Right right ) : 
+        DependsOn< Left, Right >{ left, right } { }
 };
 
-template< expression Left, expression Right >
+template< typename Left, typename Right >
 struct GreaterOrEqual : DependsOn< Left, Right >
 { 
     using dependent_types = tuple< Left, Right >;
@@ -105,7 +102,7 @@ struct GreaterOrEqual : DependsOn< Left, Right >
 };
 
 // real arithmetic
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct Sum : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -115,7 +112,7 @@ struct Sum : DependsOn< E, Es... >
     constexpr Sum( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct Difference : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -125,7 +122,7 @@ struct Difference : DependsOn< E, Es... >
     constexpr Difference( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E >
+template< typename E >
 struct Negation : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -135,7 +132,7 @@ struct Negation : DependsOn< E >
     constexpr Negation( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct Product : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -145,7 +142,7 @@ struct Product : DependsOn< E, Es... >
     constexpr Product( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct Quotient : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -155,7 +152,7 @@ struct Quotient : DependsOn< E, Es... >
     constexpr Quotient( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E >
+template< typename E >
 struct Inverse : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -166,7 +163,7 @@ struct Inverse : DependsOn< E >
 };
 
 // integer arithmetic
-template< expression E >
+template< typename E >
 struct BitwiseNot : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -176,7 +173,7 @@ struct BitwiseNot : DependsOn< E >
     constexpr BitwiseNot( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct BitwiseAnd : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -186,7 +183,7 @@ struct BitwiseAnd : DependsOn< E, Es... >
     constexpr BitwiseAnd( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct BitwiseOr : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -196,7 +193,7 @@ struct BitwiseOr : DependsOn< E, Es... >
     constexpr BitwiseOr( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression E, expression... Es >
+template< typename E, typename... Es >
 struct BitwiseXor : DependsOn< E, Es... >
 { 
     using dependent_types = tuple< E, Es... >;
@@ -206,7 +203,7 @@ struct BitwiseXor : DependsOn< E, Es... >
     constexpr BitwiseXor( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
 };
 
-template< expression Bits, expression Shift >
+template< typename Bits, typename Shift >
 struct BitshiftLeft : DependsOn< Bits, Shift >
 { 
     using dependent_types = tuple< Bits, Shift >;
@@ -220,7 +217,7 @@ struct BitshiftLeft : DependsOn< Bits, Shift >
         DependsOn< Bits, Shift >{ bits, shift } { }
 };
 
-template< expression Bits, expression Shift >
+template< typename Bits, typename Shift >
 struct BitshiftRight : DependsOn< Bits, Shift >
 { 
     using dependent_types = tuple< Bits, Shift >;
@@ -235,7 +232,7 @@ struct BitshiftRight : DependsOn< Bits, Shift >
 };
 
 // trig functions
-template< expression E >
+template< typename E >
 struct Sine : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -245,7 +242,7 @@ struct Sine : DependsOn< E >
     constexpr Sine( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E >
+template< typename E >
 struct Cosine : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -255,7 +252,7 @@ struct Cosine : DependsOn< E >
     constexpr Cosine( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E >
+template< typename E >
 struct Tangent : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -265,7 +262,7 @@ struct Tangent : DependsOn< E >
     constexpr Tangent( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E >
+template< typename E >
 struct Arcsine : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -275,7 +272,7 @@ struct Arcsine : DependsOn< E >
     constexpr Arcsine( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E >
+template< typename E >
 struct Arccosine : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -285,7 +282,7 @@ struct Arccosine : DependsOn< E >
     constexpr Arccosine( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression E >
+template< typename E >
 struct Arctangent : DependsOn< E >
 { 
     using dependent_types = tuple< E >;
@@ -295,7 +292,7 @@ struct Arctangent : DependsOn< E >
     constexpr Arctangent( E e ) : DependsOn< E >{ e } { }
 };
 
-template< expression Num, expression Den >
+template< typename Num, typename Den >
 struct Arctangent2 : DependsOn< Num, Den >
 { 
     using dependent_types = tuple< Num, Den >;
@@ -433,50 +430,35 @@ constexpr Arctangent2< Num, Den > arctangent2( Num num, Den den )
 /**
  * Invokers
  */
-template< typename E, typename... Es >
-struct Invoker< Conjunction< E, Es... >>
-{
-    template< size_t... Is >
-    auto helper( Conjunction< E, Es... > expr, variable_values const& values, 
-        seq< Is... > )
-    { return ( ... and invoke( get_dependent< Is >( expr ), values )); }
+template< typename T, typename... Ts >
+requires( isgreater( sizeof...( Ts ), 0 ))
+auto invoke( Conjunction< T, Ts... > expr, variable_values const& values )
+{ return invoke( expr.first(), values ) and invoke( expr.rest(), values ); }
 
-    auto operator()( Conjunction< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
-};
+template< typename T >
+auto invoke( Conjunction< T > expr, variable_values const& values )
+{ return invoke( expr.first(), values ); }
 
-template< typename E, typename... Es >
-struct Invoker< Disjunction< E, Es... >>
-{
-    template< size_t... Is >
-    auto helper( Disjunction< E, Es... > expr, variable_values const& values, 
-        seq< Is... > )
-    { return ( ... or invoke( get_dependent< Is >( expr ), values )); }
+template< typename T, typename... Ts >
+requires( isgreater( sizeof...( Ts ), 0 ))
+auto invoke( Disjunction< T, Ts... > expr, variable_values const& values )
+{ return invoke( expr.first(), values ) or invoke( expr.rest(), values ); }
 
-    auto operator()( Disjunction< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
-};
+template< typename T >
+auto invoke( Disjunction< T > expr, variable_values const& values )
+{ return invoke( expr.first(), values ); }
 
-template< typename E >
-struct Invoker< Compliment< E >>
-{
-    auto operator()( Compliment< E > expr, variable_values const& values )
-    { return not invoke( expr, values ); }
-};
+template< typename T >
+auto invoke( Compliment< T > expr, variable_values const& values )
+{ return not invoke( expr.first(), values ); }
 
-template< typename Left, typename Right >
-struct Invoker< Equals< Left, Right >>
-{
-    auto operator()( Equals< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) == invoke( get_dependent< 1 >( expr )); }
-};
+template< typename LeftT, typename RightT >
+auto invoke( Equals< LeftT, RightT > expr, variable_values const& values )
+{ return invoke( expr.left(), values ) == invoke( expr.right(), values ); }
 
-template< typename Left, typename Right >
-struct Invoker< NotEquals< Left, Right >>
-{
-    auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) != invoke( get_dependent< 1 >( expr )); }
-};
+template< typename LeftT, typename RightT >
+auto invoke( NotEquals< LeftT, RightT > expr, variable_values const& values )
+{ return invoke( expr.left(), values ) != invoke( expr.right(), values ); }
 
 template< typename Left, typename Right >
 struct Invoker< Less< Left, Right >>
