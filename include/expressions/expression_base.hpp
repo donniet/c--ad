@@ -123,6 +123,10 @@ struct expression_traits< tuple< Ts... >>
     using dependent_types = tuple< Ts... >;
 };
 
+template< size_t I, typename TupleT >
+tuple_element_t< I, TupleT > get_element( TupleT const& tup )
+{ return get< I >( tup ); }
+
 /**
  * Trait to determine the result of an expression.
  */

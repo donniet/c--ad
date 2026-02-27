@@ -101,6 +101,16 @@ struct GreaterOrEqual : DependsOn< Left, Right >
     constexpr GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
 };
 
+// accessor
+template< size_t I, typename E >
+struct Element : DependsOn< E >
+{
+    using dependent_types = tuple< E >;
+    using result_type = tuple_element_t< I, result_t< E >>;
+
+    constexpr Element( E e ) : DependsOn< E >{ e } { }
+};
+
 // real arithmetic
 template< typename E, typename... Es >
 struct Sum : DependsOn< E, Es... >
@@ -430,6 +440,21 @@ constexpr Arctangent2< Num, Den > arctangent2( Num num, Den den )
 /**
  * Invokers
  */
+template< typename... Ts >
+struct Invoker< tuple< Ts... >>
+{
+    using tuple_type = tuple< Ts... >;
+    using result_type = tuple< result_t< Ts >... >;
+    result_type operator()( tuple_type const& tup, 
+        variable_values const& values )
+    { return helper( tup, values, make_seq< sizeof...( Ts )>{} ); }
+
+    template< size_t... Is >
+    result_type helper( tuple_type const& tup, 
+        variable_values const& values, seq< Is... > )
+    { return { invoke( get< Is >( tup ), values )... }; }
+};
+
 template< typename T, typename... Ts >
 requires( isgreater( sizeof...( Ts ), 0 ))
 auto invoke( Conjunction< T, Ts... > expr, variable_values const& values )
@@ -486,6 +511,13 @@ struct Invoker< GreaterOrEqual< Left, Right >>
 {
     auto operator()( GreaterOrEqual< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) >= invoke( get_dependent< 1 >( expr )); }
+};
+
+template< size_t I, typename E >
+struct Invoker< Element< I, E >>
+{
+    auto operator()( Element< I, E > const& expr, variable_values const& values )
+    { return get_element< I >( invoke( get_dependent< 0 >( expr ), values )); }
 };
 
 template< typename E, typename... Es >

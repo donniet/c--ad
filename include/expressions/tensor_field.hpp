@@ -152,7 +152,6 @@ struct index_to_element_helper< Index< D, Ds... >, Shape< S, Ss... >>
 { static constexpr size_t value = D * ( ... * Ss ) + 
     index_to_element_helper< Index< Ds... >, Shape< Ss... >>::value; };
 
-
 template< size_t I, shape S >
 struct element_to_index;
 
@@ -203,6 +202,27 @@ requires ( I > 0 and I <= 1+sizeof...( Js ))
 struct insert_at< Index< J, Js... >, I, N >
 { using type = index_cat_t< Index< J >, typename insert_at< Index< Js... >, I-1, N >::type >; };
 
+template< typename T >
+struct shape_of
+{ using type = T::shape_type; };
+
+template< typename... Ts >
+struct shape_of< tuple< Ts... >>
+{ using type = Shape< sizeof...( Ts )>; };
+
+template< typename T >
+using shape_of_t = shape_of< T >::type;
+
+template< size_t I, tensor_like T >
+struct tensor_element;
+
+template< size_t I, tensor_like T >
+using tensor_element_t = tensor_element< I, T >::type;
+
+template< size_t I, tensor_like T >
+constexpr tensor_element_t< I, T > get_tensor_element( T const& x )
+{ return tensor_element< I, T >::value( x ); }
+
 /**
  * Insert an element in a shape or index object
  * 
@@ -213,10 +233,12 @@ struct insert_at< Index< J, Js... >, I, N >
 template< typename X, size_t I, size_t N >
 using insert_at_t = insert_at< X, I, N >::type;
 
-template< index D, typename T >
-struct tensor_index;
+template< index D, tensor_like T >
+struct tensor_index
+{ using type = tensor_element_t< 
+    index_to_element_helper< D, shape_of_t< T >>::value, T >; };
 
-template< index D, typename T >
+template< index D, tensor_like T >
 using tensor_index_t = tensor_index< D, T >::type;
 
 template< index D, typename T >
@@ -224,6 +246,10 @@ struct index_to_element;
 
 template< index D, typename T >
 constexpr size_t index_to_element_v = index_to_element< D, T >::value;
+
+template< index D, typename T >
+constexpr tensor_index_t< D, T > get_tensor_index( T const& t )
+{ return get_tensor_element< index_to_element_v< D, T >>( t ); }
 
 /**
  * collection of expressions in a multi-dimensional shape specified by S
@@ -274,6 +300,10 @@ private:
     { return op( elem< Is >()... ); }
 };
 
+template< shape S, typename... Ts >
+struct Result< Tensor< S, Ts... >>
+{ using type = Tensor< S, result_t< Ts >... >; };
+
 template< shape S, typename... Es >
 Tensor< S, Es... > make_tensor( Es... es )
 { return { es... }; }
@@ -309,25 +339,6 @@ template< shape S, typename... Es >
 requires( S::elements_size == sizeof...( Es ))
 using tensor_t = tensor_helper< S, Es... >::type; 
 
-template< typename T >
-struct shape_of
-{ using type = T::shape_type; };
-
-template< typename... Ts >
-struct shape_of< tuple< Ts... >>
-{ using type = Shape< sizeof...( Ts )>; };
-
-template< typename T >
-using shape_of_t = shape_of< T >::type;
-
-template< index D, typename T >
-struct index_to_element
-{ static constexpr size_t value = 
-    index_to_element_helper< D, shape_of_t< T >>::value; };
-
-template< size_t I, tensor_like T >
-struct tensor_element;
-
 template< size_t I, shape S, typename... Ts >
 struct tensor_element< I, Tensor< S, Ts... >>
 { 
@@ -336,17 +347,15 @@ struct tensor_element< I, Tensor< S, Ts... >>
     { return x.template elem< I >(); }
 };
 
-template< size_t I, tensor_like T >
-using tensor_element_t = tensor_element< I, T >::type;
+template< size_t I, typename TensorT >
+requires( tensor_like< TensorT > )
+tensor_element< I, TensorT > get_element( TensorT const& ten )
+{ return tensor_element< I, TensorT >::value( ten ); }
 
-template< size_t I, tensor_like T >
-constexpr tensor_element_t< I, T > get_tensor_element( T const& x )
-{ return tensor_element< I, T >::value( x ); }
-
-template< index D, shape S, typename... Ts >
-requires( is_valid_index_v< D, S > )
-struct tensor_index< D, Tensor< S, Ts... >> 
-{ using type = tuple_element_t< index_to_element_helper< D, S >::value, tuple< Ts... >>; };
+template< index D, typename T >
+struct index_to_element
+{ static constexpr size_t value = 
+    index_to_element_helper< D, shape_of_t< T >>::value; };
 
 template< index D, size_t Beg, typename Seq >
 struct subindex_helper;

@@ -48,6 +48,8 @@ int main( int ac, char * av[] )
         0_scalar, 1_scalar );
     auto v = make_vector< 2 >( 2_scalar, 3_scalar );
 
+    
+
     auto g1 = m * v;
 
     auto g1_x = invoke( g1 );
@@ -64,6 +66,9 @@ int main( int ac, char * av[] )
     assert( (g1_x.template elem< 5 >() == 0_scalar) );
     assert( (g1_x.template elem< 6 >() == 2_scalar) );
     assert( (g1_x.template elem< 7 >() == 3_scalar) );
+
+    auto g1c = contract< 1, 2 >( m * v );
+    // auto g1c_x = invoke( g1c );
 
     // println("{}", av[0] );
 
