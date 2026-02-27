@@ -80,7 +80,7 @@ constexpr unit_id_type length_unit_id = { 2, 1 };
 constexpr unit_id_type time_unit_id = { 3, 1 };
 constexpr unit_id_type mass_unit_id = { 5, 1 };
 
-consteval unit_id_type operator* ( unit_id_type left, unit_id_type right )
+constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
 { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
     left.second / gcd( left.second, right.first ) * right.second / gcd( right.second, left.first ) }; }
 
@@ -238,44 +238,44 @@ template< int Power, unit U >
 using power_unit_t = PowerUnit< Power, U >::type;
 
 // true and false expressions
-constexpr Boolean true_bool = true;
-constexpr Boolean false_bool = false;
+constexpr Boolean true_bool = Boolean{ true };
+constexpr Boolean false_bool = Boolean{ false };
 
 // literals and construction methods for scalars
-Scalar operator ""_scalar( long double x )
-{ return { x }; }
-Scalar operator ""_scalar( unsigned long long x )
-{ return { (long double)x }; }
-Scalar scalar( long double x )
-{ return { x }; }
-Scalar operator ""_percent( long double x )
-{ return { 0.01 * x }; }
-Scalar operator ""_percent( unsigned long long x )
-{ return { 0.01 * (long double)x }; }
-Scalar percent( Cardinal n )
-{ return { 0.01 * (long double)n.value }; }
-Scalar percent( unsigned long long n )
-{ return { 0.01 * (long double)n }; }
-Scalar percent( long double x )
-{ return { 0.01 * x }; }
+auto operator ""_scalar( long double x )
+{ return Scalar{ x }; }
+auto operator ""_scalar( unsigned long long x )
+{ return Scalar{ (long double)x }; }
+auto scalar( long double x )
+{ return Scalar{ x }; }
+auto operator ""_percent( long double x )
+{ return Scalar{ 0.01 * x }; }
+auto operator ""_percent( unsigned long long x )
+{ return Scalar{ 0.01 * (long double)x }; }
+auto percent( Cardinal n )
+{ return Scalar{ 0.01 * (long double)n.value }; }
+auto percent( unsigned long long n )
+{ return Scalar{ 0.01 * (long double)n }; }
+auto percent( long double x )
+{ return Scalar{ 0.01 * x }; }
 
 // literals and construction methods for cardinals
-Cardinal operator ""_cardinal( unsigned long long n )
-{ return { n }; }
-Cardinal cardinal( Scalar x )
-{ return { (unsigned long long)x.value }; }
-Cardinal cardinal( long double x )
-{ return { (unsigned long long)x }; }
-Cardinal cardinal( unsigned long long n )
-{ return { n }; }
+auto operator ""_cardinal( unsigned long long n )
+{ return Cardinal{ n }; }
+auto cardinal( Scalar x )
+{ return Cardinal{ (unsigned long long)x.value }; }
+auto cardinal( long double x )
+{ return Cardinal{ (unsigned long long)x }; }
+auto cardinal( unsigned long long n )
+{ return Cardinal{ n }; }
 
 // logical operations
-Boolean operator and( Boolean const& left, Boolean const& right )
-{ return { left.value and right.value }; }
-Boolean operator or( Boolean const& left, Boolean const& right )
-{ return { left.value or right.value }; }
-Boolean operator not( Boolean const& arg )
-{ return { not arg.value }; }
+auto operator and( Boolean const& left, Boolean const& right )
+{ return Boolean{ left.value and right.value }; }
+auto operator or( Boolean const& left, Boolean const& right )
+{ return Boolean{ left.value or right.value }; }
+auto operator not( Boolean const& arg )
+{ return Boolean{ not arg.value }; }
 
 // general unit arithmetic
 template< unit LeftU, unit RightU >
@@ -346,7 +346,7 @@ constexpr U operator ~( U const& arg )
 { return { ~arg.get_value() }; }
 
 constexpr Boolean operator ~( Boolean const& arg )
-{ return { not arg.get_value() }; }
+{ return Boolean{ not arg.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete )
@@ -384,30 +384,30 @@ constexpr LeftU operator <<( LeftU const& left, RightU const& right )
 { return { left.get_value() << right.get_value() }; }
 
 // cardinal to scalar comparison
-Boolean operator ==( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value == right.value }; }
-Boolean operator !=( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value != right.value }; }
-Boolean operator <( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value < right.value }; }
-Boolean operator <=( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value <= right.value }; }
-Boolean operator >( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value > right.value }; }
-Boolean operator >=( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value >= right.value }; }
-Boolean operator ==( Scalar const& left, Cardinal const& right )
-{ return { left.value == (long double)right.value }; }
-Boolean operator !=( Scalar const& left, Cardinal const& right )
-{ return { left.value != (long double)right.value }; }
-Boolean operator <( Scalar const& left, Cardinal const& right )
-{ return { left.value < (long double)right.value }; }
-Boolean operator <=( Scalar const& left, Cardinal const& right )
-{ return { left.value <= (long double)right.value }; }
-Boolean operator >( Scalar const& left, Cardinal const& right )
-{ return { left.value > (long double)right.value }; }
-Boolean operator >=( Scalar const& left, Cardinal const& right )
-{ return { left.value >= (long double)right.value }; }
+auto operator ==( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value == right.value }; }
+auto operator !=( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value != right.value }; }
+auto operator <( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value < right.value }; }
+auto operator <=( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value <= right.value }; }
+auto operator >( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value > right.value }; }
+auto operator >=( Cardinal const& left, Scalar const& right )
+{ return Boolean{ (long double)left.value >= right.value }; }
+auto operator ==( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value == (long double)right.value }; }
+auto operator !=( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value != (long double)right.value }; }
+auto operator <( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value < (long double)right.value }; }
+auto operator <=( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value <= (long double)right.value }; }
+auto operator >( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value > (long double)right.value }; }
+auto operator >=( Scalar const& left, Cardinal const& right )
+{ return Boolean{ left.value >= (long double)right.value }; }
 
 // general unit comparison
 template< unit LeftU, unit RightU >
@@ -440,47 +440,29 @@ requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
 Boolean operator >=( LeftU const& left, RightU const& right )
 { return left.get_value() >= right.get_value(); }
 
-// scalar and cardinal arithmetic
-Scalar operator +( Scalar const& left, Cardinal const& right )
-{ return { left.value + (long double)right.value }; }
-Scalar operator +( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value + right.value }; }
-Scalar operator -( Scalar const& left, Cardinal const& right )
-{ return { left.value - (long double)right.value }; }
-Scalar operator -( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value - right.value }; }
-Scalar operator *( Scalar const& left, Cardinal const& right )
-{ return { left.value * (long double)right.value }; }
-Scalar operator *( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value * right.value }; }
-Scalar operator /( Scalar const& left, Cardinal const& right )
-{ return { left.value / (long double)right.value }; }
-Scalar operator /( Cardinal const& left, Scalar const& right )
-{ return { (long double)left.value / right.value }; }
-
 // powers (compile time)
 template< int Power, unit U >
 constexpr power_unit_t< Power, U > pow( U const& u )
 { return { std::pow( u.get_value(), Power )}; }
 
-constexpr Scalar sin( Scalar const& u )
-{ return { std::sin( u.get_value() )}; }
-constexpr Scalar cos( Scalar const& u )
-{ return { std::cos( u.get_value() )}; }
-constexpr Scalar tan( Scalar const& u )
-{ return { std::tan( u.get_value() )}; }
+constexpr auto sin( Scalar const& u )
+{ return Scalar{ std::sin( u.get_value() )}; }
+constexpr auto cos( Scalar const& u )
+{ return Scalar{ std::cos( u.get_value() )}; }
+constexpr auto tan( Scalar const& u )
+{ return Scalar{ std::tan( u.get_value() )}; }
 
-constexpr Scalar asin( Scalar const& arg )
-{ return { std::asin( arg.get_value() ) }; }
-constexpr Scalar acos( Scalar const& arg )
-{ return { std::acos( arg.get_value() ) }; }
-constexpr Scalar atan( Scalar const& arg )
-{ return { std::atan( arg.get_value() ) }; }
+constexpr auto asin( Scalar const& arg )
+{ return Scalar{ std::asin( arg.get_value() ) }; }
+constexpr auto acos( Scalar const& arg )
+{ return Scalar{ std::acos( arg.get_value() ) }; }
+constexpr auto atan( Scalar const& arg )
+{ return Scalar{ std::atan( arg.get_value() ) }; }
 
 template< unit NumeratorU, unit DenominatorU >
 requires( unit_traits< NumeratorU >::id == unit_traits< DenominatorU >::id )
-constexpr Scalar atan2( NumeratorU const& num, DenominatorU const& den )
-{ return { std::atan2( num.get_value(), den.get_value()) }; }
+constexpr auto atan2( NumeratorU const& num, DenominatorU const& den )
+{ return Scalar{ std::atan2( num.get_value(), den.get_value()) }; }
 
 /**
  * represents a length in meters
@@ -494,80 +476,80 @@ static_assert( unit_traits< unit_product< Length, Length >>::unit_id == unit_id_
 static_assert( unit_traits< unit_quotient< Length, Length >>::unit_id == unit_traits< Scalar >::unit_id );
 
 // length measurement units
-Length operator""_m(long double meters)
-{ return { meters }; }
-Length operator""_m(unsigned long long meters)
-{ return { (long double)meters }; }
-Length operator""_pm(long double picometers)
-{ return { 1e-12 * picometers }; }
-Length operator""_pm(unsigned long long picometers)
-{ return { 1e-12 * (long double)picometers }; }
-Length operator""_nm(long double nanometers)
-{ return { 1e-9 * nanometers }; }
-Length operator""_nm(unsigned long long nanometers)
-{ return { 1e-9 * (long double)nanometers }; }
+auto operator""_m(long double meters)
+{ return Length{ meters }; }
+auto operator""_m(unsigned long long meters)
+{ return Length{ (long double)meters }; }
+auto operator""_pm(long double picometers)
+{ return Length{ 1e-12 * picometers }; }
+auto operator""_pm(unsigned long long picometers)
+{ return Length{ 1e-12 * (long double)picometers }; }
+auto operator""_nm(long double nanometers)
+{ return Length{ 1e-9 * nanometers }; }
+auto operator""_nm(unsigned long long nanometers)
+{ return Length{ 1e-9 * (long double)nanometers }; }
 #ifndef NO_UNICODE_COMPILER
-Length operator""_μm(long double micrometers)
-{ return { 1e-6 * micrometers }; }
-Length operator""_μm(unsigned long long micrometers)
-{ return { 1e-6 * (long double)micrometers }; }
+auto operator""_μm(long double micrometers)
+{ return Length{ 1e-6 * micrometers }; }
+auto operator""_μm(unsigned long long micrometers)
+{ return Length{ 1e-6 * (long double)micrometers }; }
 #endif
-Length operator""_mm(long double millimeters)
-{ return { 1e-3 * millimeters }; }
-Length operator""_mm(unsigned long long millimeters)
-{ return { 1e-3 * (long double)millimeters }; }
-Length operator""_km(long double kilometers)
-{ return { 1e3 * kilometers }; }
-Length operator""_km(unsigned long long kilometers)
-{ return { 1e3 * (long double)kilometers }; } 
-Length operator""_Mm(long double megameters)
-{ return { 1e6 * megameters }; }
-Length operator""_Mm(unsigned long long megameters)
-{ return { 1e6 * (long double)megameters }; } 
-Length operator""_Gm(long double gigameters)
-{ return { 1e9 * gigameters }; }
-Length operator""_Gm(unsigned long long gigameters)
-{ return { 1e9 * (long double)gigameters }; } 
-Length operator""_Tm(long double terameters)
-{ return { 1e12 * terameters }; }
-Length operator""_Tm(unsigned long long terameters)
-{ return { 1e12 * (long double)terameters }; } 
-Length operator""_Pm(long double petameters)
-{ return { 1e15 * petameters }; }
-Length operator""_Pm(unsigned long long petameters)
-{ return { 1e15 * (long double)petameters }; } 
-Length operator""_Em(long double exameters)
-{ return { 1e18 * exameters }; }
-Length operator""_Em(unsigned long long exameters)
-{ return { 1e18 * (long double)exameters }; } 
-Length operator""_Zm(long double zettameters)
-{ return { 1e21 * zettameters }; }
-Length operator""_Zm(unsigned long long zettameters)
-{ return { 1e21 * (long double)zettameters }; } 
-Length operator""_Ym(long double yottameters)
-{ return { 1e24 * yottameters }; }
-Length operator""_Ym(unsigned long long yottameters)
-{ return { 1e24 * (long double)yottameters }; } 
-Length operator""_ly(long double light_years)
-{ return { light_years * seconds_per_day * meters_per_second }; }
-Length operator""_ly(unsigned long long light_years)
-{ return { (long double)light_years * seconds_per_day * meters_per_second }; } 
-Length operator""_thou(long double thousands_of_an_inch )
-{ return { 1e-3 * thousands_of_an_inch * meters_per_inch }; }
-Length operator""_thou(unsigned long long thousands_of_an_inch)
-{ return { 1e-3 * (long double)thousands_of_an_inch * meters_per_inch }; } 
-Length operator""_in(long double inches)
-{ return { inches * meters_per_inch }; }
-Length operator""_in(unsigned long long inches)
-{ return { (long double)inches * meters_per_inch }; }
-Length operator""_ft(long double feet)
-{ return { feet * meters_per_foot }; }
-Length operator""_ft(unsigned long long feet)
-{ return { (long double)feet * meters_per_foot }; }
-Length operator""_mi(long double miles)
-{ return { miles * meters_per_mile }; }
-Length operator""_mi(unsigned long long miles)
-{ return { (long double)miles * meters_per_mile }; }
+auto operator""_mm(long double millimeters)
+{ return Length{ 1e-3 * millimeters }; }
+auto operator""_mm(unsigned long long millimeters)
+{ return Length{ 1e-3 * (long double)millimeters }; }
+auto operator""_km(long double kilometers)
+{ return Length{ 1e3 * kilometers }; }
+auto operator""_km(unsigned long long kilometers)
+{ return Length{ 1e3 * (long double)kilometers }; } 
+auto operator""_Mm(long double megameters)
+{ return Length{ 1e6 * megameters }; }
+auto operator""_Mm(unsigned long long megameters)
+{ return Length{ 1e6 * (long double)megameters }; } 
+auto operator""_Gm(long double gigameters)
+{ return Length{ 1e9 * gigameters }; }
+auto operator""_Gm(unsigned long long gigameters)
+{ return Length{ 1e9 * (long double)gigameters }; } 
+auto operator""_Tm(long double terameters)
+{ return Length{ 1e12 * terameters }; }
+auto operator""_Tm(unsigned long long terameters)
+{ return Length{ 1e12 * (long double)terameters }; } 
+auto operator""_Pm(long double petameters)
+{ return Length{ 1e15 * petameters }; }
+auto operator""_Pm(unsigned long long petameters)
+{ return Length{ 1e15 * (long double)petameters }; } 
+auto operator""_Em(long double exameters)
+{ return Length{ 1e18 * exameters }; }
+auto operator""_Em(unsigned long long exameters)
+{ return Length{ 1e18 * (long double)exameters }; } 
+auto operator""_Zm(long double zettameters)
+{ return Length{ 1e21 * zettameters }; }
+auto operator""_Zm(unsigned long long zettameters)
+{ return Length{ 1e21 * (long double)zettameters }; } 
+auto operator""_Ym(long double yottameters)
+{ return Length{ 1e24 * yottameters }; }
+auto operator""_Ym(unsigned long long yottameters)
+{ return Length{ 1e24 * (long double)yottameters }; } 
+auto operator""_ly(long double light_years)
+{ return Length{ light_years * seconds_per_day * meters_per_second }; }
+auto operator""_ly(unsigned long long light_years)
+{ return Length{ (long double)light_years * seconds_per_day * meters_per_second }; } 
+auto operator""_thou(long double thousands_of_an_inch )
+{ return Length{ 1e-3 * thousands_of_an_inch * meters_per_inch }; }
+auto operator""_thou(unsigned long long thousands_of_an_inch)
+{ return Length{ 1e-3 * (long double)thousands_of_an_inch * meters_per_inch }; } 
+auto operator""_in(long double inches)
+{ return Length{ inches * meters_per_inch }; }
+auto operator""_in(unsigned long long inches)
+{ return Length{ (long double)inches * meters_per_inch }; }
+auto operator""_ft(long double feet)
+{ return Length{ feet * meters_per_foot }; }
+auto operator""_ft(unsigned long long feet)
+{ return Length{ (long double)feet * meters_per_foot }; }
+auto operator""_mi(long double miles)
+{ return Length{ miles * meters_per_mile }; }
+auto operator""_mi(unsigned long long miles)
+{ return Length{ (long double)miles * meters_per_mile }; }
 
 enum class length_unit : size_t
 { meters = 0, picometers, nanometers, micrometers, millimeters, 
@@ -619,48 +601,48 @@ Time::scalar_type seconds( Time time )
 { return time.get_value(); }
 
 // time measurement units
-Time operator""_s( long double seconds )
-{ return { seconds }; }
-Time operator""_s( unsigned long long seconds )
-{ return { (long double)seconds }; }
-Time operator""_ps( long double picoseconds )
-{ return { 1e-12 * picoseconds }; }
-Time operator""_ps( unsigned long long picoseconds )
-{ return { 1e12 * (long double)picoseconds }; }
-Time operator""_ns( long double nanoseconds )
-{ return { 1e-9 * nanoseconds }; }
-Time operator""_ns( unsigned long long nanoseconds )
-{ return { 1e-9 * (long double)nanoseconds }; }
+auto operator""_s( long double seconds )
+{ return Time{ seconds }; }
+auto operator""_s( unsigned long long seconds )
+{ return Time{ (long double)seconds }; }
+auto operator""_ps( long double picoseconds )
+{ return Time{ 1e-12 * picoseconds }; }
+auto operator""_ps( unsigned long long picoseconds )
+{ return Time{ 1e12 * (long double)picoseconds }; }
+auto operator""_ns( long double nanoseconds )
+{ return Time{ 1e-9 * nanoseconds }; }
+auto operator""_ns( unsigned long long nanoseconds )
+{ return Time{ 1e-9 * (long double)nanoseconds }; }
 #ifndef NO_UNICODE_COMPILER
-Time operator""_μs( long double microseconds )
-{ return { 1e-6 * microseconds }; }
-Time operator""_μs( unsigned long long microseconds )
-{ return { 1e-6 * (long double)microseconds }; }
+auto operator""_μs( long double microseconds )
+{ return Time{ 1e-6 * microseconds }; }
+auto operator""_μs( unsigned long long microseconds )
+{ return Time{ 1e-6 * (long double)microseconds }; }
 #endif
-Time operator""_ms( long double milliseconds )
-{ return { 1e-3 * milliseconds }; }
-Time operator""_ms( unsigned long long milliseconds )
-{ return { 1e-3 * (long double)milliseconds }; }
-Time operator""_min( long double minutes )
-{ return { minutes * seconds_per_minute }; }
-Time operator""_min( unsigned long long minutes )
-{ return { (long double)minutes * seconds_per_minute }; }
-Time operator""_h( long double hours )
-{ return { hours * seconds_per_hour }; }
-Time operator""_h( unsigned long long hours )
-{ return { (long double)hours * seconds_per_hour }; }
-Time operator""_d( long double days )
-{ return { days * seconds_per_day }; }
-Time operator""_d( unsigned long long days )
-{ return { (long double)days * seconds_per_day }; }
-Time operator""_wk( long double weeks )
-{ return { weeks * seconds_per_week }; }
-Time operator""_wk( unsigned long long weeks )
-{ return { (long double)weeks * seconds_per_week }; }
-Time operator""_y( long double years )
-{ return { years * seconds_per_year }; }
-Time operator""_y( unsigned long long years )
-{ return { (long double)years * seconds_per_year }; }
+auto operator""_ms( long double milliseconds )
+{ return Time{ 1e-3 * milliseconds }; }
+auto operator""_ms( unsigned long long milliseconds )
+{ return Time{ 1e-3 * (long double)milliseconds }; }
+auto operator""_min( long double minutes )
+{ return Time{ minutes * seconds_per_minute }; }
+auto operator""_min( unsigned long long minutes )
+{ return Time{ (long double)minutes * seconds_per_minute }; }
+auto operator""_h( long double hours )
+{ return Time{ hours * seconds_per_hour }; }
+auto operator""_h( unsigned long long hours )
+{ return Time{ (long double)hours * seconds_per_hour }; }
+auto operator""_d( long double days )
+{ return Time{ days * seconds_per_day }; }
+auto operator""_d( unsigned long long days )
+{ return Time{ (long double)days * seconds_per_day }; }
+auto operator""_wk( long double weeks )
+{ return Time{ weeks * seconds_per_week }; }
+auto operator""_wk( unsigned long long weeks )
+{ return Time{ (long double)weeks * seconds_per_week }; }
+auto operator""_y( long double years )
+{ return Time{ years * seconds_per_year }; }
+auto operator""_y( unsigned long long years )
+{ return Time{ (long double)years * seconds_per_year }; }
 
 enum class time_unit : size_t
 { seconds = 0, picoseconds, nanoseconds, microseconds, milliseconds, minutes, 
@@ -697,76 +679,76 @@ using Mass = base_unit< mass_unit_id, long double >;
 Time::scalar_type kilograms( Mass mass )
 { return mass.get_value(); }
 
-Mass operator""_kg( long double kilograms )
-{ return { kilograms }; }
-Mass operator""_kg( unsigned long long kilograms )
-{ return { (long double)kilograms }; }
-Mass operator""_pg( long double picograms )
-{ return { 1e-15 * picograms }; }
-Mass operator""_pg( unsigned long long picograms )
-{ return { 1e-15 * (long double)picograms }; }
-Mass operator""_ng( long double nanograms )
-{ return { 1e-12 * nanograms }; }
-Mass operator""_ng( unsigned long long nanograms )
-{ return { 1e-12 * (long double)nanograms }; }
+auto operator""_kg( long double kilograms )
+{ return Mass{ kilograms }; }
+auto operator""_kg( unsigned long long kilograms )
+{ return Mass{ (long double)kilograms }; }
+auto operator""_pg( long double picograms )
+{ return Mass{ 1e-15 * picograms }; }
+auto operator""_pg( unsigned long long picograms )
+{ return Mass{ 1e-15 * (long double)picograms }; }
+auto operator""_ng( long double nanograms )
+{ return Mass{ 1e-12 * nanograms }; }
+auto operator""_ng( unsigned long long nanograms )
+{ return Mass{ 1e-12 * (long double)nanograms }; }
 #ifndef NO_UNICODE_COMPILER
-Mass operator""_μg( long double micrograms )
-{ return { 1e-9 * micrograms }; }
-Mass operator""_μg( unsigned long long micrograms )
-{ return { 1e-9 * (long double)micrograms }; }
+auto operator""_μg( long double micrograms )
+{ return Mass{ 1e-9 * micrograms }; }
+auto operator""_μg( unsigned long long micrograms )
+{ return Mass{ 1e-9 * (long double)micrograms }; }
 #endif
-Mass operator""_mg( long double milligrams )
-{ return { 1e-6 * milligrams }; }
-Mass operator""_mg( unsigned long long milligrams )
-{ return { 1e-6 * (long double)milligrams }; }
-Mass operator""_g( long double grams )
-{ return { 1e-3 * grams }; }
-Mass operator""_g( unsigned long long grams )
-{ return { 1e-3 * (long double)grams }; }
-Mass operator""_Mg( long double megagrams )
-{ return { 1e3 * megagrams }; }
-Mass operator""_Mg( unsigned long long megagrams )
-{ return { 1e3 * (long double)megagrams }; }
-Mass operator""_Gg( long double gigagrams )
-{ return { 1e6 * gigagrams }; }
-Mass operator""_Gg( unsigned long long gigagrams )
-{ return { 1e6 * (long double)gigagrams }; }
-Mass operator""_Tg( long double teragrams )
-{ return { 1e9 * teragrams }; }
-Mass operator""_Tg( unsigned long long teragrams )
-{ return { 1e9 * (long double)teragrams }; }
-Mass operator""_Pg( long double petagrams )
-{ return { 1e12 * petagrams }; }
-Mass operator""_Pg( unsigned long long petagrams )
-{ return { 1e12 * (long double)petagrams }; }
-Mass operator""_Eg( long double exagrams )
-{ return { 1e15 * exagrams }; }
-Mass operator""_Eg( unsigned long long exagrams )
-{ return { 1e15 * (long double)exagrams }; }
-Mass operator""_Zg( long double zettagrams )
-{ return { 1e18 * zettagrams }; }
-Mass operator""_Zg( unsigned long long zettagrams )
-{ return { 1e18 * (long double)zettagrams }; }
-Mass operator""_Yg( long double yottagrams )
-{ return { 1e21 * yottagrams }; }
-Mass operator""_Yg( unsigned long long yottagrams )
-{ return { 1e21 * (long double)yottagrams }; }
-Mass operator""_oz( long double ounces )
-{ return { ounces * kilograms_per_ounce }; }
-Mass operator""_oz( unsigned long long ounces )
-{ return { (long double)ounces * kilograms_per_ounce }; }
-Mass operator""_lb( long double pounds )
-{ return { pounds * kilograms_per_pound}; }
-Mass operator""_lb( unsigned long long pounds )
-{ return { (long double)pounds * kilograms_per_pound }; }
-Mass operator""_long_ton( long double long_tons )
-{ return { long_tons * kilograms_per_long_ton }; }
-Mass operator""_long_ton( unsigned long long long_tons )
-{ return { (long double)long_tons * kilograms_per_long_ton }; }
-Mass operator""_ton( long double tons )
-{ return { tons * kilograms_per_ton }; }
-Mass operator""_ton( unsigned long long tons )
-{ return { (long double)tons * kilograms_per_ton }; }
+auto operator""_mg( long double milligrams )
+{ return Mass{ 1e-6 * milligrams }; }
+auto operator""_mg( unsigned long long milligrams )
+{ return Mass{ 1e-6 * (long double)milligrams }; }
+auto operator""_g( long double grams )
+{ return Mass{ 1e-3 * grams }; }
+auto operator""_g( unsigned long long grams )
+{ return Mass{ 1e-3 * (long double)grams }; }
+auto operator""_Mg( long double megagrams )
+{ return Mass{ 1e3 * megagrams }; }
+auto operator""_Mg( unsigned long long megagrams )
+{ return Mass{ 1e3 * (long double)megagrams }; }
+auto operator""_Gg( long double gigagrams )
+{ return Mass{ 1e6 * gigagrams }; }
+auto operator""_Gg( unsigned long long gigagrams )
+{ return Mass{ 1e6 * (long double)gigagrams }; }
+auto operator""_Tg( long double teragrams )
+{ return Mass{ 1e9 * teragrams }; }
+auto operator""_Tg( unsigned long long teragrams )
+{ return Mass{ 1e9 * (long double)teragrams }; }
+auto operator""_Pg( long double petagrams )
+{ return Mass{ 1e12 * petagrams }; }
+auto operator""_Pg( unsigned long long petagrams )
+{ return Mass{ 1e12 * (long double)petagrams }; }
+auto operator""_Eg( long double exagrams )
+{ return Mass{ 1e15 * exagrams }; }
+auto operator""_Eg( unsigned long long exagrams )
+{ return Mass{ 1e15 * (long double)exagrams }; }
+auto operator""_Zg( long double zettagrams )
+{ return Mass{ 1e18 * zettagrams }; }
+auto operator""_Zg( unsigned long long zettagrams )
+{ return Mass{ 1e18 * (long double)zettagrams }; }
+auto operator""_Yg( long double yottagrams )
+{ return Mass{ 1e21 * yottagrams }; }
+auto operator""_Yg( unsigned long long yottagrams )
+{ return Mass{ 1e21 * (long double)yottagrams }; }
+auto operator""_oz( long double ounces )
+{ return Mass{ ounces * kilograms_per_ounce }; }
+auto operator""_oz( unsigned long long ounces )
+{ return Mass{ (long double)ounces * kilograms_per_ounce }; }
+auto operator""_lb( long double pounds )
+{ return Mass{ pounds * kilograms_per_pound}; }
+auto operator""_lb( unsigned long long pounds )
+{ return Mass{ (long double)pounds * kilograms_per_pound }; }
+auto operator""_long_ton( long double long_tons )
+{ return Mass{ long_tons * kilograms_per_long_ton }; }
+auto operator""_long_ton( unsigned long long long_tons )
+{ return Mass{ (long double)long_tons * kilograms_per_long_ton }; }
+auto operator""_ton( long double tons )
+{ return Mass{ tons * kilograms_per_ton }; }
+auto operator""_ton( unsigned long long tons )
+{ return Mass{ (long double)tons * kilograms_per_ton }; }
 
 enum class mass_unit : size_t 
 { kilograms = 0, picograms, nanograms, micrograms, milligrams, grams, megagrams,
@@ -928,7 +910,7 @@ struct formatter< units::Length, char > : formatter< long double, char >
     FmtContext::iterator format( units::Length const& s, FmtContext& ctx ) const
     { 
         formatter< long double, char >::format( 
-            units::length_value( meters( s ), format_unit ), ctx );
+            units::length_value( s, format_unit ), ctx );
 
         if( use_long_name )
             return ranges::copy( units::length_unit_long_names[ (size_t)format_unit ], 
