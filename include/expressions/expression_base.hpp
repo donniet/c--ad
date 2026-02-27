@@ -138,7 +138,16 @@ struct expression_traits< tuple< Ts... >>
 };
 
 template< typename T >
-using result_t = expression_traits< T >::result_type;
+struct Result
+{ using type = T; };
+
+template< typename T >
+requires( expression< T > )
+struct Result< T >
+{ using type = expression_traits< T >::result_type; };
+
+template< typename T >
+using result_t = Result< T >::type;
 
 /**
  * get an element from a type that inherits from DependsOn<...>
@@ -419,28 +428,6 @@ using dependent_variables_t = dependent_variables< E >::type;
 // by default, call the operator() on the expr to invoke it
 template< typename T >
 struct Invoker;
-
-template< template< typename... > class Compound, typename... Ts >
-requires( expression_traits< Compound< Ts... >>::is_compound )
-struct Invoker< Compound< Ts... >>
-{
-    using expression_type = Compound< Ts... >;
-    using depends = expression_traits< expression_type >::dependent_types;
-    static constexpr size_t depends_size = tuple_size_v< depends >;
-    using result_type = result_t< expression_type >;
-
-    result_type operator()( expression_type expr, variable_values const& vals ) 
-    { return compound_invoker( expr, vals, make_seq< depends_size >{} ); }
-
-private:
-    template< size_t I >
-    using dep_invoker = Invoker< tuple_element_t< I, depends >>;
-
-    template< size_t... Is >
-    result_type compound_invoker( expression_type expr,
-        variable_values const& vals, seq< Is... > )
-    { return expr( dep_invoker< Is >{}( expr.template at< Is >(), vals )... ); }
-};
 
 template< typename T >
 requires expression_traits< T >::is_static_expression

@@ -370,15 +370,7 @@ template< shape S, typename T >
 using UniformTensor = UniformTensorOf< S, T >::type;
 
 template< size_t Rows, size_t Cols, typename... Ts >
-requires( Rows * Cols == sizeof...( Ts ))
-struct Matrix : Tensor< Shape< Rows, Cols >, Ts... >
-{ 
-    using tensor_type = Tensor< Shape< Rows, Cols >, Ts... >;
-
-    Matrix() = default;
-    Matrix( Matrix const& ) = default;
-    Matrix( Ts... ts ) : tensor_type{ ts... } { }
-};
+using Matrix = Tensor< Shape< Rows, Cols >, Ts... >;
 
 template< size_t I, size_t R, size_t C, typename... Ts >
 struct tensor_element< I, Matrix< R, C, Ts... >>
@@ -391,17 +383,13 @@ struct tensor_element< I, Matrix< R, C, Ts... >>
 
 template< typename T >
 struct is_matrix 
-{ static constexpr bool value = false; };
-
-template< size_t Rows, size_t Cols, typename... Ts >
-struct is_matrix< Matrix< Rows, Cols, Ts... >>
-{ static constexpr bool value = true; };
+{ static constexpr bool value = 
+    ( tensor_like< T > and shape_of_t< T >::size == 2 ); };
 
 template< typename T >
 concept matrix = is_matrix< T >::value;
 
 template< size_t Rows, size_t Cols, typename... Ts >
-requires( Rows * Cols == sizeof...( Ts ))
 Matrix< Rows, Cols, Ts... > make_matrix( Ts... ts )
 { return { ts... }; }
 
@@ -413,61 +401,20 @@ struct UniformMatrixHelper< Rows, Cols, T, seq< Is... >>
 { using type = Matrix< Rows, Cols, conditional_t< Is == Is, T, T >... >; };
 
 template< size_t Rows, size_t Cols, typename T >
-struct UniformMatrixOf
-{ using type = UniformMatrixHelper< Rows, Cols, T, make_seq< Rows * Cols >>::type; };
-
-template< size_t Rows, size_t Cols, typename T >
-struct UniformMatrix : UniformMatrixOf< Rows, Cols, T >::type
-{ 
-    using matrix_type = UniformMatrixOf< Rows, Cols, T >::type;
-
-    UniformMatrix() = default;
-    UniformMatrix( UniformMatrix const& ) = default;
-    template< typename... Ts >
-    requires( sizeof...( Ts ) == Rows * Cols )
-    UniformMatrix( Ts... ts ) : matrix_type{ static_cast< T >( ts )... } { }
-};
-
-template< size_t Rows, size_t Cols, typename T >
-struct is_matrix< UniformMatrix< Rows, Cols, T >>
-{ static constexpr bool value = true; };
-
-template< size_t I, size_t R, size_t C, typename T >
-struct tensor_element< I, UniformMatrix< R, C, T >>
-{ 
-    using tensor_type = UniformMatrix< R, C, T >;
-    using base_type = UniformMatrixOf< R, C, T >::type;
-    using type = T; 
-    static constexpr type value( tensor_type x )
-    { return get_tensor_element< I >( static_cast< base_type >( x )); }
-};
-
-
+using UniformMatrix = UniformMatrixHelper< Rows, Cols, T, make_seq< Rows * Cols >>::type;
 
 template< size_t Rows, typename... Ts >
-requires( Rows == sizeof...( Ts ))
-struct Vector : Tensor< Shape< Rows >, Ts... >
-{ 
-    using tensor_type = Tensor< Shape< Rows >, Ts... >;
-
-    Vector() = default;
-    Vector( Vector const& ) = default;
-    Vector( Ts... ts ) : tensor_type{ ts... } { }
-};
+using Vector = Tensor< Shape< Rows >, Ts... >;
 
 template< typename T >
 struct is_vect
-{ static constexpr bool value = false; };
-
-template< size_t Rows, typename... Ts >
-struct is_vect< Vector< Rows, Ts... >>
-{ static constexpr bool value = true; };
+{ static constexpr bool value = 
+    ( tensor_like< T > and shape_of_t< T >::size == 1 ); };
 
 template< typename T >
 concept vect = is_vect< T >::value;
 
 template< size_t Rows, typename... Ts >
-requires( Rows == sizeof...( Ts ))
 Vector< Rows, Ts... > make_vector( Ts... ts )
 { return { ts... }; }
 
@@ -479,12 +426,7 @@ struct UniformVectorHelper< Rows, T, seq< Is... >>
 { using type = Vector< Rows, conditional_t< Is == Is, T, T >... >; };
 
 template< size_t Rows, typename T >
-struct UniformVectorOf
-{ using type = UniformVectorHelper< Rows, T, make_seq< Rows >>::type; };
-
-template< size_t Rows, typename T >
-struct UniformVector : UniformVectorOf< Rows, T >::type
-{ };
+using UniformVector = UniformVectorHelper< Rows, T, make_seq< Rows >>::type;
 
 
 } // namespace expressions

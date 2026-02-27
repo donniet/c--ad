@@ -1,7 +1,7 @@
 #include "expressions/expression_base.hpp"
 #include "expressions/expression_ops.hpp"
 // #include "expressions/compound_units.hpp"
-// #include "expressions/tensor_field.hpp"
+#include "expressions/tensor_field.hpp"
 // #include "expressions/tensor_field_ops.hpp"
 // #include "expressions/tensor_contraction.hpp"
 
@@ -38,13 +38,13 @@ int main( int ac, char * av[] )
     // TODO: write formatter for units
     println( "{:in}", g_x1 );
 
-    // using mat2 = UniformMatrix< 2, 2, Scalar >;
-    // using vec2 = UniformVector< 2, Scalar >;
+    using mat2 = UniformMatrix< 2, 2, Scalar >;
+    using vec2 = UniformVector< 2, Scalar >;
     
-    // auto m = make_matrix< 2, 2 >(
-    //     1_scalar, 0_scalar,
-    //     0_scalar, 1_scalar );
-    // auto v = make_vector< 2 >( 2_scalar, 3_scalar );
+    auto m = make_matrix< 2, 2 >(
+        1_scalar, 0_scalar,
+        0_scalar, 1_scalar );
+    auto v = make_vector< 2 >( 2_scalar, 3_scalar );
 
     // auto g1 = m * v;
 
