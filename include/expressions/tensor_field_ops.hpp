@@ -225,20 +225,24 @@ struct contraction_element_selector< E, OutS, I, J, T, seq< Ls... >>
     template< size_t L >
     using uncontracted_index = uncontract_t< contracted_index, I, J, L >;
 
-    using elements_seq = seq< index_to_element_v< uncontracted_index< Ls >, tensor_type >... >;
+    template< size_t L >
+    static constexpr size_t uncontracted_element_v = 
+        index_to_element_v< uncontracted_index< L >, tensor_type >;
+
+    using elements_seq = seq< uncontracted_element_v< Ls >... >;
     using type = Sum< tensor_index_t< uncontracted_index< Ls >, tensor_type >... >;
+    using result_type = result_t< type >;
 
-    
+    // this can be invoked by ContractionElement
+    constexpr type value() const
+    { return { get_tensor_element< uncontracted_element_v< Ls >>( _ten )... }; }
+
+    constexpr contraction_element_selector( tensor_type const& ten ) : 
+        _ten{ ten }
+    { }
+
+    tensor_type _ten;
 };
-
-template< typename Seq, tensor_like T >
-struct sum_elements_helper;
-
-template< size_t I, size_t... Is, tensor_like T >
-struct sum_elements_helper< seq< I, Is... >, T >
-{ static constexpr auto sum( T v )
-    { return ::expressions::sum( get_tensor_element< I >( v ), 
-        get_tensor_element< Is >( v )... ); } };
 
 /**
  * Expression for the Eth element of an I, J contraction of T
@@ -252,8 +256,9 @@ struct ContractionElement : DependsOn< T >
     static constexpr size_t contraction_size = shape_at_v< I, input_shape >;
     using elements_seq = contraction_element_selector< E, output_shape, I, J, 
         T, make_seq< contraction_size >>::elements_seq;
-    using type = contraction_element_selector< E, output_shape, I, J, 
-        T, make_seq< contraction_size >>::type;
+    using proxy_type = contraction_element_selector< E, output_shape, I, J, 
+        T, make_seq< contraction_size >>;
+    using type = proxy_type::type;
 
     // required to make this an expression
     using result_type = result_t< type >;
@@ -261,9 +266,14 @@ struct ContractionElement : DependsOn< T >
     constexpr tensor_type tensor() const
     { return get_dependent< 0 >( *this ); }
 
+    constexpr type value() const 
+    { return _proxy.value(); }
+
     ContractionElement( tensor_type const& tup ) : 
-        DependsOn< tensor_type >{ tup }
+        DependsOn< tensor_type >{ tup }, _proxy{ tup }
     { }
+
+    proxy_type _proxy;
 };
 
 /**
@@ -275,11 +285,10 @@ struct Invoker< ContractionElement< E, I, J, T >>
     using tensor_type = T;
     using element_type = ContractionElement< E, I, J, tensor_type >;
     using result_type = element_type::result_type;
-    using element_seq = element_type::element_seq;
+    using elements_seq = element_type::elements_seq;
 
     constexpr result_type operator()( element_type const& el, variable_values const& values )
-    { return sum_elements_helper< element_seq, result_t< tensor_type >>::sum( 
-        invoke( el.tensor(), values )); }
+    { return invoke( el.value(), values ); }
 };
 
 template< typename OutSeq, size_t I, size_t J, tensor_like T >
@@ -357,7 +366,7 @@ struct Invoker< Contract< I, J, V >>
     { return helper( con, values, make_seq< shape_type::elements_size >{} ); }
 
     template< size_t... Is >
-    constexpr result_type operator()( contract_type const& con, 
+    constexpr result_type helper( contract_type const& con, 
         variable_values const& values, seq< Is... > )
     { return { invoke( get_tensor_element< Is >( con ), values )... }; }
     

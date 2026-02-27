@@ -68,7 +68,7 @@ int main( int ac, char * av[] )
     assert( (g1_x.template elem< 7 >() == 3_scalar) );
 
     auto g1c = contract< 1, 2 >( m * v );
-    // auto g1c_x = invoke( g1c );
+    auto g1c_x = invoke( g1c );
 
     // println("{}", av[0] );
 
