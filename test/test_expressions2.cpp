@@ -7,6 +7,7 @@
 
 #include <print>
 #include <cmath>
+#include <cassert>
 
 int main( int ac, char * av[] )
 {
@@ -16,6 +17,7 @@ int main( int ac, char * av[] )
     using namespace expressions;
     // using namespace expressions::units;
     using namespace expressions::operators;
+
 
     auto f1 = 1_scalar + 0_scalar + 1_scalar + 0_scalar;
 
@@ -47,6 +49,21 @@ int main( int ac, char * av[] )
     auto v = make_vector< 2 >( 2_scalar, 3_scalar );
 
     auto g1 = m * v;
+
+    auto g1_x = invoke( g1 );
+    // println( "{}", typeid( g1_x ).name() );
+
+    // println( std::runtime_format( "{}" ), g1_x );
+    println( "{}", get_tensor_element< 1 >( g1_x ) );
+
+    assert( (g1_x.template elem< 0 >() == 2_scalar) );
+    assert( (g1_x.template elem< 1 >() == 3_scalar) );
+    assert( (g1_x.template elem< 2 >() == 0_scalar) );
+    assert( (g1_x.template elem< 3 >() == 0_scalar) );
+    assert( (g1_x.template elem< 4 >() == 0_scalar) );
+    assert( (g1_x.template elem< 5 >() == 0_scalar) );
+    assert( (g1_x.template elem< 6 >() == 2_scalar) );
+    assert( (g1_x.template elem< 7 >() == 3_scalar) );
 
     // println("{}", av[0] );
 

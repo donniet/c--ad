@@ -401,6 +401,14 @@ struct Product< Tensor< S, Ts... >, Es... > :
     // not sure this should be result_type...
     using helper_type = TensorProductHelper< left_type, right_type, 
         make_seq< left_shape::elements_size * right_shape::elements_size >>;
+
+    constexpr left_type left() const { return get_dependent< 0 >( *this ); }
+    constexpr right_type right() const 
+    { return right_helper( make_seq< sizeof...( Es )>{} ); }
+
+    template< size_t... Is >
+    constexpr right_type right_helper( seq< Is... > ) const
+    { return { get_dependent< 1 + Is >( *this )... }; }
     
     // required for tensor_like objects
     using shape_type = helper_type::shape_type;
@@ -429,6 +437,35 @@ struct tensor_element< I, Product< E, Es... >>
     { return get_tensor_element< I >( get< 0 >( x.exprs )); }
 };
 
+template< shape S, typename... Ts >
+struct Invoker< Tensor< S, Ts... >>
+{
+    Tensor< S, result_t< Ts >... > operator()( Tensor< S, Ts... > ten, 
+        variable_values const& values )
+    { return helper( ten, values, make_seq< sizeof...( Ts )>{} ); }
+
+    template< size_t... Is >
+    Tensor< S, result_t< Ts >... > helper( Tensor< S, Ts... > ten, 
+        variable_values const& values, seq< Is... > )
+    { return { invoke( get_tensor_element< Is >( ten ), values )... }; }
+};
+
+template< shape S, typename... Ts, typename... Es >
+requires( isgreater( sizeof...( Es ), 0 ))
+struct Invoker< Product< Tensor< S, Ts... >, Es... >>
+{
+    using product_type = Product< Tensor< S, Ts... >, Es... >;
+    using result_type = product_type::result_type;
+    using helper_type = product_type::helper_type;
+
+    result_type operator()( product_type expr, variable_values const& values )
+    { 
+        auto left = invoke( expr.left(), values );
+        auto right = invoke( expr.right(), values );
+
+        return helper_type::product( left, right );
+    }
+};
 
 
 namespace operators {

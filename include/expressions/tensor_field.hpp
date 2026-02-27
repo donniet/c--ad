@@ -332,7 +332,7 @@ template< size_t I, shape S, typename... Ts >
 struct tensor_element< I, Tensor< S, Ts... >>
 { 
     using type = tuple_element_t< I, tuple< Ts... >>; 
-    static constexpr type value( Tensor< S, Ts... > x )
+    static constexpr type value( Tensor< S, Ts... > const& x )
     { return x.template elem< I >(); }
 };
 
@@ -340,7 +340,7 @@ template< size_t I, tensor_like T >
 using tensor_element_t = tensor_element< I, T >::type;
 
 template< size_t I, tensor_like T >
-constexpr tensor_element_t< I, T > get_tensor_element( T x )
+constexpr tensor_element_t< I, T > get_tensor_element( T const& x )
 { return tensor_element< I, T >::value( x ); }
 
 template< index D, shape S, typename... Ts >
@@ -372,15 +372,6 @@ using UniformTensor = UniformTensorOf< S, T >::type;
 
 template< size_t Rows, size_t Cols, typename... Ts >
 using Matrix = Tensor< Shape< Rows, Cols >, Ts... >;
-
-template< size_t I, size_t R, size_t C, typename... Ts >
-struct tensor_element< I, Matrix< R, C, Ts... >>
-{ 
-    using type = tuple_element_t< I, tuple< Ts... >>; 
-    static constexpr type value( Matrix< R, C, Ts... > x )
-    { return get_tensor_element< I >( 
-        static_cast< Tensor< Shape< R, C >, Ts... >>( x )); }
-};
 
 template< typename T >
 struct is_matrix 
