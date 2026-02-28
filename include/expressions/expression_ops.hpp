@@ -445,45 +445,73 @@ struct Invoker< tuple< Ts... >>
 {
     using tuple_type = tuple< Ts... >;
     using result_type = tuple< result_t< Ts >... >;
-    result_type operator()( tuple_type const& tup, 
+
+    constexpr result_type operator()( tuple_type const& tup, 
         variable_values const& values )
     { return helper( tup, values, make_seq< sizeof...( Ts )>{} ); }
 
     template< size_t... Is >
-    result_type helper( tuple_type const& tup, 
+    constexpr result_type helper( tuple_type const& tup, 
         variable_values const& values, seq< Is... > )
     { return { invoke( get< Is >( tup ), values )... }; }
 };
 
 template< typename T, typename... Ts >
-requires( isgreater( sizeof...( Ts ), 0 ))
-auto invoke( Conjunction< T, Ts... > expr, variable_values const& values )
-{ return invoke( expr.first(), values ) and invoke( expr.rest(), values ); }
+struct Invoker< Conjunction< T, Ts... >>
+{
+    using conjunction_type = Conjunction< T, Ts... >;
+    using result_type = conjunction_type::result_type;
 
-template< typename T >
-auto invoke( Conjunction< T > expr, variable_values const& values )
-{ return invoke( expr.first(), values ); }
+    constexpr result_type operator()( conjunction_type const& expr, 
+        variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Ts )>{} ); }
+
+    template< size_t... Is >
+    constexpr result_type helper( conjunction_type const& expr, 
+        variable_values const& values, seq< Is... > )
+    { return ( get_dependent< Is >( expr ) and ... ); }
+};
 
 template< typename T, typename... Ts >
-requires( isgreater( sizeof...( Ts ), 0 ))
-auto invoke( Disjunction< T, Ts... > expr, variable_values const& values )
-{ return invoke( expr.first(), values ) or invoke( expr.rest(), values ); }
+struct Invoker< Disjunction< T, Ts... >>
+{
+    using disjunction_type = Disjunction< T, Ts... >;
+    using result_type = disjunction_type::result_type;
+
+    constexpr result_type operator()( disjunction_type const& expr, 
+        variable_values const& values )
+    { return helper( expr, values, make_seq< 1 + sizeof...( Ts )>{} ); }
+
+    template< size_t... Is >
+    constexpr result_type helper( disjunction_type const& expr, 
+        variable_values const& values, seq< Is... > )
+    { return ( invoke( get_dependent< Is >( expr ), values ) or ... ); }
+};
 
 template< typename T >
-auto invoke( Disjunction< T > expr, variable_values const& values )
-{ return invoke( expr.first(), values ); }
+struct Invoker< Compliment< T >>
+{
+    using compliment_type = Compliment< T >;
+    using result_type = compliment_type::result_type;
 
-template< typename T >
-auto invoke( Compliment< T > expr, variable_values const& values )
-{ return not invoke( expr.first(), values ); }
+    constexpr result_type operator()( compliment_type const& expr, 
+        variable_values const& values )
+    { return not invoke( get_dependent< 0 >( expr )); }
+};
 
-template< typename LeftT, typename RightT >
-auto invoke( Equals< LeftT, RightT > expr, variable_values const& values )
-{ return invoke( expr.left(), values ) == invoke( expr.right(), values ); }
+template< typename Left, typename Right >
+struct Invoker< Equals< Left, Right >>
+{
+    auto operator()( Equals< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) == invoke( get_dependent< 1 >( expr )); }
+};
 
-template< typename LeftT, typename RightT >
-auto invoke( NotEquals< LeftT, RightT > expr, variable_values const& values )
-{ return invoke( expr.left(), values ) != invoke( expr.right(), values ); }
+template< typename Left, typename Right >
+struct Invoker< NotEquals< Left, Right >>
+{
+    auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
+    { return invoke( get_dependent< 0 >( expr )) != invoke( get_dependent< 1 >( expr )); }
+};
 
 template< typename Left, typename Right >
 struct Invoker< Less< Left, Right >>
