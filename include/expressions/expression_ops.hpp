@@ -44,6 +44,9 @@ struct Equals : DependsOn< Left, Right >
 { 
     using result_type = bool; 
 
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); }
+
     constexpr Equals() = default;
     constexpr Equals( Left left, Right right ) : 
         DependsOn< Left, Right >{ left, right } { }
@@ -54,6 +57,9 @@ struct NotEquals : DependsOn< Left, Right >
 { 
     using result_type = bool; 
 
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); }
+
     constexpr NotEquals() = default;
     constexpr NotEquals( Left left, Right right ) : 
         DependsOn< Left, Right >{ left, right } { }
@@ -63,6 +69,9 @@ template< typename Left, typename Right >
 struct Less : DependsOn< Left, Right >
 { 
     using result_type = bool; 
+
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); }
 
     constexpr Less() = default;
     constexpr Less( Left left, Right right ) : 
@@ -75,6 +84,9 @@ struct LessOrEqual : DependsOn< Left, Right >
 { 
     using result_type = bool; 
 
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); }
+
     constexpr LessOrEqual() = default;
     constexpr LessOrEqual( Left left, Right right ) : 
         DependsOn< Left, Right >{ left, right } { }
@@ -84,7 +96,10 @@ struct LessOrEqual : DependsOn< Left, Right >
 template< typename Left, typename Right >
 struct Greater : DependsOn< Left, Right >
 { 
-    using result_type = bool; 
+    using result_type = bool;
+    
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); } 
 
     constexpr Greater() = default;
     constexpr Greater( Left left, Right right ) : 
@@ -95,7 +110,10 @@ template< typename Left, typename Right >
 struct GreaterOrEqual : DependsOn< Left, Right >
 { 
     using dependent_types = tuple< Left, Right >;
-    using result_type = bool; 
+    using result_type = bool;
+    
+    constexpr Left left() const { return get_dependent< 0 >( *this ); }
+    constexpr Right right() const { return get_dependent< 1 >( *this ); } 
 
     constexpr GreaterOrEqual() = default;
     constexpr GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }

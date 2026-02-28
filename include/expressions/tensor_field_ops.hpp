@@ -24,6 +24,26 @@ struct Invoker< Tensor< S, Ts... >>
     { return { invoke( get_tensor_element< Is >( ten ), values )... }; }
 };
 
+template< typename LeftT, typename RightT >
+requires( tensor_like< LeftT > and tensor_like< RightT > and 
+    is_same_v< shape_of_t< LeftT >, shape_of_t< RightT >> )
+struct Invoker< Equals< LeftT, RightT >>
+{
+    using expression_type = Equals< LeftT, RightT >;
+    static constexpr size_t elements_size = shape_of_t< LeftT >::elements_size;
+    using result_type = Equals< LeftT, RightT >::result_type;
+
+    result_type operator()( expression_type const& expr, 
+        variable_values const& values )
+    { return helper( expr, values, make_seq< elements_size >{} ); }
+
+    template< size_t... Is >
+    result_type helper( expression_type const& expr, 
+        variable_values const& values, seq< Is... > )
+    { return (( invoke( get_tensor_element< Is >( expr.left() ), values ) == 
+        invoke( get_tensor_element< Is >( expr.right() ), values )) and ... ); }
+};
+
 template< index I, typename V >
 struct Subscript;
 
@@ -758,7 +778,7 @@ requires( shape_at_v< shape_of_t< A >::size - 1, shape_of_t< A >> ==
 constexpr auto matmul( A const& a, B const& b )
 {
     static constexpr size_t I = shape_of_t< A >::size;
-    return contract< I, I+1 >( outer_product( a, b ));
+    return contract< I-1, I >( outer_product( a, b ));
 }
 
 template< tensor_like V >

@@ -55,6 +55,8 @@ int main( int ac, char * av[] )
     auto g1_x = invoke( g1 );
     // println( "{}", typeid( g1_x ).name() );
 
+    assert( invoke( matmul( m, v ) == v ));
+
     // println( std::runtime_format( "{}" ), g1_x );
     println( "{}", get_tensor_element< 1 >( g1_x ) );
 
