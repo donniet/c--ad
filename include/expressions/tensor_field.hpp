@@ -300,6 +300,9 @@ private:
     { return op( elem< Is >()... ); }
 };
 
+/**
+ * The result of a tensor is a tensor of results of it's elements
+ */
 template< shape S, typename... Ts >
 struct Result< Tensor< S, Ts... >>
 { using type = Tensor< S, result_t< Ts >... >; };

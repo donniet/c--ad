@@ -129,14 +129,6 @@ struct Invoker< Element< I, T >>
     { return get_tensor_element< I >( invoke( el.tensor(), values )); }
 };
 
-template< typename E, tensor_like V >
-struct Scale : Expression
-{ 
-    using result_type = result_t< V >; 
-    using shape_type = shape_of_t< V >;
-
-};
-
 template< typename X, size_t I, size_t J, size_t N >
 struct uncontract;
 
@@ -287,7 +279,8 @@ struct Invoker< ContractionElement< E, I, J, T >>
     using result_type = element_type::result_type;
     using elements_seq = element_type::elements_seq;
 
-    constexpr result_type operator()( element_type const& el, variable_values const& values )
+    constexpr result_type operator()( element_type const& el, 
+        variable_values const& values )
     { return invoke( el.value(), values ); }
 };
 
@@ -651,12 +644,137 @@ struct Invoker< Product< Tensor< S, Ts... >, Es... >>
     { return { invoke( get_tensor_element< Is >( expr ), values )... }; }
 };
 
+template< typename E, tensor_like V, typename Seq >
+struct ScaleBase;
+
+template< typename E, tensor_like V, size_t... Is >
+struct ScaleBase< E, V, seq< Is... >> : DependsOn< E, V >
+{
+    using tensor_type = V;
+    // required to be tensor-like
+    using shape_type = shape_of_t< tensor_type >;
+    using scalar_type = E;
+    using type = Tensor< shape_type, Product< scalar_type, 
+        Element< Is , tensor_type >>... >;
+    using result_type = result_t< type >;
+
+    constexpr type proxy() const { return _proxy; }
+
+    constexpr ScaleBase( scalar_type s, tensor_type ten ) : 
+        DependsOn< scalar_type, tensor_type >{ s, ten }, 
+        _proxy{{ get_dependent< Is-Is >( *this ), { get_dependent< 1 + Is-Is >( *this )}}... }
+    { }
+
+    type _proxy;
+};
+
+template< typename E, tensor_like V >
+struct Scale : ScaleBase< E, V, make_seq< shape_of_t< V >::elements_size >>
+{ 
+    using base_type = ScaleBase< E, V, 
+        make_seq< shape_of_t< V >::elements_size >>;
+    
+    Scale( base_type::scalar_type s, base_type::tensor_type ten ) : 
+        base_type{ s, ten } { }
+};
+
+template< typename E, tensor_like V >
+struct Invoker< Scale< E, V >>
+{
+    using scale_type = Scale< E, V >;
+    using result_type = scale_type::result_type;
+
+    constexpr result_type operator()( scale_type const& op, 
+        variable_values const& values )
+    { return invoke( op.proxy(), values ); }
+};
+
+// static_assert( tensor_like< Scale< double, Vector< 1, double >>> );
+
+template< tensor_like V, typename Seq >
+struct FlattenedHelper;
+
+template< tensor_like V, size_t... Is >
+struct FlattenedHelper< V, seq< Is... >>
+{ using type = tuple< tensor_element_t< Is, V >... >; };
+
+template< tensor_like V >
+struct Flattened
+{ using type = FlattenedHelper< V, make_seq< shape_of_t< V >::elements_size >>::type; };
+
+template< tensor_like V >
+using flattened_t = Flattened< V >::type;
+
+template< size_t I, tensor_like V, typename Seq >
+struct DimRemovedBase;
+
+template< size_t I, tensor_like V, size_t... Is >
+struct DimRemovedBase< I, V, seq< Is... >>
+{ 
+    using input_shape = shape_of_t< V >;
+    using output_shape = remove_dimension_t< I, input_shape >;
+    using type = Tensor< output_shape, tensor_element_t< Is, V >... >;
+    
+    static constexpr type construct( V const& ten )
+    { return { get_tensor_element< Is >( ten )... }; }
+};
+
+template< size_t I, tensor_like V >
+requires( shape_at_v< I, shape_of_t< V >> == 1 )
+struct DimRemoved : 
+    DimRemovedBase< I, V, make_seq< shape_of_t< V >::elements_size >>
+{ };
+
+template< size_t I, tensor_like V >
+using dim_removed_t = DimRemoved< I, V >::type;
+
+template< tensor_like V, size_t... Is >
+constexpr tuple< tensor_element_t< Is, V >... > flatten_helper( V ten, 
+    seq< Is... > )
+{ return { get_tensor_element< Is >( ten )... }; }
+
+template< typename TupleT, shape S, size_t... Is >
+constexpr Tensor< S, tuple_element_t< Is, TupleT >... > shapen_helper(
+    TupleT const& tup, seq< Is... > )
+{ return { get< Is >( tup )... }; }
 
 namespace operators {
 
+template< tensor_like A, tensor_like B >
+constexpr Product< A, B > outer_product( A const& a, B const& b )
+{ return { a, b }; }
+
 template< size_t I, size_t J, tensor_like A >
-constexpr auto contract( A a )
-{ return Contract< I, J, A >{ a }; }
+constexpr Contract< I, J, A > contract( A a )
+{ return { a }; }
+
+template< typename ScalarT, tensor_like V >
+constexpr Scale< ScalarT, V > scale( ScalarT s, V ten )
+{ return { s, ten }; }
+
+template< tensor_like A, tensor_like B >
+requires( shape_at_v< shape_of_t< A >::size - 1, shape_of_t< A >> ==
+    shape_at_v< 0, shape_of_t< B >> )
+constexpr auto matmul( A const& a, B const& b )
+{
+    static constexpr size_t I = shape_of_t< A >::size;
+    return contract< I, I+1 >( outer_product( a, b ));
+}
+
+template< tensor_like V >
+constexpr flattened_t< V > flatten( V const& ten )
+{ return flatten_helper( ten, make_seq< shape_of_t< V >::elements_size >{} ); } 
+
+template< shape S, typename... Ts >
+requires( S::elements_size == sizeof...( Ts ) )
+constexpr Tensor< S, Ts... > shapen( tuple< Ts... > const& tup )
+{ return shapen_helper( tup, make_seq< sizeof...( Ts )>{} ); }
+
+// remove a unitary dimension from a tensor
+template< size_t I, tensor_like V >
+requires( shape_at_v< I, shape_of_t< V >> == 1 )
+constexpr DimRemoved< I, V >::type remove_dim( V ten )
+{ return DimRemoved< I, V >::construct( ten ); }
 
 } // namespace operators
 
