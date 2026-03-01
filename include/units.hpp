@@ -446,9 +446,9 @@ requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
     is_same_v< typename unit_traits< LeftU >::scalar_type, long double > )
 Boolean operator ==( LeftU const& left, RightU const& right )
 { 
-    long double e = left.get_value() - right.get_value();
-    e *= e;
-    return e < std::numeric_limits< long double >::min();
+    static constexpr long double eps = std::numeric_limits< double >::min();
+
+    return  std::abs( left.get_value() - right.get_value() ) < eps;
 }
 
 template< unit LeftU, unit RightU >
