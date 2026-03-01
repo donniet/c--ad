@@ -13,8 +13,6 @@ add_executable(test_geometry2 test_geometry2.cpp)
 # target_link_libraries(test_geometry geometry)
 
 add_executable(test_units test_units.cpp)
-add_executable(test_units2 test_units2.cpp)
-add_executable(test_units3 test_units3.cpp)
 add_executable(test_memory test_memory.cpp)
 add_executable(test_constraint_playground test_constraint_playground.cpp)
 add_executable(test_constraint_playground2 test_constraint_playground2.cpp)

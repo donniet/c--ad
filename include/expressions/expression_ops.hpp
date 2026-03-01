@@ -251,7 +251,7 @@ struct BitshiftRight : DependsOn< Bits, Shift >
     using dependent_types = tuple< Bits, Shift >;
     using result_type = result_t< Bits >;
 
-    constexpr Bits bits() { return get_dependent< 0 >( *this); }
+    constexpr Bits bits() { return get_dependent< 0 >( *this ); }
     constexpr Shift shift() { return get_dependent< 1 >( *this ); }
 
     constexpr BitshiftRight() = default;
@@ -487,7 +487,7 @@ struct Invoker< Conjunction< T, Ts... >>
     template< size_t... Is >
     constexpr result_type helper( conjunction_type const& expr, 
         variable_values const& values, seq< Is... > )
-    { return ( get_dependent< Is >( expr ) and ... ); }
+    { return ( invoke( get_dependent< Is >( expr ), values ) and ... ); }
 };
 
 template< typename T, typename... Ts >
@@ -520,49 +520,49 @@ struct Invoker< Compliment< T >>
 template< typename Left, typename Right >
 struct Invoker< Equals< Left, Right >>
 {
-    auto operator()( Equals< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( Equals< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) == invoke( get_dependent< 1 >( expr )); }
 };
 
 template< typename Left, typename Right >
 struct Invoker< NotEquals< Left, Right >>
 {
-    auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) != invoke( get_dependent< 1 >( expr )); }
 };
 
 template< typename Left, typename Right >
 struct Invoker< Less< Left, Right >>
 {
-    auto operator()( Less< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( Less< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) < invoke( get_dependent< 1 >( expr )); }
 };
 
 template< typename Left, typename Right >
 struct Invoker< LessOrEqual< Left, Right >>
 {
-    auto operator()( LessOrEqual< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( LessOrEqual< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) <= invoke( get_dependent< 1 >( expr )); }
 };
 
 template< typename Left, typename Right >
 struct Invoker< Greater< Left, Right >>
 {
-    auto operator()( Greater< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( Greater< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) > invoke( get_dependent< 1 >( expr )); }
 };
 
 template< typename Left, typename Right >
 struct Invoker< GreaterOrEqual< Left, Right >>
 {
-    auto operator()( GreaterOrEqual< Left, Right > expr, variable_values const& values )
+    constexpr auto operator()( GreaterOrEqual< Left, Right > expr, variable_values const& values )
     { return invoke( get_dependent< 0 >( expr )) >= invoke( get_dependent< 1 >( expr )); }
 };
 
 template< size_t I, typename E >
 struct Invoker< Element< I, E >>
 {
-    auto operator()( Element< I, E > const& expr, variable_values const& values )
+    constexpr auto operator()( Element< I, E > const& expr, variable_values const& values )
     { return get_element< I >( invoke( get_dependent< 0 >( expr ), values )); }
 };
 
@@ -570,10 +570,10 @@ template< typename E, typename... Es >
 struct Invoker< Sum< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( Sum< E, Es... > expr, variable_values const& values, seq< Is... > )
+    constexpr auto helper( Sum< E, Es... > expr, variable_values const& values, seq< Is... > )
     { return ( ... + invoke( get_dependent< Is >( expr ), values )); }
 
-    auto operator()( Sum< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( Sum< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
 };
 
@@ -581,17 +581,17 @@ template< typename E, typename... Es >
 struct Invoker< Difference< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( Difference< E, Es... > expr, variable_values const& values, seq< Is... > )
+    constexpr auto helper( Difference< E, Es... > expr, variable_values const& values, seq< Is... > )
     { return ( ... - invoke( get_dependent< Is >( expr ), values )); }
 
-    auto operator()( Difference< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( Difference< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
 };
 
 template< typename E >
 struct Invoker< Negation< E >>
 {
-    auto operator()( Negation< E > expr, variable_values const& values )
+    constexpr auto operator()( Negation< E > expr, variable_values const& values )
     { return -invoke( expr, values ); }
 };
 
@@ -599,10 +599,10 @@ template< typename E, typename... Es >
 struct Invoker< Product< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( Product< E, Es... > expr, variable_values const& values, seq< Is... > )
+    constexpr auto helper( Product< E, Es... > expr, variable_values const& values, seq< Is... > )
     { return ( ... * invoke( get_dependent< Is >( expr ), values )); }
 
-    auto operator()( Product< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( Product< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
 };
 
@@ -610,17 +610,17 @@ template< typename E, typename... Es >
 struct Invoker< Quotient< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( Quotient< E, Es... > expr, variable_values const& values, seq< Is... > )
+    constexpr auto helper( Quotient< E, Es... > expr, variable_values const& values, seq< Is... > )
     { return ( ... / invoke( get_dependent< Is >( expr ), values )); }
 
-    auto operator()( Quotient< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( Quotient< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
 };
 
 template< typename E >
 struct Invoker< Inverse< E >>
 {
-    auto operator()( Inverse< E > expr, variable_values const& values )
+    constexpr auto operator()( Inverse< E > expr, variable_values const& values )
     { return result_t< E >{ 1. } / invoke( expr, values ); }
 };
 
@@ -628,7 +628,7 @@ struct Invoker< Inverse< E >>
 template< typename E >
 struct Invoker< BitwiseNot< E >>
 {
-    auto operator()( BitwiseNot< E > expr, variable_values const& values )
+    constexpr auto operator()( BitwiseNot< E > expr, variable_values const& values )
     { return ~invoke( expr, values ); }
 };
 
@@ -636,10 +636,10 @@ template< typename E, typename... Es >
 struct Invoker< BitwiseAnd< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( BitwiseAnd< E, Es... > expr, variable_values const& values )
+    constexpr auto helper( BitwiseAnd< E, Es... > expr, variable_values const& values )
     { return ( invoke( get_dependent< Is >( expr ), values ) & ... ); }
 
-    auto operator()( BitwiseAnd< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( BitwiseAnd< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
 };
 
@@ -647,10 +647,10 @@ template< typename E, typename... Es >
 struct Invoker< BitwiseOr< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( BitwiseOr< E, Es... > expr, variable_values const& values )
+    constexpr auto helper( BitwiseOr< E, Es... > expr, variable_values const& values )
     { return ( invoke( get_dependent< Is >( expr ), values ) | ... ); }
 
-    auto operator()( BitwiseOr< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( BitwiseOr< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
 };
 
@@ -658,73 +658,73 @@ template< typename E, typename... Es >
 struct Invoker< BitwiseXor< E, Es... >>
 {
     template< size_t... Is >
-    auto helper( BitwiseXor< E, Es... > expr, variable_values const& values )
+    constexpr auto helper( BitwiseXor< E, Es... > expr, variable_values const& values )
     { return ( invoke( get_dependent< Is >( expr ), values ) ^ ... ); }
 
-    auto operator()( BitwiseXor< E, Es... > expr, variable_values const& values )
+    constexpr auto operator()( BitwiseXor< E, Es... > expr, variable_values const& values )
     { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
 };
 
 template< typename Bits, typename Shift >
 struct Invoker< BitshiftLeft< Bits, Shift >>
 {
-    auto operator()( BitshiftLeft< Bits, Shift > expr, variable_values const& values )
+    constexpr auto operator()( BitshiftLeft< Bits, Shift > expr, variable_values const& values )
     { return invoke( expr.bits() ) << invoke( expr.shift() ); }
 };
 
 template< typename Bits, typename Shift >
 struct Invoker< BitshiftRight< Bits, Shift >>
 {
-    auto operator()( BitshiftRight< Bits, Shift > expr, variable_values const& values )
+    constexpr auto operator()( BitshiftRight< Bits, Shift > expr, variable_values const& values )
     { return invoke( expr.bits() ) >> invoke( expr.shift() ); }
 };
 
 template< typename E >
 struct Invoker< Sine< E >>
 {
-    auto operator()( Sine< E > expr, variable_values const& values )
+    constexpr auto operator()( Sine< E > expr, variable_values const& values )
     { return std::sin( invoke( expr, values )); }
 };
 
 template< typename E >
 struct Invoker< Cosine< E >>
 {
-    auto operator()( Cosine< E > expr, variable_values const& values )
+    constexpr auto operator()( Cosine< E > expr, variable_values const& values )
     { return std::cos( invoke( expr, values )); }
 };
 
 template< typename E >
 struct Invoker< Tangent< E >>
 {
-    auto operator()( Tangent< E > expr, variable_values const& values )
+    constexpr auto operator()( Tangent< E > expr, variable_values const& values )
     { return std::tan( invoke( expr, values )); }
 };
 
 template< typename E >
 struct Invoker< Arcsine< E >>
 {
-    auto operator()( Arcsine< E > expr, variable_values const& values )
+    constexpr auto operator()( Arcsine< E > expr, variable_values const& values )
     { return std::asin( invoke( expr, values )); }
 };
 
 template< typename E >
 struct Invoker< Arccosine< E >>
 {
-    auto operator()( Arccosine< E > expr, variable_values const& values )
+    constexpr auto operator()( Arccosine< E > expr, variable_values const& values )
     { return std::acos( invoke( expr, values )); }
 };
 
 template< typename E >
 struct Invoker< Arctangent< E >>
 {
-    auto operator()( Arctangent< E > expr, variable_values const& values )
+    constexpr auto operator()( Arctangent< E > expr, variable_values const& values )
     { return std::atan( invoke( expr, values )); }
 };
 
 template< typename Num, typename Den >
 struct Invoker< Arctangent2< Num, Den >>
 {
-    auto operator()( Arctangent2< Num, Den > expr, variable_values const& values )
+    constexpr auto operator()( Arctangent2< Num, Den > expr, variable_values const& values )
     { return std::atan2( invoke( expr.numerator(), values ), 
         invoke( expr.denominator(), values )); }
 };

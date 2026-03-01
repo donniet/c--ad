@@ -44,11 +44,9 @@ int main( int ac, char * av[] )
     using vec2 = UniformVector< 2, Scalar >;
     
     auto m = make_matrix< 2, 2 >(
-        1_scalar, 0_scalar,
-        0_scalar, 1_scalar );
-    auto v = make_vector< 2 >( 2_scalar, 3_scalar );
-
-    
+        1_m, 1_m,
+        0_m, 1_m );
+    auto v = make_vector< 2 >( 2.3_scalar, 3.4_scalar );
 
     auto g1 = m * v;
 
@@ -60,17 +58,20 @@ int main( int ac, char * av[] )
     // println( std::runtime_format( "{}" ), g1_x );
     println( "{}", get_tensor_element< 1 >( g1_x ) );
 
-    assert( (g1_x.template elem< 0 >() == 2_scalar) );
-    assert( (g1_x.template elem< 1 >() == 3_scalar) );
+    assert( (g1_x.template elem< 0 >() == 2.3_scalar) );
+    assert( (g1_x.template elem< 1 >() == 3.4_scalar) );
     assert( (g1_x.template elem< 2 >() == 0_scalar) );
     assert( (g1_x.template elem< 3 >() == 0_scalar) );
     assert( (g1_x.template elem< 4 >() == 0_scalar) );
     assert( (g1_x.template elem< 5 >() == 0_scalar) );
-    assert( (g1_x.template elem< 6 >() == 2_scalar) );
-    assert( (g1_x.template elem< 7 >() == 3_scalar) );
+    assert( (g1_x.template elem< 6 >() == 2.3_scalar) );
+    assert( (g1_x.template elem< 7 >() == 3.4_scalar) );
 
     auto g1c = contract< 1, 2 >( m * v );
     auto g1c_x = invoke( g1c );
+
+    assert( invoke( v == matmul( m, v ) and
+        v == contract< 1, 2 >( m * v ) ));
 
     // println("{}", av[0] );
 
