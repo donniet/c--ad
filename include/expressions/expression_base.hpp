@@ -86,11 +86,42 @@ template< typename... Ts >
 struct DependsOn : Expression
 { 
     using dependent_types = tuple< Ts... >;
-    tuple< Ts... > exprs;
+    static constexpr size_t dependents_size = sizeof...( Ts );
+    dependent_types exprs;
 
-    DependsOn() = default;
-    DependsOn( DependsOn const& ) = default;
-    DependsOn( Ts... ts ) : exprs{ ts... } { }
+    constexpr auto first() const 
+    { return get< 0 >( exprs ); }
+
+    constexpr auto rest() const 
+    { return rest_as< tuple >(); }
+
+    template< template< typename... > class Expr >
+    constexpr auto rest_as() const
+    { return rest_as_helper< Expr >( make_seq< dependents_size - 1 >{} ); }
+
+    constexpr auto last() const
+    { return get< dependents_size - 1 >( exprs ); }
+
+    constexpr auto prior() const
+    { return prior_as< tuple >(); }
+
+    template< template< typename... > class Expr >
+    constexpr auto prior_as() const
+    { return rest_as_helper< Expr >( make_seq< dependents_size - 1 >{} ); }
+
+    template< template< typename... > class Expr, size_t... Is >
+    constexpr Expr< tuple_element_t< 1 + Is, dependent_types >... > 
+    rest_as_helper( seq< Is... > )
+    { return { get< 1 + Is >( exprs )... }; }
+
+    template< template< typename... > class Expr, size_t... Is >
+    constexpr Expr< tuple_element_t< Is - 1, dependent_types >... > 
+    prior_as_helper( seq< Is... > )
+    { return { get< Is - 1 >( exprs )... }; }
+
+    constexpr DependsOn() = default;
+    constexpr DependsOn( DependsOn const& ) = default;
+    constexpr DependsOn( Ts... ts ) : exprs{ ts... } { }
 };
 
 template< typename DepTuple >
