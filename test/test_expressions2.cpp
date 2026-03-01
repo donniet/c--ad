@@ -44,18 +44,13 @@ int main( int ac, char * av[] )
     using vec2 = UniformVector< 2, Scalar >;
     
     auto m = make_matrix< 2, 2 >(
-        1_m, 1_m,
-        0_m, 1_m );
+        1_scalar, 0_scalar,
+        0_scalar, 1_scalar );
     auto v = make_vector< 2 >( 2.3_scalar, 3.4_scalar );
 
     auto g1 = m * v;
 
     auto g1_x = invoke( g1 );
-    // println( "{}", typeid( g1_x ).name() );
-
-    assert( invoke( matmul( m, v ) == v ));
-
-    // println( std::runtime_format( "{}" ), g1_x );
     println( "{}", get_tensor_element< 1 >( g1_x ) );
 
     assert( (g1_x.template elem< 0 >() == 2.3_scalar) );

@@ -26,8 +26,13 @@ using std::conditional_t;
 using std::is_arithmetic_v;
 using std::size_t;
 
+// using namespace std::numbers;
+
 template< typename T >
 concept arithmetic = is_arithmetic_v< T >;
+
+constexpr long double pi = std::numbers::pi_v< long double >;
+constexpr long double two_pi = pi * 2.l;
 
 // conversion factors for units
 constexpr long double meters_per_inch = 0.0254;
@@ -45,6 +50,7 @@ constexpr long double kilograms_per_pound = kilograms_per_ounce * 16.;
 static_assert( kilograms_per_pound == 0.453'592'37 );
 constexpr long double kilograms_per_long_ton = kilograms_per_pound * 2240.;
 constexpr long double kilograms_per_ton = kilograms_per_pound * 2000.;
+constexpr long double radians_per_degree = pi / 180.l;
 
 
 // NOTE: we allow for a max of 16 units
@@ -103,10 +109,35 @@ struct base_unit
     { value = other.value; return *this; }
     constexpr base_unit& operator=( scalar_type const& other )
     { value = other; return *this; }
+    explicit constexpr operator scalar_type() const
+    { return value; }
+    constexpr base_unit() : value{0.} { }
+    constexpr base_unit( base_unit const& other ) : value{ other.value } { }
+    explicit constexpr base_unit( scalar_type value ) : value{ value } { }
+
+    constexpr scalar_type get_value() const
+    { return value; }
+
+    scalar_type value;
+};
+
+template< arithmetic T >
+struct base_unit< scalar_unit_id, T >
+{
+    static constexpr bool is_unit = true;
+    using scalar_type = T;
+    static constexpr unit_id_type unit_id = scalar_unit_id;
+
+    constexpr base_unit& operator=( base_unit const& other )
+    { value = other.value; return *this; }
+    constexpr base_unit& operator=( scalar_type const& other )
+    { value = other; return *this; }
+    // implicit cast operator
     constexpr operator scalar_type() const
     { return value; }
     constexpr base_unit() : value{0.} { }
     constexpr base_unit( base_unit const& other ) : value{ other.value } { }
+    // implicit scalar constructor
     constexpr base_unit( scalar_type value ) : value{ value } { }
 
     constexpr scalar_type get_value() const
@@ -130,15 +161,15 @@ struct base_unit
 template< typename T >
 struct unit_traits;
 
-template< typename T >
-requires is_arithmetic_v< T >
-struct unit_traits< T >
-{
-    static constexpr unit_id_type unit_id = scalar_unit_id;
-    using scalar_type = T;
-    static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
-    static constexpr bool is_continuous = not is_discrete;
-};
+// template< typename T >
+// requires is_arithmetic_v< T >
+// struct unit_traits< T >
+// {
+//     static constexpr unit_id_type unit_id = scalar_unit_id;
+//     using scalar_type = T;
+//     static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
+//     static constexpr bool is_continuous = not is_discrete;
+// };
 
 template< unit_id_type Id, arithmetic T >
 struct unit_traits< base_unit< Id, T >>
@@ -151,7 +182,7 @@ struct unit_traits< base_unit< Id, T >>
 
 template< typename T >
 struct is_unit
-{ static constexpr bool value = is_arithmetic_v< T >; };
+; //{ static constexpr bool value = is_arithmetic_v< T >; };
 
 template< unit_id_type Id, arithmetic T >
 struct is_unit< base_unit< Id, T >>
@@ -179,7 +210,7 @@ using unit_quotient = UnitQuotient< Us... >::type;
 template< unit U >
 struct UnitInverse
 { 
-    static constexpr unit_id_type unit_id = unit_traits< U >::id;
+    static constexpr unit_id_type unit_id = unit_traits< U >::unit_id;
     using scalar_type = unit_traits< U >::scalar_type;
 
     using type = base_unit< { unit_id.second, unit_id.first }, scalar_type >;
@@ -242,108 +273,127 @@ constexpr Boolean true_bool = Boolean{ true };
 constexpr Boolean false_bool = Boolean{ false };
 
 // literals and construction methods for scalars
-auto operator ""_scalar( long double x )
-{ return Scalar{ x }; }
-auto operator ""_scalar( unsigned long long x )
-{ return Scalar{ (long double)x }; }
-auto scalar( long double x )
-{ return Scalar{ x }; }
-auto operator ""_percent( long double x )
-{ return Scalar{ 0.01 * x }; }
-auto operator ""_percent( unsigned long long x )
-{ return Scalar{ 0.01 * (long double)x }; }
-auto percent( Cardinal n )
-{ return Scalar{ 0.01 * (long double)n.value }; }
-auto percent( unsigned long long n )
-{ return Scalar{ 0.01 * (long double)n }; }
-auto percent( long double x )
-{ return Scalar{ 0.01 * x }; }
+constexpr Scalar operator ""_scalar( long double x )
+{ return { x }; }
+constexpr Scalar operator ""_scalar( unsigned long long x )
+{ return { (long double)x }; }
+Scalar scalar( long double x )
+{ return { x }; }
+constexpr Scalar operator ""_percent( long double x )
+{ return { 0.01 * x }; }
+constexpr Scalar operator ""_percent( unsigned long long x )
+{ return { 0.01 * (long double)x }; }
+Scalar percent( Cardinal n )
+{ return { 0.01 * (long double)n.value }; }
+Scalar percent( unsigned long long n )
+{ return { 0.01 * (long double)n }; }
+Scalar percent( long double x )
+{ return { 0.01 * x }; }
+
+template< typename T >
+constexpr auto mod( T k, T n )
+{ return ((k %= n) < 0) ? k + n : k; }
+
+template< >
+constexpr auto mod< long double >( long double k, long double n )
+{ 
+    if( k >= 0 and k < n )
+        return k;
+
+    return k - std::floorl( k / n ) * n; 
+}
+
+template< >
+constexpr auto mod< double >( double k, double n )
+{ return mod< long double >( k, n ); }
+
+template< >
+constexpr auto mod< float >( float k, float n )
+{ return mod< long double >( k, n ); }
+
+constexpr Scalar radians( long double x )
+{ 
+    return mod( x, two_pi ); 
+}
+
+template< typename T >
+constexpr Scalar degrees( T x )
+{ return radians( (long double)x * radians_per_degree ); }
+
+template< >
+constexpr Scalar degrees< int >( int x )
+{ return radians((long double)mod< int>( x, 360 ) * radians_per_degree ); }
+template< >
+constexpr Scalar degrees< unsigned int >( unsigned int x )
+{ return radians((long double)mod< long long >( x, 360 ) * radians_per_degree ); }
+template< >
+constexpr Scalar degrees< long >( long x )
+{ return radians((long double)mod< long long >( x, 360 ) * radians_per_degree ); }
+template< >
+constexpr Scalar degrees< unsigned long >( unsigned long x )
+{ return radians((long double)mod< long long >( x, 360 ) * radians_per_degree ); }
+template< >
+constexpr Scalar degrees< long long >( long long x )
+{ return radians((long double)mod< long long >( x, 360 ) * radians_per_degree ); }
+
+template< >
+constexpr Scalar degrees< unsigned long long >( unsigned long long x )
+{ return degrees< long long >( x ); }
+
+constexpr Scalar operator ""_deg( unsigned long long x )
+{ return degrees< long long >( x ); }
+constexpr Scalar operator ""_rad( long double x )
+{ 
+    return radians( x ); 
+}
+constexpr Scalar operator ""_rad( unsigned long long x )
+{ return radians( x ); }
 
 // literals and construction methods for cardinals
-auto operator ""_cardinal( unsigned long long n )
-{ return Cardinal{ n }; }
-auto cardinal( Scalar x )
-{ return Cardinal{ (unsigned long long)x.value }; }
-auto cardinal( long double x )
-{ return Cardinal{ (unsigned long long)x }; }
-auto cardinal( unsigned long long n )
-{ return Cardinal{ n }; }
-
-// logical operations
-auto operator and( Boolean const& left, Boolean const& right )
-{ return Boolean{ left.value and right.value }; }
-auto operator or( Boolean const& left, Boolean const& right )
-{ return Boolean{ left.value or right.value }; }
-auto operator not( Boolean const& arg )
-{ return Boolean{ not arg.value }; }
+constexpr Cardinal operator ""_cardinal( unsigned long long n )
+{ return { n }; }
+constexpr Cardinal cardinal( Scalar x )
+{ return { (unsigned long long)x.value }; }
+constexpr Cardinal cardinal( long double x )
+{ return { (unsigned long long)x }; }
+constexpr Cardinal cardinal( unsigned long long n )
+{ return { n }; }
 
 // general unit arithmetic
 template< unit LeftU, unit RightU >
 constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
-{ return { left.get_value() * right.get_value() }; }
-
-template< unit U >
-constexpr unit_product< Scalar, U > operator *( long double left, U right )
-{ return { left * right.get_value() }; }
-
-template< unit U >
-constexpr unit_product< Scalar, U > operator *( long long left, U right )
-{ return { left * right.get_value() }; }
-
-template< unit U >
-constexpr unit_product< U, Scalar > operator *( U left, long double right )
-{ return { left.get_value() * right }; }
-
-template< unit U >
-constexpr unit_product< U, Scalar > operator *( U left, long long right )
-{ return { left.get_value() * right }; }
+{ return unit_product< LeftU, RightU >{ left.get_value() * right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 constexpr unit_quotient< LeftU, RightU > operator /( LeftU left, RightU right )
-{ return { left.get_value() / right.get_value() }; }
-
-template< unit U >
-constexpr unit_quotient< Scalar, U > operator /( long double left, U right )
-{ return { left / right.get_value() }; }
-
-template< unit U >
-constexpr unit_quotient< Scalar, U > operator /( long long left, U right )
-{ return { left / right.get_value() }; }
-
-template< unit U >
-constexpr unit_quotient< U, Scalar > operator /( U left, long double right )
-{ return { left.get_value() / right }; }
-
-template< unit U >
-constexpr unit_quotient< U, Scalar > operator /( U left, long long right )
-{ return { left.get_value() / right }; }
+{ return unit_quotient< LeftU, RightU >{ left.get_value() / right.get_value() }; }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator +( LeftU const& left, RightU const& right )
-{ return { left.get_value() + right.get_value() }; }
+{ return LeftU{ left.get_value() + right.get_value() }; }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator -( LeftU const& left, RightU const& right )
-{ return { left.get_value() - right.get_value() }; }
+{ return LeftU{ left.get_value() - right.get_value() }; }
 
 template< unit U >
 requires( unit_traits< U >::is_continuous )
 constexpr U operator-( U const& arg )
-{ return { -arg.get_value() }; }
+{ return U{ -arg.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_continuous or unit_traits< RightU >::is_continuous )
 constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return { left.get_value() - std::floor( left.get_value() / 
+{ return unit_quotient< LeftU, RightU >{ left.get_value() - std::floor( left.get_value() / 
     right.get_value()) * right.get_value() }; }
 
 // discrete operators
 template< unit U >
 requires( unit_traits< U >::is_discrete )
 constexpr U operator ~( U const& arg )
-{ return { ~arg.get_value() }; }
+{ return U{ ~arg.get_value() }; }
 
 constexpr Boolean operator ~( Boolean const& arg )
 { return Boolean{ not arg.get_value() }; }
@@ -351,99 +401,86 @@ constexpr Boolean operator ~( Boolean const& arg )
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete )
 constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return { left.get_value() % right.get_value() }; }
+{ return unit_quotient< LeftU, RightU >{ left.get_value() % right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
-    and unit_traits< LeftU >::id == unit_traits< RightU >::id )
+    and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator |( LeftU const& left, RightU const& right )
-{ return { left.get_value() | right.get_value() }; }
+{ return LeftU{ left.get_value() | right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
-    and unit_traits< LeftU >::id == unit_traits< RightU >::id )
+    and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator &( LeftU const& left, RightU const& right )
-{ return { left.get_value() & right.get_value() }; }
+{ return LeftU{ left.get_value() & right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
-    and unit_traits< LeftU >::id == unit_traits< RightU >::id )
+    and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator ^( LeftU const& left, RightU const& right )
-{ return { left.get_value() ^ right.get_value() }; }
+{ return LeftU{ left.get_value() ^ right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
-    and unit_traits< LeftU >::id == unit_traits< RightU >::id )
+    and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator >>( LeftU const& left, RightU const& right )
-{ return { left.get_value() >> right.get_value() }; }
+{ return LeftU{ left.get_value() >> right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
-    and unit_traits< LeftU >::id == unit_traits< RightU >::id )
+    and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator <<( LeftU const& left, RightU const& right )
-{ return { left.get_value() << right.get_value() }; }
-
-// cardinal to scalar comparison
-auto operator ==( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value == right.value }; }
-auto operator !=( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value != right.value }; }
-auto operator <( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value < right.value }; }
-auto operator <=( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value <= right.value }; }
-auto operator >( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value > right.value }; }
-auto operator >=( Cardinal const& left, Scalar const& right )
-{ return Boolean{ (long double)left.value >= right.value }; }
-auto operator ==( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value == (long double)right.value }; }
-auto operator !=( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value != (long double)right.value }; }
-auto operator <( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value < (long double)right.value }; }
-auto operator <=( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value <= (long double)right.value }; }
-auto operator >( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value > (long double)right.value }; }
-auto operator >=( Scalar const& left, Cardinal const& right )
-{ return Boolean{ left.value >= (long double)right.value }; }
+{ return LeftU{ left.get_value() << right.get_value() }; }
 
 // general unit comparison
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
+    not is_same_v< typename unit_traits< LeftU >::scalar_type, long double >)
 Boolean operator ==( LeftU const& left, RightU const& right )
 { return left.get_value() == right.get_value(); }
 
+// DT: if we are using long doubles, then equality is when the square
+// of the distance between them is less than this system's epislon
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
+    is_same_v< typename unit_traits< LeftU >::scalar_type, long double > )
+Boolean operator ==( LeftU const& left, RightU const& right )
+{ 
+    long double e = left.get_value() - right.get_value();
+    e *= e;
+    return e < std::numeric_limits< long double >::min();
+}
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 Boolean operator !=( LeftU const& left, RightU const& right )
 { return left.get_value() != right.get_value(); }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 Boolean operator <( LeftU const& left, RightU const& right )
 { return left.get_value() < right.get_value(); }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 Boolean operator <=( LeftU const& left, RightU const& right )
 { return left.get_value() <= right.get_value(); }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 Boolean operator >( LeftU const& left, RightU const& right )
 { return left.get_value() > right.get_value(); }
 
 template< unit LeftU, unit RightU >
-requires( unit_traits< LeftU >::id == unit_traits< RightU >::id )
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 Boolean operator >=( LeftU const& left, RightU const& right )
 { return left.get_value() >= right.get_value(); }
 
 // powers (compile time)
 template< int Power, unit U >
 constexpr power_unit_t< Power, U > pow( U const& u )
-{ return { std::pow( u.get_value(), Power )}; }
+{ return power_unit_t< Power, U >{ std::pow( u.get_value(), Power )}; }
 
 constexpr auto sin( Scalar const& u )
 { return Scalar{ std::sin( u.get_value() )}; }
@@ -460,7 +497,7 @@ constexpr auto atan( Scalar const& arg )
 { return Scalar{ std::atan( arg.get_value() ) }; }
 
 template< unit NumeratorU, unit DenominatorU >
-requires( unit_traits< NumeratorU >::id == unit_traits< DenominatorU >::id )
+requires( unit_traits< NumeratorU >::unit_id == unit_traits< DenominatorU >::unit_id )
 constexpr auto atan2( NumeratorU const& num, DenominatorU const& den )
 { return Scalar{ std::atan2( num.get_value(), den.get_value()) }; }
 
@@ -676,7 +713,7 @@ constexpr long double time_value( Time time, time_unit u )
  */
 using Mass = base_unit< mass_unit_id, long double >;
 
-Time::scalar_type kilograms( Mass mass )
+Mass::scalar_type kilograms( Mass mass )
 { return mass.get_value(); }
 
 auto operator""_kg( long double kilograms )
@@ -788,6 +825,28 @@ constexpr long double mass_value( Mass mass, mass_unit u )
     }
 }
 
+enum class scalar_unit : size_t
+{ none = 0, percent, radians, degrees };
+
+static constexpr string scalar_unit_names[] =
+{ "", "%", "rad", "deg" };
+
+static constexpr string scalar_unit_long_names[] =
+{ "", "percent", "radians", "degrees" };
+
+constexpr long double scalar_value( Scalar scalar, scalar_unit u )
+{
+    switch( u ) {
+    case scalar_unit::none: 
+    case scalar_unit::radians:
+        return scalar.get_value();
+    case scalar_unit::percent: 
+        return 100. * scalar.get_value();
+    case scalar_unit::degrees:
+        return scalar.get_value() / radians_per_degree;
+    }
+}
+
 } // namespace units
 
 // formating of units
@@ -833,20 +892,73 @@ struct formatter< units::Boolean, char >
 template<>
 struct formatter< units::Scalar, char > : formatter< long double, char >
 {
+    units::scalar_unit format_unit = units::scalar_unit::none;
+    bool use_long_name = false;
+
+    constexpr void set_unit_name( string name )
+    {
+        if( name == "")
+            return;
+
+        auto i = find( begin( units::scalar_unit_names ), 
+            end( units::scalar_unit_names ), name );
+        if( i != end(units::scalar_unit_names) )
+        {
+            format_unit = (units::scalar_unit)distance( 
+                begin( units::scalar_unit_names), i );
+            use_long_name = false;
+        }
+        else 
+        {
+            auto j = find( begin( units::scalar_unit_long_names ), 
+                end( units::scalar_unit_long_names ), name );
+            
+            // this is a consteval function so we can't throw exceptions
+            // if ( j == end( units::scalar_unit_long_names ))
+            //     throw format_error( "invalid format args for Length " );
+
+            format_unit = (units::scalar_unit)distance( 
+                begin( units::scalar_unit_long_names), j );
+            use_long_name = true;
+        }
+    }
+
     template< class ParseContext >
     constexpr ParseContext::iterator parse( ParseContext& ctx )
-    { return formatter< long double, char >::parse( ctx ); }
+    { 
+        auto it = ctx.begin();
+        string u = "";
+        while( it != ctx.end() and *it != '}' and *it != ':' )
+            u += *it++;
+        
+        set_unit_name( u );
+        if( it != ctx.end() and *it == ':' )
+            it++;
+
+        ctx.advance_to( it );
+        return formatter< long double, char >::parse( ctx ); 
+    }
     
     template< class FmtContext >
     FmtContext::iterator format( units::Scalar s, FmtContext& ctx ) const
-    { return formatter< long double, char >::format( s.value, ctx ); }
+    { 
+        formatter< long double, char >::format( 
+            units::scalar_value( s, format_unit ), ctx );
+
+        if( use_long_name )
+            return ranges::copy( units::scalar_unit_long_names[ (size_t)format_unit ], 
+                ctx.out() ).out;
+
+        return ranges::copy( units::scalar_unit_names[ (size_t)format_unit ], 
+            ctx.out() ).out;
+    }
 };
 
 template<>
 struct formatter< units::Cardinal, char > : formatter< unsigned long long, char >
 {
     template< class ParseContext >
-    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    ParseContext::iterator parse( ParseContext& ctx )
     { return formatter< unsigned long long, char >::parse( ctx ); }
     
     template< class FmtContext >

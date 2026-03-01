@@ -22,7 +22,9 @@ add_executable(test_expressions test_expressions.cpp)
 add_executable(test_expressions2 test_expressions2.cpp)
 add_executable(test_jacobian test_jacobian.cpp)
 
-message("source dir ${CMAKE_SOURCE_DIR}")
+add_test(NAME test_units COMMAND test_units)
+
+# message("source dir ${CMAKE_SOURCE_DIR}")
 
 # target_sources(test_iso_surface PUBLIC
 #     BASE_DIR ${CMAKE_SOURCE_DIR}

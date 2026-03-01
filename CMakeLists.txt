@@ -28,9 +28,13 @@ message("modules file list: ${LIB_MODULE_FILES}")
 # add_compile_options(-stdlib=libc++)
 
 add_subdirectory(lib)
+
+enable_testing()
 add_subdirectory(test)
+
 add_subdirectory(experiments)
  
 add_executable(c++ad test.cpp)
 target_compile_definitions(c++ad PRIVATE PARALLEL)
 target_link_libraries(c++ad PRIVATE TBB::tbb volume linalg)
+
