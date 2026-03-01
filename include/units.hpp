@@ -386,8 +386,7 @@ constexpr U operator-( U const& arg )
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_continuous or unit_traits< RightU >::is_continuous )
 constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return unit_quotient< LeftU, RightU >{ left.get_value() - std::floor( left.get_value() / 
-    right.get_value()) * right.get_value() }; }
+{ return unit_quotient< LeftU, RightU >{ mod( left.get_value(), right.get_value() )}; }
 
 // discrete operators
 template< unit U >
