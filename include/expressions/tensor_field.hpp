@@ -287,9 +287,9 @@ struct Tensor : DependsOn< Es... >
     constexpr auto all( Op&& op ) const
     { return all_helper( op, make_seq< elements_size >{} ); }
 
-    Tensor() = default;
-    Tensor( Tensor const& ) = default;
-    Tensor( Es... es ) : DependsOn< Es... >{ es... } { }
+    constexpr Tensor() = default;
+    constexpr Tensor( Tensor const& ) = default;
+    constexpr Tensor( Es... es ) : DependsOn< Es... >{ es... } { }
 
 private:
     template< typename Op, size_t... Is >

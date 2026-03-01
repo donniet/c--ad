@@ -14,12 +14,12 @@ namespace expressions {
 template< shape S, typename... Ts >
 struct Invoker< Tensor< S, Ts... >>
 {
-    Tensor< S, result_t< Ts >... > operator()( Tensor< S, Ts... > ten, 
+    constexpr Tensor< S, result_t< Ts >... > operator()( Tensor< S, Ts... > ten, 
         variable_values const& values )
     { return helper( ten, values, make_seq< sizeof...( Ts )>{} ); }
 
     template< size_t... Is >
-    Tensor< S, result_t< Ts >... > helper( Tensor< S, Ts... > ten, 
+    constexpr Tensor< S, result_t< Ts >... > helper( Tensor< S, Ts... > ten, 
         variable_values const& values, seq< Is... > )
     { return { invoke( get_tensor_element< Is >( ten ), values )... }; }
 };
@@ -33,12 +33,12 @@ struct Invoker< Equals< LeftT, RightT >>
     static constexpr size_t elements_size = shape_of_t< LeftT >::elements_size;
     using result_type = Equals< LeftT, RightT >::result_type;
 
-    result_type operator()( expression_type const& expr, 
+    constexpr result_type operator()( expression_type const& expr, 
         variable_values const& values )
     { return helper( expr, values, make_seq< elements_size >{} ); }
 
     template< size_t... Is >
-    result_type helper( expression_type const& expr, 
+    constexpr result_type helper( expression_type const& expr, 
         variable_values const& values, seq< Is... > )
     { return (( invoke( get_tensor_element< Is >( expr.left() ), values ) == 
         invoke( get_tensor_element< Is >( expr.right() ), values )) and ... ); }
@@ -57,7 +57,7 @@ struct Subscript< Index< I >, tuple< Ts... >> : DependsOn< tuple< Ts... >>
     using type = tuple_element_t< I, tuple_type >;
     using result_type = result_t< type >;
 
-    Subscript( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
+    constexpr Subscript( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
 };
 
 /**
@@ -70,7 +70,7 @@ struct Subscript< I, Tensor< S, Es... >> : DependsOn< Tensor< S, Es... >>
     using type = tensor_index_t< I, tensor_type >; 
     using result_type = result_t< type >;
 
-    Subscript( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
+    constexpr Subscript( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
 };
 
 /**
@@ -82,7 +82,7 @@ struct Invoker< Subscript< I, V >>
     using subscript_type = Subscript< I, V >;
     using result_type = tensor_index_t< I, result_t< V >>;
 
-    result_type operator()( subscript_type const& sub, 
+    constexpr result_type operator()( subscript_type const& sub, 
         variable_values const& values )
     { return get_tensor_index< I >( invoke( sub.tensor(), values )); }
 };
@@ -99,7 +99,7 @@ struct Element< I, tuple< Ts... >> : DependsOn< tuple< Ts... >>
 
     constexpr tuple_type tup() const { return get_dependent< 0 >( *this ); }
 
-    Element( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
+    constexpr Element( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
 };
 
 /**
@@ -115,7 +115,7 @@ struct Element< I, T > : DependsOn< T >
 
     constexpr tensor_type tensor() const { return get_dependent< 0 >( *this ); }
 
-    Element( tensor_type const& tup ) : DependsOn< tensor_type >{ tup } { }
+    constexpr Element( tensor_type const& tup ) : DependsOn< tensor_type >{ tup } { }
 };
 
 /**
@@ -128,7 +128,7 @@ struct Invoker< Element< I, tuple< Ts... >>>
     using element_type = Element< I, tuple_type >;
     using result_type = tuple_element_t< I, result_t< tuple_type >>;
 
-    result_type operator()( element_type const& el, 
+    constexpr result_type operator()( element_type const& el, 
         variable_values const& values )
     { return get< I >( invoke( el.tup(), values )); }
 };
@@ -144,7 +144,7 @@ struct Invoker< Element< I, T >>
     using element_type = Element< I, tensor_type >;
     using result_type = tensor_element_t< I, result_t< tensor_type >>;
 
-    result_type operator()( element_type const& el, 
+    constexpr result_type operator()( element_type const& el, 
         variable_values const& values )
     { return get_tensor_element< I >( invoke( el.tensor(), values )); }
 };
@@ -281,7 +281,7 @@ struct ContractionElement : DependsOn< T >
     constexpr type value() const 
     { return _proxy.value(); }
 
-    ContractionElement( tensor_type const& tup ) : 
+    constexpr ContractionElement( tensor_type const& tup ) : 
         DependsOn< tensor_type >{ tup }, _proxy{ tup }
     { }
 
@@ -326,7 +326,7 @@ struct Contract : DependsOn< V >
 
     constexpr tensor_type tensor() const { return get_dependent< 0 >( *this ); }
 
-    Contract( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
+    constexpr Contract( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
 };
 
 
@@ -534,7 +534,7 @@ struct TensorProductElement : DependsOn< LeftT, RightT >
     constexpr type value() const
     { return {{ left() }, { right() }}; }
 
-    TensorProductElement( left_type left, right_type right ) : 
+    constexpr TensorProductElement( left_type left, right_type right ) : 
         DependsOn< left_type, right_type >{ left, right }
     { }
 };
@@ -616,7 +616,7 @@ struct Product< Tensor< S, Ts... >, Es... > :
 
     static constexpr size_t elements_size = shape_type::elements_size;
 
-    Product( Tensor< S, Ts... > arg, Es... es ) : 
+    constexpr Product( Tensor< S, Ts... > arg, Es... es ) : 
         DependsOn< Tensor< S, Ts... >, Es... >{ arg, es... }
     { }
 };
@@ -694,7 +694,7 @@ struct Scale : ScaleBase< E, V, make_seq< shape_of_t< V >::elements_size >>
     using base_type = ScaleBase< E, V, 
         make_seq< shape_of_t< V >::elements_size >>;
     
-    Scale( base_type::scalar_type s, base_type::tensor_type ten ) : 
+    constexpr Scale( base_type::scalar_type s, base_type::tensor_type ten ) : 
         base_type{ s, ten } { }
 };
 
