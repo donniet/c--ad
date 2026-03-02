@@ -39,6 +39,16 @@ constexpr long double meters_per_inch = 0.0254;
 constexpr long double meters_per_thou = meters_per_inch * 0.001;
 constexpr long double meters_per_foot = meters_per_inch * 12.;
 constexpr long double meters_per_mile = meters_per_foot * 5280.;
+constexpr long double acres_per_square_mile = 640.;
+constexpr long double cubic_meters_per_liter = 1e-3l;
+// constexpr long double cups_per_milliliter = 240.;
+constexpr long double cubic_inces_per_gallon = 231.;
+constexpr long double fluid_ounces_per_cup = 16.;
+constexpr long double cups_per_gallon = 16.;
+constexpr long double cups_per_milliliter = cups_per_gallon / 
+    cubic_inces_per_gallon / meters_per_inch / meters_per_inch / meters_per_inch *
+    cubic_meters_per_liter / 1000.;
+// static_assert( cups_per_milliliter == 1.l/236.58823l );
 constexpr long double meters_per_second = 299'792'458; // c
 constexpr long double seconds_per_minute = 60.;
 constexpr long double seconds_per_hour = seconds_per_minute * 60.;
@@ -51,6 +61,13 @@ static_assert( kilograms_per_pound == 0.453'592'37 );
 constexpr long double kilograms_per_long_ton = kilograms_per_pound * 2240.;
 constexpr long double kilograms_per_ton = kilograms_per_pound * 2000.;
 constexpr long double radians_per_degree = pi / 180.l;
+constexpr long double standard_acceleration_of_gravity = 9.80665; /* m/s^2 */
+constexpr long double steradians_per_square_degree = 4. * 180. * 180. / pi;
+constexpr long double atmospheres_per_pascal = 101325.;
+constexpr long double density_of_mercury = 13595.1; /* kg/m^3 */
+constexpr long double zero_celsius_in_kelvin = 273.15; /* K */ 
+constexpr long double celsius_per_fahrenheit = 5.l / 9.l;
+constexpr long double fahrenheit_at_zero_celsius = 32.l;
 
 
 // NOTE: we allow for a max of 16 units
@@ -85,6 +102,9 @@ constexpr unit_id_type scalar_unit_id = { 1, 1 };
 constexpr unit_id_type length_unit_id = { 2, 1 };
 constexpr unit_id_type time_unit_id = { 3, 1 };
 constexpr unit_id_type mass_unit_id = { 5, 1 };
+constexpr unit_id_type current_unit_id = { 7, 1 };
+constexpr unit_id_type temperature_unit_id = { 11, 1 };
+constexpr unit_id_type luminous_intensity_unit_id = { 13, 1 };
 
 constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
 { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
@@ -512,79 +532,79 @@ static_assert( unit_traits< unit_product< Length, Length >>::unit_id == unit_id_
 static_assert( unit_traits< unit_quotient< Length, Length >>::unit_id == unit_traits< Scalar >::unit_id );
 
 // length measurement units
-auto operator""_m(long double meters)
+constexpr auto operator""_m(long double meters)
 { return Length{ meters }; }
-auto operator""_m(unsigned long long meters)
+constexpr auto operator""_m(unsigned long long meters)
 { return Length{ (long double)meters }; }
-auto operator""_pm(long double picometers)
+constexpr auto operator""_pm(long double picometers)
 { return Length{ 1e-12 * picometers }; }
-auto operator""_pm(unsigned long long picometers)
+constexpr auto operator""_pm(unsigned long long picometers)
 { return Length{ 1e-12 * (long double)picometers }; }
-auto operator""_nm(long double nanometers)
+constexpr auto operator""_nm(long double nanometers)
 { return Length{ 1e-9 * nanometers }; }
-auto operator""_nm(unsigned long long nanometers)
+constexpr auto operator""_nm(unsigned long long nanometers)
 { return Length{ 1e-9 * (long double)nanometers }; }
 #ifndef NO_UNICODE_COMPILER
-auto operator""_μm(long double micrometers)
+constexpr auto operator""_μm(long double micrometers)
 { return Length{ 1e-6 * micrometers }; }
-auto operator""_μm(unsigned long long micrometers)
+constexpr auto operator""_μm(unsigned long long micrometers)
 { return Length{ 1e-6 * (long double)micrometers }; }
 #endif
-auto operator""_mm(long double millimeters)
+constexpr auto operator""_mm(long double millimeters)
 { return Length{ 1e-3 * millimeters }; }
-auto operator""_mm(unsigned long long millimeters)
+constexpr auto operator""_mm(unsigned long long millimeters)
 { return Length{ 1e-3 * (long double)millimeters }; }
-auto operator""_km(long double kilometers)
+constexpr auto operator""_km(long double kilometers)
 { return Length{ 1e3 * kilometers }; }
-auto operator""_km(unsigned long long kilometers)
+constexpr auto operator""_km(unsigned long long kilometers)
 { return Length{ 1e3 * (long double)kilometers }; } 
-auto operator""_Mm(long double megameters)
+constexpr auto operator""_Mm(long double megameters)
 { return Length{ 1e6 * megameters }; }
-auto operator""_Mm(unsigned long long megameters)
+constexpr auto operator""_Mm(unsigned long long megameters)
 { return Length{ 1e6 * (long double)megameters }; } 
-auto operator""_Gm(long double gigameters)
+constexpr auto operator""_Gm(long double gigameters)
 { return Length{ 1e9 * gigameters }; }
-auto operator""_Gm(unsigned long long gigameters)
+constexpr auto operator""_Gm(unsigned long long gigameters)
 { return Length{ 1e9 * (long double)gigameters }; } 
-auto operator""_Tm(long double terameters)
+constexpr auto operator""_Tm(long double terameters)
 { return Length{ 1e12 * terameters }; }
-auto operator""_Tm(unsigned long long terameters)
+constexpr auto operator""_Tm(unsigned long long terameters)
 { return Length{ 1e12 * (long double)terameters }; } 
-auto operator""_Pm(long double petameters)
+constexpr auto operator""_Pm(long double petameters)
 { return Length{ 1e15 * petameters }; }
-auto operator""_Pm(unsigned long long petameters)
+constexpr auto operator""_Pm(unsigned long long petameters)
 { return Length{ 1e15 * (long double)petameters }; } 
-auto operator""_Em(long double exameters)
+constexpr auto operator""_Em(long double exameters)
 { return Length{ 1e18 * exameters }; }
-auto operator""_Em(unsigned long long exameters)
+constexpr auto operator""_Em(unsigned long long exameters)
 { return Length{ 1e18 * (long double)exameters }; } 
-auto operator""_Zm(long double zettameters)
+constexpr auto operator""_Zm(long double zettameters)
 { return Length{ 1e21 * zettameters }; }
-auto operator""_Zm(unsigned long long zettameters)
+constexpr auto operator""_Zm(unsigned long long zettameters)
 { return Length{ 1e21 * (long double)zettameters }; } 
-auto operator""_Ym(long double yottameters)
+constexpr auto operator""_Ym(long double yottameters)
 { return Length{ 1e24 * yottameters }; }
-auto operator""_Ym(unsigned long long yottameters)
+constexpr auto operator""_Ym(unsigned long long yottameters)
 { return Length{ 1e24 * (long double)yottameters }; } 
-auto operator""_ly(long double light_years)
+constexpr auto operator""_ly(long double light_years)
 { return Length{ light_years * seconds_per_day * meters_per_second }; }
-auto operator""_ly(unsigned long long light_years)
+constexpr auto operator""_ly(unsigned long long light_years)
 { return Length{ (long double)light_years * seconds_per_day * meters_per_second }; } 
-auto operator""_thou(long double thousands_of_an_inch )
+constexpr auto operator""_thou(long double thousands_of_an_inch )
 { return Length{ 1e-3 * thousands_of_an_inch * meters_per_inch }; }
-auto operator""_thou(unsigned long long thousands_of_an_inch)
+constexpr auto operator""_thou(unsigned long long thousands_of_an_inch)
 { return Length{ 1e-3 * (long double)thousands_of_an_inch * meters_per_inch }; } 
-auto operator""_in(long double inches)
+constexpr auto operator""_in(long double inches)
 { return Length{ inches * meters_per_inch }; }
-auto operator""_in(unsigned long long inches)
+constexpr auto operator""_in(unsigned long long inches)
 { return Length{ (long double)inches * meters_per_inch }; }
-auto operator""_ft(long double feet)
+constexpr auto operator""_ft(long double feet)
 { return Length{ feet * meters_per_foot }; }
-auto operator""_ft(unsigned long long feet)
+constexpr auto operator""_ft(unsigned long long feet)
 { return Length{ (long double)feet * meters_per_foot }; }
-auto operator""_mi(long double miles)
+constexpr auto operator""_mi(long double miles)
 { return Length{ miles * meters_per_mile }; }
-auto operator""_mi(unsigned long long miles)
+constexpr auto operator""_mi(unsigned long long miles)
 { return Length{ (long double)miles * meters_per_mile }; }
 
 enum class length_unit : size_t
@@ -628,6 +648,188 @@ constexpr long double length_value( Length length, length_unit u )
 }
 
 /**
+ * represents an area as a length squared  
+ */
+using Area = base_unit< length_unit_id * length_unit_id, long double >;
+
+// area is stored in square meter units
+constexpr Area::scalar_type square_meters( Area area )
+{ return area.get_value(); }
+
+static_assert( unit_traits< unit_product< Length, Length >>::unit_id == 
+    unit_traits< Area >::unit_id );
+
+constexpr auto operator""_km2( long double sqkm )
+{ return Area{ sqkm * 1'000'000. }; }
+constexpr auto operator""_km2( unsigned long long sqkm )
+{ return Area{ (long double)sqkm * 1'000'000 }; }
+constexpr auto operator""_m2( long double sq_meters )
+{ return Area{ sq_meters }; }
+constexpr auto operator""_m2( unsigned long long sq_meters )
+{ return Area{ (long double)sq_meters }; }
+constexpr auto operator""_cm2( long double sqcm )
+{ return Area{ sqcm * 0.01 * 0.01 }; }
+constexpr auto operator""_cm2( unsigned long long sqcm )
+{ return Area{ (long double)sqcm * 0.01 * 0.01 }; }
+constexpr auto operator""_mm2( long double sqmm )
+{ return Area{ sqmm * 0.001 * 0.001 }; }
+constexpr auto operator""_mm2( unsigned long long sqmm )
+{ return Area{ (long double)sqmm * 0.001 * 0.001 }; }
+constexpr auto operator""_sqmi( long double sqmi )
+{ return Area{ sqmi * meters_per_mile * meters_per_mile }; }
+constexpr auto operator""_sqmi( unsigned long long sqmi )
+{ return Area{ (long double)sqmi * meters_per_mile * meters_per_mile }; }
+constexpr auto operator""_acre( long double acres )
+{ return Area{ acres * meters_per_mile * meters_per_mile / 
+    acres_per_square_mile }; }
+constexpr auto operator""_acre( unsigned long long acres )
+{ return Area{ (long double)acres * meters_per_mile * meters_per_mile / 
+    acres_per_square_mile }; }
+constexpr auto operator""_sqft( long double sqft )
+{ return Area{ sqft * meters_per_foot * meters_per_foot }; }
+constexpr auto operator""_sqft( unsigned long long sqft )
+{ return Area{ (long double)sqft * meters_per_foot * meters_per_foot }; }
+constexpr auto operator""_sqin( long double sqin )
+{ return Area{ sqin * meters_per_inch * meters_per_inch }; }
+constexpr auto operator""_sqin( unsigned long long sqin )
+{ return Area{ (long double)sqin * meters_per_inch * meters_per_inch }; }
+
+enum class area_unit : size_t
+{ square_meters = 0, square_millimeters, square_centimeters, 
+    square_kilometers, square_feet, square_inches, acres, square_miles };
+
+static constexpr const char* area_unit_names[] =
+{ "m2", "mm2", "cm2", "km2", "sqft", "sqin", "acre", "sqmi" };
+
+static constexpr const char* area_unit_long_names[] = 
+{ "square meters", "square millimeters", "square centimeters", 
+    "square kilometers", "square feet", "square inches", "acres", "square miles" };
+
+constexpr long double area_value( Area area, area_unit u )
+{
+    switch( u ) {
+    case area_unit::square_meters: return square_meters( area );
+    case area_unit::square_millimeters: return 1'000'000 * square_meters( area );
+    case area_unit::square_centimeters: return 10'000 * square_meters( area );
+    case area_unit::square_kilometers: return 0.000'001 * square_meters( area );
+    case area_unit::square_feet: return square_meters( area ) / 
+        meters_per_foot / meters_per_foot;
+    case area_unit::square_inches: return square_meters( area ) / 
+        meters_per_inch / meters_per_inch;
+    case area_unit::acres: 
+        return acres_per_square_mile * 
+            area_value( area, area_unit::square_miles );
+    case area_unit::square_miles: return square_meters( area ) / 
+        meters_per_mile / meters_per_mile;
+    }
+} 
+
+/**
+ * represents a volume or length cubed
+ */
+using Volume = base_unit< length_unit_id * length_unit_id * length_unit_id,
+    long double >;
+
+// volume is stored in cubic meter units
+constexpr Volume::scalar_type cubic_meters( Volume volume )
+{ return volume.get_value(); }
+constexpr Volume::scalar_type liters( Volume volume )
+{ return volume.get_value() / cubic_meters_per_liter; }
+constexpr Volume::scalar_type milliliters( Volume volume )
+{ return volume.get_value() / cubic_meters_per_liter * 1000.; }
+
+static_assert( unit_traits< unit_product< Length, Length, Length >>::unit_id == 
+    unit_traits< Volume >::unit_id );
+
+constexpr auto operator""_km3( long double cubic_kilometers )
+{ return Volume{ cubic_kilometers * 1e9l }; }
+constexpr auto operator""_km3( unsigned long long cubic_kilometers )
+{ return Volume{ (long double)cubic_kilometers * 1e9l }; }
+constexpr auto operator""_m3( long double cubic_meters )
+{ return Volume{ cubic_meters }; }
+constexpr auto operator""_m3( unsigned long long cubic_meters )
+{ return Volume{ (long double)cubic_meters }; }
+constexpr auto operator""_cc( long double cubic_centimeters )
+{ return Volume{ cubic_centimeters * 1e-6l }; }
+constexpr auto operator""_cc( unsigned long long cubic_centimeters )
+{ return Volume{ (long double)cubic_centimeters * 1e-6l }; }
+constexpr auto operator""_mL( long double milliliters )
+{ return Volume{ milliliters * 1e-6l }; }
+constexpr auto operator""_mL( unsigned long long milliliters )
+{ return Volume{ (long double)milliliters * 1e-6l }; }
+constexpr auto operator""_L( long double liters )
+{ return Volume{ liters * 1e-3l }; }
+constexpr auto operator""_L( unsigned long long liters )
+{ return Volume{ (long double)liters * 1e-3l }; }
+constexpr auto operator""_mm3( long double cubic_millimeters )
+{ return Volume{ cubic_millimeters * 1e-9l }; }
+constexpr auto operator""_mm3( unsigned long long cubic_millimeters )
+{ return Volume{ (long double)cubic_millimeters * 1e-9l }; }
+
+constexpr auto operator""_ft3( long double cubic_feet )
+{ return Volume{ cubic_feet * meters_per_foot * meters_per_foot * 
+    meters_per_foot }; }
+constexpr auto operator""_ft3( unsigned long long cubic_feet )
+{ return Volume{ (long double)cubic_feet * meters_per_foot * meters_per_foot * 
+    meters_per_foot }; }
+constexpr auto operator""_mi3( long double cubic_miles )
+{ return Volume{ cubic_miles * meters_per_mile * meters_per_mile * 
+    meters_per_mile }; }
+constexpr auto operator""_mi3( unsigned long long cubic_miles )
+{ return Volume{ (long double)cubic_miles * meters_per_mile * meters_per_mile *
+    meters_per_mile }; }
+constexpr auto operator""_in3( long double cubic_inches )
+{ return Volume{ cubic_inches * meters_per_inch * meters_per_inch * 
+    meters_per_inch }; }
+constexpr auto operator""_in3( unsigned long long cubic_inches )
+{ return Volume{ (long double)cubic_inches * meters_per_inch * meters_per_inch * 
+    meters_per_inch}; }
+
+constexpr auto operator""_gal( long double gallons )
+{ return Volume{ gallons / cubic_inces_per_gallon * meters_per_inch * 
+    meters_per_inch * meters_per_inch }; }
+constexpr auto operator""_gal( unsigned long long gallons )
+{ return Volume{ (long double)gallons / cubic_inces_per_gallon * meters_per_inch * 
+    meters_per_inch * meters_per_inch }; }
+constexpr auto operator""_cp( long double cups )
+{ return Volume{ cups / cups_per_milliliter / 1000.l / 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_cp( unsigned long long cups )
+{ return Volume{ (long double)cups / cups_per_milliliter / 1000.l / 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_floz( long double fluid_ounces )
+{ return Volume{ fluid_ounces / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_floz( unsigned long long fluid_ounces )
+{ return Volume{ (long double)fluid_ounces / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_Tbsp( long double tablespoons )
+{ return Volume{ tablespoons / 2.0l / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_Tbsp( unsigned long long tablespoons )
+{ return Volume{ (long double)tablespoons / 2.0l / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_tsp( long double tablespoons )
+{ return Volume{ tablespoons / 6.0l / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+constexpr auto operator""_tsp( unsigned long long tablespoons )
+{ return Volume{ (long double)tablespoons / 6.0l / fluid_ounces_per_cup / cups_per_milliliter / 1000.l * 
+    cubic_meters_per_liter }; }
+
+enum class volume_unit : size_t 
+{ cubic_meters = 0, cubic_kilometers, cubic_centimeters, liters, cubic_millimeters, 
+    cubic_miles, cubic_feet, cubic_inches, gallons, cups, us_fluid_ounces, 
+    tablespoons, teaspoons };
+
+static constexpr const char* volume_unit_names[] = 
+{ "m3", "km3", "mL", "L", "mm3", "mi3", "ft3", "in3", "gal", "c", "floz", "Tbsp", "tsp" };
+
+static constexpr const char* volume_unit_long_names[] = 
+{ "cubic_meters", "cubic_kilometers", "cubic_centimeters", "liters", "cubic_millimeters", 
+    "cubic_miles", "cubic_feet", "cubic_inches", "gallons", "cups", "us_fluid_ounces",
+    "tablespoons", "teaspoons" };
+
+/**
  * represents an amount of time in seconds
  */
 // TODO: interop with std::duration
@@ -637,47 +839,47 @@ Time::scalar_type seconds( Time time )
 { return time.get_value(); }
 
 // time measurement units
-auto operator""_s( long double seconds )
+constexpr auto operator""_s( long double seconds )
 { return Time{ seconds }; }
-auto operator""_s( unsigned long long seconds )
+constexpr auto operator""_s( unsigned long long seconds )
 { return Time{ (long double)seconds }; }
-auto operator""_ps( long double picoseconds )
+constexpr auto operator""_ps( long double picoseconds )
 { return Time{ 1e-12 * picoseconds }; }
-auto operator""_ps( unsigned long long picoseconds )
+constexpr auto operator""_ps( unsigned long long picoseconds )
 { return Time{ 1e12 * (long double)picoseconds }; }
-auto operator""_ns( long double nanoseconds )
+constexpr auto operator""_ns( long double nanoseconds )
 { return Time{ 1e-9 * nanoseconds }; }
-auto operator""_ns( unsigned long long nanoseconds )
+constexpr auto operator""_ns( unsigned long long nanoseconds )
 { return Time{ 1e-9 * (long double)nanoseconds }; }
 #ifndef NO_UNICODE_COMPILER
-auto operator""_μs( long double microseconds )
+constexpr auto operator""_μs( long double microseconds )
 { return Time{ 1e-6 * microseconds }; }
-auto operator""_μs( unsigned long long microseconds )
+constexpr auto operator""_μs( unsigned long long microseconds )
 { return Time{ 1e-6 * (long double)microseconds }; }
 #endif
-auto operator""_ms( long double milliseconds )
+constexpr auto operator""_ms( long double milliseconds )
 { return Time{ 1e-3 * milliseconds }; }
-auto operator""_ms( unsigned long long milliseconds )
+constexpr auto operator""_ms( unsigned long long milliseconds )
 { return Time{ 1e-3 * (long double)milliseconds }; }
-auto operator""_min( long double minutes )
+constexpr auto operator""_min( long double minutes )
 { return Time{ minutes * seconds_per_minute }; }
-auto operator""_min( unsigned long long minutes )
+constexpr auto operator""_min( unsigned long long minutes )
 { return Time{ (long double)minutes * seconds_per_minute }; }
-auto operator""_h( long double hours )
+constexpr auto operator""_h( long double hours )
 { return Time{ hours * seconds_per_hour }; }
-auto operator""_h( unsigned long long hours )
+constexpr auto operator""_h( unsigned long long hours )
 { return Time{ (long double)hours * seconds_per_hour }; }
-auto operator""_d( long double days )
+constexpr auto operator""_d( long double days )
 { return Time{ days * seconds_per_day }; }
-auto operator""_d( unsigned long long days )
+constexpr auto operator""_d( unsigned long long days )
 { return Time{ (long double)days * seconds_per_day }; }
-auto operator""_wk( long double weeks )
+constexpr auto operator""_wk( long double weeks )
 { return Time{ weeks * seconds_per_week }; }
-auto operator""_wk( unsigned long long weeks )
+constexpr auto operator""_wk( unsigned long long weeks )
 { return Time{ (long double)weeks * seconds_per_week }; }
-auto operator""_y( long double years )
+constexpr auto operator""_y( long double years )
 { return Time{ years * seconds_per_year }; }
-auto operator""_y( unsigned long long years )
+constexpr auto operator""_y( unsigned long long years )
 { return Time{ (long double)years * seconds_per_year }; }
 
 enum class time_unit : size_t
@@ -708,6 +910,53 @@ constexpr long double time_value( Time time, time_unit u )
 }
 
 /**
+ * represents a velocity or speed in meters per second
+ */
+using Velocity = base_unit< length_unit_id / time_unit_id, long double >;
+
+constexpr auto operator""_kmph( long double kilometers_per_hour )
+{ return Velocity{ kilometers_per_hour * 1000. /* m per km */ / 3600. /* seconds per hour */ }; }
+constexpr auto operator""_kmph( unsigned long long kilometers_per_hour )
+{ return Velocity{ (long double)kilometers_per_hour * 1000. /* m per km */ / 3600. /* seconds per hour */ }; }
+constexpr auto operator""_mph( long double miles_per_hour )
+{ return Velocity{ miles_per_hour * meters_per_mile / 3600. /* seconds per hour */ }; }
+constexpr auto operator""_mph( unsigned long long miles_per_hour )
+{ return Velocity{ (long double)miles_per_hour * meters_per_mile / 3600. /* seconds per hour */ }; }
+constexpr auto operator""_ftps( long double feet_per_second )
+{ return Velocity{ feet_per_second * meters_per_foot }; }
+constexpr auto operator""_ftps( unsigned long long feet_per_second )
+{ return Velocity{ (long double)feet_per_second * meters_per_foot }; }
+
+
+/**
+ * represents an electric current in Amperes
+ */
+using Current = base_unit< current_unit_id, long double >;
+
+constexpr auto operator""_A ( long double amperes )
+{ return Current{ amperes }; }
+constexpr auto operator""_A ( unsigned long long amperes )
+{ return Current{ (long double)amperes }; }
+constexpr auto operator""_mA ( long double milliamperes )
+{ return Current{ milliamperes * 1e-3}; }
+constexpr auto operator""_mA ( unsigned long long milliamperes )
+{ return Current{ (long double)milliamperes * 1e-3 }; }
+constexpr auto operator""_kA ( long double kiloamperes )
+{ return Current{ kiloamperes * 1e3 }; }
+constexpr auto operator""_kA ( unsigned long long kiloamperes )
+{ return Current{ (long double)kiloamperes * 1e3 }; }
+
+/**
+ * represents a unit of electric charge in coulombs ( amp seconds )
+ */
+using Charge = base_unit< current_unit_id * time_unit_id, long double >;
+
+constexpr auto operator""_C ( long double coulombs )
+{ return Charge{ coulombs }; }
+constexpr auto operator""_C ( unsigned long long coulombs )
+{ return Charge{ (long double)coulombs }; }
+
+/**
  * represents a mass in kilograms
  */
 using Mass = base_unit< mass_unit_id, long double >;
@@ -715,75 +964,75 @@ using Mass = base_unit< mass_unit_id, long double >;
 Mass::scalar_type kilograms( Mass mass )
 { return mass.get_value(); }
 
-auto operator""_kg( long double kilograms )
+constexpr auto operator""_kg( long double kilograms )
 { return Mass{ kilograms }; }
-auto operator""_kg( unsigned long long kilograms )
+constexpr auto operator""_kg( unsigned long long kilograms )
 { return Mass{ (long double)kilograms }; }
-auto operator""_pg( long double picograms )
+constexpr auto operator""_pg( long double picograms )
 { return Mass{ 1e-15 * picograms }; }
-auto operator""_pg( unsigned long long picograms )
+constexpr auto operator""_pg( unsigned long long picograms )
 { return Mass{ 1e-15 * (long double)picograms }; }
-auto operator""_ng( long double nanograms )
+constexpr auto operator""_ng( long double nanograms )
 { return Mass{ 1e-12 * nanograms }; }
-auto operator""_ng( unsigned long long nanograms )
+constexpr auto operator""_ng( unsigned long long nanograms )
 { return Mass{ 1e-12 * (long double)nanograms }; }
 #ifndef NO_UNICODE_COMPILER
-auto operator""_μg( long double micrograms )
+constexpr auto operator""_μg( long double micrograms )
 { return Mass{ 1e-9 * micrograms }; }
-auto operator""_μg( unsigned long long micrograms )
+constexpr auto operator""_μg( unsigned long long micrograms )
 { return Mass{ 1e-9 * (long double)micrograms }; }
 #endif
-auto operator""_mg( long double milligrams )
+constexpr auto operator""_mg( long double milligrams )
 { return Mass{ 1e-6 * milligrams }; }
-auto operator""_mg( unsigned long long milligrams )
+constexpr auto operator""_mg( unsigned long long milligrams )
 { return Mass{ 1e-6 * (long double)milligrams }; }
-auto operator""_g( long double grams )
+constexpr auto operator""_g( long double grams )
 { return Mass{ 1e-3 * grams }; }
-auto operator""_g( unsigned long long grams )
+constexpr auto operator""_g( unsigned long long grams )
 { return Mass{ 1e-3 * (long double)grams }; }
-auto operator""_Mg( long double megagrams )
+constexpr auto operator""_Mg( long double megagrams )
 { return Mass{ 1e3 * megagrams }; }
-auto operator""_Mg( unsigned long long megagrams )
+constexpr auto operator""_Mg( unsigned long long megagrams )
 { return Mass{ 1e3 * (long double)megagrams }; }
-auto operator""_Gg( long double gigagrams )
+constexpr auto operator""_Gg( long double gigagrams )
 { return Mass{ 1e6 * gigagrams }; }
-auto operator""_Gg( unsigned long long gigagrams )
+constexpr auto operator""_Gg( unsigned long long gigagrams )
 { return Mass{ 1e6 * (long double)gigagrams }; }
-auto operator""_Tg( long double teragrams )
+constexpr auto operator""_Tg( long double teragrams )
 { return Mass{ 1e9 * teragrams }; }
-auto operator""_Tg( unsigned long long teragrams )
+constexpr auto operator""_Tg( unsigned long long teragrams )
 { return Mass{ 1e9 * (long double)teragrams }; }
-auto operator""_Pg( long double petagrams )
+constexpr auto operator""_Pg( long double petagrams )
 { return Mass{ 1e12 * petagrams }; }
-auto operator""_Pg( unsigned long long petagrams )
+constexpr auto operator""_Pg( unsigned long long petagrams )
 { return Mass{ 1e12 * (long double)petagrams }; }
-auto operator""_Eg( long double exagrams )
+constexpr auto operator""_Eg( long double exagrams )
 { return Mass{ 1e15 * exagrams }; }
-auto operator""_Eg( unsigned long long exagrams )
+constexpr auto operator""_Eg( unsigned long long exagrams )
 { return Mass{ 1e15 * (long double)exagrams }; }
-auto operator""_Zg( long double zettagrams )
+constexpr auto operator""_Zg( long double zettagrams )
 { return Mass{ 1e18 * zettagrams }; }
-auto operator""_Zg( unsigned long long zettagrams )
+constexpr auto operator""_Zg( unsigned long long zettagrams )
 { return Mass{ 1e18 * (long double)zettagrams }; }
-auto operator""_Yg( long double yottagrams )
+constexpr auto operator""_Yg( long double yottagrams )
 { return Mass{ 1e21 * yottagrams }; }
-auto operator""_Yg( unsigned long long yottagrams )
+constexpr auto operator""_Yg( unsigned long long yottagrams )
 { return Mass{ 1e21 * (long double)yottagrams }; }
-auto operator""_oz( long double ounces )
+constexpr auto operator""_oz( long double ounces )
 { return Mass{ ounces * kilograms_per_ounce }; }
-auto operator""_oz( unsigned long long ounces )
+constexpr auto operator""_oz( unsigned long long ounces )
 { return Mass{ (long double)ounces * kilograms_per_ounce }; }
-auto operator""_lb( long double pounds )
+constexpr auto operator""_lb( long double pounds )
 { return Mass{ pounds * kilograms_per_pound}; }
-auto operator""_lb( unsigned long long pounds )
+constexpr auto operator""_lb( unsigned long long pounds )
 { return Mass{ (long double)pounds * kilograms_per_pound }; }
-auto operator""_long_ton( long double long_tons )
+constexpr auto operator""_long_ton( long double long_tons )
 { return Mass{ long_tons * kilograms_per_long_ton }; }
-auto operator""_long_ton( unsigned long long long_tons )
+constexpr auto operator""_long_ton( unsigned long long long_tons )
 { return Mass{ (long double)long_tons * kilograms_per_long_ton }; }
-auto operator""_ton( long double tons )
+constexpr auto operator""_ton( long double tons )
 { return Mass{ tons * kilograms_per_ton }; }
-auto operator""_ton( unsigned long long tons )
+constexpr auto operator""_ton( unsigned long long tons )
 { return Mass{ (long double)tons * kilograms_per_ton }; }
 
 enum class mass_unit : size_t 
@@ -824,25 +1073,265 @@ constexpr long double mass_value( Mass mass, mass_unit u )
     }
 }
 
+/**
+ * Acceleration in meters per second squared
+ */
+using Acceleration = base_unit< length_unit_id / time_unit_id / time_unit_id, long double >;
+
+constexpr auto operator""_mps2( long double meters_per_second_squared )
+{ return Acceleration{ meters_per_second_squared }; }
+constexpr auto operator""_mps2( unsigned long long meters_per_second_squared )
+{ return Acceleration{ (long double)meters_per_second_squared }; }
+
+static constexpr Acceleration standard_gravity = Acceleration
+{ standard_acceleration_of_gravity /* m/s^2 */ };
+
+/**
+ * a unit of force in kilogram meters per second squared
+ */
+using Force = base_unit< mass_unit_id * Acceleration::unit_id, long double >;
+
+constexpr auto operator""_N( long double newtons )
+{ return Force{ newtons }; }
+constexpr auto operator""_N( unsigned long long newtons )
+{ return Force{ (long double)newtons }; }
+constexpr auto operator""_lbf( long double pounds_force )
+{ return Force{ pounds_force * kilograms_per_pound * standard_acceleration_of_gravity }; }
+constexpr auto operator""_lbf( unsigned long long pounds_force )
+{ return Force{ (long double)pounds_force * kilograms_per_pound * standard_acceleration_of_gravity }; }
+
+/**
+ *  a unit of energy in newton meters
+ */
+using Energy = base_unit< Force::unit_id * Length::unit_id, long double >;
+
+constexpr auto operator""_J( long double joules )
+{ return Energy{ joules }; }
+constexpr auto operator""_J( unsigned long long joules )
+{ return Energy{ (long double)joules }; }
+
+/** 
+ * a unit of power in watts
+ */
+using Power = base_unit< Energy::unit_id / Time::unit_id, long double >;
+
+constexpr auto operator""_W( long double watts )
+{ return Power{ watts }; }
+constexpr auto operator""_W( unsigned long long watts )
+{ return Power{ (long double)watts }; }
+
+/**
+ * electric potential in volts
+ */
+using ElectricPotential = base_unit< Power::unit_id / Current::unit_id, long double >;
+
+constexpr auto operator""_V( long double volts )
+{ return ElectricPotential{ volts }; }
+constexpr auto operator""_V( unsigned long long volts )
+{ return ElectricPotential{ (long double)volts }; }
+
+/**
+ * electrical resistance ohms
+ */
+using Resistance = base_unit< ElectricPotential::unit_id / Current::unit_id, long double >;
+
+constexpr auto operator""_Ω( long double ohms )
+{ return Resistance{ ohms }; }
+constexpr auto operator""_Ω( unsigned long long ohms )
+{ return Resistance{ (long double)ohms }; }
+
+/**
+ * electrical inductance henries
+ */
+using Inductance = base_unit< Resistance::unit_id * Time::unit_id, long double >;
+
+constexpr auto operator""_H( long double henries )
+{ return Inductance{ henries }; }
+constexpr auto operator""_H( unsigned long long henries )
+{ return Inductance{ (long double)henries }; }
+constexpr auto operator""_mH( long double millihenries )
+{ return Inductance{ millihenries * 1e-3 }; }
+constexpr auto operator""_mH( unsigned long long millihenries )
+{ return Inductance{ (long double)millihenries * 1e-3 }; }
+
+/**
+ * electrical capacitance in farads
+ */
+using Capacitance = base_unit< Charge::unit_id / ElectricPotential::unit_id, long double >;
+
+constexpr auto operator""_F( long double farads )
+{ return Capacitance{ farads }; }
+constexpr auto operator""_F( unsigned long long farads )
+{ return Capacitance{ (long double)farads }; }
+constexpr auto operator""_pF( long double picofarads )
+{ return Capacitance{ picofarads * 1e-12 }; }
+constexpr auto operator""_pF( unsigned long long picofarads )
+{ return Capacitance{ (long double)picofarads * 1e-12 }; }
+constexpr auto operator""_nF( long double nanofarads )
+{ return Capacitance{ nanofarads * 1e-9 }; }
+constexpr auto operator""_nF( unsigned long long nanofarads )
+{ return Capacitance{ (long double)nanofarads * 1e-9 }; }
+constexpr auto operator""_µF( long double microfarads )
+{ return Capacitance{ microfarads * 1e-6 }; }
+constexpr auto operator""_µF( unsigned long long microfarads )
+{ return Capacitance{ (long double)microfarads * 1e-6 }; }
+constexpr auto operator""_mF( long double millifarads )
+{ return Capacitance{ millifarads * 1e-3 }; }
+constexpr auto operator""_mF( unsigned long long millifarads )
+{ return Capacitance{ (long double)millifarads * 1e-3 }; }
+
+/**
+ * magnetic flux in webers
+ */
+using MagneticFlux = base_unit< ElectricPotential::unit_id * Time::unit_id, long double >;
+
+constexpr auto operator""_Wb( long double webers )
+{ return MagneticFlux{ webers }; }
+constexpr auto operator""_Wb( unsigned long long webers )
+{ return MagneticFlux{ (long double)webers }; }
+
+/**
+ * magnetic flux density in teslas
+ */
+using MagneticFluxDensity = base_unit< MagneticFlux::unit_id / Area::unit_id, long double >;
+
+constexpr auto operator""_T( long double teslas )
+{ return MagneticFluxDensity{ teslas }; }
+constexpr auto operator""_T( unsigned long long teslas )
+{ return MagneticFluxDensity{ (long double)teslas }; }
+
+/**
+ * frequency in hertz
+ */
+using Frequency = base_unit< Scalar::unit_id / Time::unit_id, long double >;
+
+constexpr auto operator""_Hz( long double hertz )
+{ return Frequency{ hertz }; }
+constexpr auto operator""_Hz( unsigned long long hertz )
+{ return Frequency{ (long double)hertz }; }
+constexpr auto operator""_THz( long double terahertz )
+{ return Frequency{ terahertz * 1e-12 }; }
+constexpr auto operator""_THz( unsigned long long terahertz )
+{ return Frequency{ (long double)terahertz * 1e-12 }; }
+constexpr auto operator""_GHz( long double gigahertz )
+{ return Frequency{ gigahertz * 1e-9 }; }
+constexpr auto operator""_GHz( unsigned long long gigahertz )
+{ return Frequency{ (long double)gigahertz * 1e-9 }; }
+constexpr auto operator""_MHz( long double megahertz )
+{ return Frequency{ megahertz * 1e-6 }; }
+constexpr auto operator""_MHz( unsigned long long megahertz )
+{ return Frequency{ (long double)megahertz * 1e-6 }; }
+constexpr auto operator""_kHz( long double kilohertz )
+{ return Frequency{ kilohertz * 1e-3 }; }
+constexpr auto operator""_kHz( unsigned long long kilohertz )
+{ return Frequency{ (long double)kilohertz * 1e-3 }; }
+constexpr auto operator""_mHz( long double millihertz )
+{ return Frequency{ millihertz * 1e3 }; }
+constexpr auto operator""_mHz( unsigned long long millihertz )
+{ return Frequency{ (long double)millihertz * 1e3 }; }
+constexpr auto operator""_µHz( long double microhertz )
+{ return Frequency{ microhertz * 1e6 }; }
+constexpr auto operator""_µHz( unsigned long long microhertz )
+{ return Frequency{ (long double)microhertz * 1e6 }; }
+constexpr auto operator""_nHz( long double nanohertz )
+{ return Frequency{ nanohertz * 1e9 }; }
+constexpr auto operator""_nHz( unsigned long long nanohertz )
+{ return Frequency{ (long double)nanohertz * 1e9 }; }
+constexpr auto operator""_pHz( long double picohertz )
+{ return Frequency{ picohertz * 1e12 }; }
+constexpr auto operator""_pHz( unsigned long long picohertz )
+{ return Frequency{ (long double)picohertz * 1e12 }; }
+
+
+/**
+ * Luminous intensity in candelas
+ */
+using LuminousIntensity = base_unit< luminous_intensity_unit_id, long double >;
+
+constexpr auto operator""_cd( long double candelas )
+{ return LuminousIntensity{ candelas }; }
+constexpr auto operator""_cd( unsigned long long candelas )
+{ return LuminousIntensity{ (long double)candelas }; }
+
+/** 
+ * pressure in pascals, ie: newtons per meter squared 
+ */
+using Pressure = base_unit< Force::unit_id / Area::unit_id, long double >;
+
+constexpr auto operator""_Pa( long double pascals )
+{ return Pressure{ pascals }; }
+constexpr auto operator""_Pa( unsigned long long pascals )
+{ return Pressure{ (long double)pascals }; }
+constexpr auto operator""_atm( long double atmospheres )
+{ return Pressure{ atmospheres / atmospheres_per_pascal }; }
+constexpr auto operator""_atm( unsigned long long atmospheres )
+{ return Pressure{ (long double)atmospheres / atmospheres_per_pascal }; }
+constexpr auto operator""_bar( long double bars )
+{ return Pressure{ bars * 1e5 }; }
+constexpr auto operator""_bar( unsigned long long bars )
+{ return Pressure{ (long double)bars * 1e5 }; }
+constexpr auto operator""_mbar( long double millibars )
+{ return Pressure{ millibars * 1e2 }; }
+constexpr auto operator""_mbar( unsigned long long millibars )
+{ return Pressure{ (long double)millibars * 1e2 }; }
+constexpr auto operator""_psi( long double pounds_per_square_inch )
+{ return Pressure{ pounds_per_square_inch * kilograms_per_pound * 
+    standard_acceleration_of_gravity / meters_per_inch / meters_per_inch }; }
+constexpr auto operator""_psi( unsigned long long pounds_per_square_inch )
+{ return Pressure{ (long double)pounds_per_square_inch * kilograms_per_pound * 
+    standard_acceleration_of_gravity / meters_per_inch / meters_per_inch }; }
+constexpr auto operator""_mmHg( long double millimeters_of_mercury )
+{ return Pressure{ millimeters_of_mercury / density_of_mercury / 
+    standard_acceleration_of_gravity * 1e3 }; }
+constexpr auto operator""_mmHg( unsigned long long millimeters_of_mercury )
+{ return Pressure{ (long double)millimeters_of_mercury / density_of_mercury / 
+    standard_acceleration_of_gravity * 1e3 }; }
+
+/**
+ * Thermodynamic temperature in Kelvin
+ */
+using Temperature = base_unit< temperature_unit_id, long double >;
+
+constexpr auto operator""_K( long double kelvin )
+{ return Temperature{ kelvin }; }
+constexpr auto operator""_K( unsigned long long kelvin )
+{ return Temperature{ (long double)kelvin }; }
+constexpr auto operator""_degC( long double celcius )
+{ return Temperature{ celcius + zero_celsius_in_kelvin }; }
+constexpr auto operator""_degC( unsigned long long celcius )
+{ return Temperature{ (long double)celcius + zero_celsius_in_kelvin }; }
+constexpr auto operator""_degF( long double fahrenheit )
+{ return Temperature{ (fahrenheit - fahrenheit_at_zero_celsius ) * celsius_per_fahrenheit + zero_celsius_in_kelvin }; }
+constexpr auto operator""_degF( unsigned long long fahrenheit )
+{ return Temperature{ ((long double)fahrenheit - fahrenheit_at_zero_celsius ) * celsius_per_fahrenheit + zero_celsius_in_kelvin }; }
+
+
 enum class scalar_unit : size_t
-{ none = 0, percent, radians, degrees };
+{ none = 0, percent, radians, degrees, arcseconds, steradian, square_degrees, square_arcseconds };
 
 static constexpr string scalar_unit_names[] =
-{ "", "%", "rad", "deg" };
+{ "", "%", "rad", "deg", "asec", "sr", "deg2", "asec2" };
 
 static constexpr string scalar_unit_long_names[] =
-{ "", "percent", "radians", "degrees" };
+{ "", "percent", "radians", "degrees", "arcseconds", "steradian", "square degrees", "arcseconds2" };
 
 constexpr long double scalar_value( Scalar scalar, scalar_unit u )
 {
     switch( u ) {
     case scalar_unit::none: 
     case scalar_unit::radians:
+    case scalar_unit::steradian:
         return scalar.get_value();
     case scalar_unit::percent: 
         return 100. * scalar.get_value();
     case scalar_unit::degrees:
         return scalar.get_value() / radians_per_degree;
+    case scalar_unit::arcseconds:
+        return scalar.get_value() / radians_per_degree * 3600.;
+    case scalar_unit::square_degrees:
+        return scalar.get_value() / steradians_per_square_degree;
+    case scalar_unit::square_arcseconds:
+        return scalar.get_value() / steradians_per_square_degree * 3600. * 3600.;
     }
 }
 
