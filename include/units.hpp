@@ -49,7 +49,7 @@ constexpr long double cups_per_milliliter = cups_per_gallon /
     cubic_inces_per_gallon / meters_per_inch / meters_per_inch / meters_per_inch *
     cubic_meters_per_liter / 1000.;
 // static_assert( cups_per_milliliter == 1.l/236.58823l );
-constexpr long double meters_per_second = 299'792'458; // c
+constexpr long double light_speed = 299'792'458; // c
 constexpr long double seconds_per_minute = 60.;
 constexpr long double seconds_per_hour = seconds_per_minute * 60.;
 constexpr long double seconds_per_day = seconds_per_hour * 24.;
@@ -587,9 +587,9 @@ constexpr auto operator""_Ym(long double yottameters)
 constexpr auto operator""_Ym(unsigned long long yottameters)
 { return Length{ 1e24 * (long double)yottameters }; } 
 constexpr auto operator""_ly(long double light_years)
-{ return Length{ light_years * seconds_per_day * meters_per_second }; }
+{ return Length{ light_years * seconds_per_day * light_speed }; }
 constexpr auto operator""_ly(unsigned long long light_years)
-{ return Length{ (long double)light_years * seconds_per_day * meters_per_second }; } 
+{ return Length{ (long double)light_years * seconds_per_day * light_speed }; } 
 constexpr auto operator""_thou(long double thousands_of_an_inch )
 { return Length{ 1e-3 * thousands_of_an_inch * meters_per_inch }; }
 constexpr auto operator""_thou(unsigned long long thousands_of_an_inch)
@@ -639,7 +639,7 @@ constexpr long double length_value( Length length, length_unit u )
     case length_unit::zettameters: return 1e-21 * meters( length );
     case length_unit::yottameters: return 1e-24 * meters( length );
     case length_unit::light_years: 
-        return meters( length ) / meters_per_second / seconds_per_year;
+        return meters( length ) / light_speed / seconds_per_year;
     case length_unit::thou: return 1e-3 * meters( length ) / meters_per_inch;
     case length_unit::inches: return meters( length ) / meters_per_inch;
     case length_unit::feet: return meters( length ) / meters_per_foot;
@@ -914,13 +914,20 @@ constexpr long double time_value( Time time, time_unit u )
  */
 using Velocity = base_unit< length_unit_id / time_unit_id, long double >;
 
+constexpr long double meters_per_second( Velocity const& v )
+{ return v.get_value(); }
+
+constexpr auto operator""_mps( long double meters_per_second )
+{ return Velocity{ meters_per_second }; }
+constexpr auto operator""_mps( unsigned long long meters_per_second )
+{ return Velocity{ (long double) meters_per_second }; }
 constexpr auto operator""_kmph( long double kilometers_per_hour )
 { return Velocity{ kilometers_per_hour * 1000. /* m per km */ / 3600. /* seconds per hour */ }; }
 constexpr auto operator""_kmph( unsigned long long kilometers_per_hour )
 { return Velocity{ (long double)kilometers_per_hour * 1000. /* m per km */ / 3600. /* seconds per hour */ }; }
-constexpr auto operator""_mph( long double miles_per_hour )
+constexpr auto operator""_miph( long double miles_per_hour )
 { return Velocity{ miles_per_hour * meters_per_mile / 3600. /* seconds per hour */ }; }
-constexpr auto operator""_mph( unsigned long long miles_per_hour )
+constexpr auto operator""_miph( unsigned long long miles_per_hour )
 { return Velocity{ (long double)miles_per_hour * meters_per_mile / 3600. /* seconds per hour */ }; }
 constexpr auto operator""_ftps( long double feet_per_second )
 { return Velocity{ feet_per_second * meters_per_foot }; }
