@@ -1346,6 +1346,16 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
 
 // formating of units
 namespace std {
+
+// overrides for std function objects
+template< units::unit_id_type Id, typename T >
+struct multiplies< units::base_unit< Id, T >>
+{
+    template< typename U >
+    constexpr auto operator()( units::base_unit< Id, T > const& left, 
+        U const& right ) const
+    { return left * right; }
+};
     
 template<>
 struct formatter< units::Boolean, char >
@@ -1664,6 +1674,9 @@ struct formatter< units::Mass, char > : formatter< long double, char >
 
 
 // TODO: format unit products and quotients
+
+
+
 
 } // namespace std
 

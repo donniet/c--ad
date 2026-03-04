@@ -28,41 +28,40 @@ using std::any;
 using std::vector;
 using std::map;
 
-/**
- * All non-staic expressions inherit from this class
- */
-struct Expression
-{ };
+
+template< typename T >
+concept tuple_like = requires
+{ tuple_size_v< T >; };
+
+template< size_t I, tuple_like T >
+struct has_element
+{ static constexpr bool value = isless( I, tuple_size_v< T > ); };
+
+template< size_t I, tuple_like T >
+using has_element_v = has_element< I, T >::value;
+
+template< typename T >
+struct Expression;
+
+template< typename T >
+auto eval( Expression< T > const& expr, variable_values const& values );
 
 /**
- * traits of expressions
+ * 
  */
 template< typename T >
-struct expression_traits;
+struct Expression
+{ 
+    using value_type = T;
+    constexpr value_type const& get_value() const
+    { return _value; }
 
-template< unit U >
-struct StaticExpression : Expression
-{  
-    using result_type = U;
+    Expression( value_type const& expr ): _value{ expr } { }
 
-    constexpr operator result_type() const
-    { return value; }
-    constexpr StaticExpression() = default;
-    constexpr StaticExpression( StaticExpression const& ) = default;
-    constexpr StaticExpression( result_type value ) : value{ value } { }
-
-    result_type value;
+    value_type _value;
 };
 
-template< unit U >
-StaticExpression< U > static_expr( U value )
-{ return { value }; }
 
-StaticExpression< Scalar > static_expr( long double value )
-{ return { scalar( value ) }; }
-
-StaticExpression< Cardinal > static_expr( unsigned long long value )
-{ return { cardinal( value ) }; }
 
 /**
  * trait to mark a type as an expression
@@ -82,62 +81,15 @@ constexpr bool is_expression_v = is_expression< T >::value;
 template< typename T >
 concept expression = is_expression_v< T >;
 
-template< typename... Ts >
-struct DependsOn : Expression
-{ 
-    using dependent_types = tuple< Ts... >;
-    static constexpr size_t dependents_size = sizeof...( Ts );
-    dependent_types exprs;
-
-    constexpr auto first() const 
-    { return get< 0 >( exprs ); }
-
-    constexpr auto rest() const 
-    { return rest_as< tuple >(); }
-
-    template< template< typename... > class Expr >
-    constexpr auto rest_as() const
-    { return rest_as_helper< Expr >( make_seq< dependents_size - 1 >{} ); }
-
-    constexpr auto last() const
-    { return get< dependents_size - 1 >( exprs ); }
-
-    constexpr auto prior() const
-    { return prior_as< tuple >(); }
-
-    template< template< typename... > class Expr >
-    constexpr auto prior_as() const
-    { return rest_as_helper< Expr >( make_seq< dependents_size - 1 >{} ); }
-
-    template< template< typename... > class Expr, size_t... Is >
-    constexpr Expr< tuple_element_t< 1 + Is, dependent_types >... > 
-    rest_as_helper( seq< Is... > )
-    { return { get< 1 + Is >( exprs )... }; }
-
-    template< template< typename... > class Expr, size_t... Is >
-    constexpr Expr< tuple_element_t< Is - 1, dependent_types >... > 
-    prior_as_helper( seq< Is... > )
-    { return { get< Is - 1 >( exprs )... }; }
-
-    constexpr DependsOn() = default;
-    constexpr DependsOn( DependsOn const& ) = default;
-    constexpr DependsOn( Ts... ts ) : exprs{ ts... } { }
-};
-
-template< typename DepTuple >
-struct DependsFromTuple;
-
-template< typename... Ts >
-struct DependsFromTuple< tuple< Ts... >>
-{ using type = DependsOn< Ts... >; };
-
+/**
+ * traits of expressions
+ */
 template< typename T >
-struct expression_traits< StaticExpression< T >>
-{
-    using result_type = T;
-    using dependent_types = tuple<>;
-};
+struct expression_traits;
 
+/**
+ * an expression generally inherits from Expression
+ */
 template< typename T >
 requires ( is_base_of_v< Expression, T > )
 struct expression_traits< T >
@@ -146,6 +98,9 @@ struct expression_traits< T >
     using dependent_types = T::dependent_types;
 };
 
+/**
+ * a tuple of expressions is also an expression
+ */
 template< expression... Ts >
 struct expression_traits< tuple< Ts... >>
 { 
@@ -154,44 +109,83 @@ struct expression_traits< tuple< Ts... >>
     using dependent_types = tuple< Ts... >;
 };
 
-template< size_t I, typename TupleT >
-tuple_element_t< I, TupleT > get_element( TupleT const& tup )
-{ return get< I >( tup ); }
+/**
+ * get dependent
+ */
+template< size_t I, typename ExprT >
+struct dependent;
+
+template< size_t I, typename... Ts >
+struct dependent< I, tuple< Ts... >>
+{
+    using type = tuple_element_t< I, tuple< Ts... >>;
+
+    static constexpr type value( tuple< Ts... > const& expr ) 
+    { return get< I >( expr ); }
+};
+
+template< size_t I, typename ExprT >
+requires is_base_of_v< Expression, ExprT >
+struct dependent< I, ExprT >
+{
+    using dependent_types = expression_traits< ExprT >::dependent_types;
+    using type = tuple_element_t< I, dependent_types >;
+
+    static constexpr type value( ExprT const& expr ) 
+    { return expr.template get_dependent< I >(); }
+};
+
+template< size_t I, typename ExprT >
+using dependent_t = dependent< I, ExprT >::type;
+
+template< size_t I, typename ExprT >
+static constexpr dependent_t< I, ExprT > get_dependent( ExprT x )
+{ return dependent< I, ExprT >::value( x ); }
+
 
 /**
  * Trait to determine the result of an expression.
  */
-template< typename T >
+template< typename T, typename... Ts >
 struct Result
 { using type = T; };
 
-template< typename T >
+template< typename T, typename... Ts >
 requires( expression< T > )
-struct Result< T >
+struct Result< T, Ts... >
 { using type = expression_traits< T >::result_type; };
 
-template< typename T >
-using result_t = Result< T >::type;
+/**
+ * the result_type of the eval of the first of Ts
+ */
+template< typename... Ts >
+using result_t = Result< Ts... >::type;
 
 /**
- * get an element from a type that inherits from DependsOn<...>
+ * trait to determine if a given expression has dependents
  */
-template< size_t I, typename Op >
-struct dependent
-{
-    using dependent_types = expression_traits< Op >::dependent_types;
-    using type = tuple_element_t< I, dependent_types >;
-    static constexpr type getter( Op x )
-    { return get< I >( static_cast< DependsFromTuple< 
-        dependent_types >::type >( x ).exprs ); }
+template< expression ExprT >
+struct DependentsSize
+{ static constexpr size_t value = 
+    tuple_size_v< typename expression_traits< ExprT >::dependent_types >; };
+
+template< expression ExprT >
+using dependents_size_v = DependentsSize< ExprT >::value;
+
+/**
+ * Expressions whose value may change
+ * 
+ * @tparam U is the type of this variable
+ * @tparam I is an index to uniquely identify this variable
+ * 
+ * TODO: implement variables with more than a single index (and maybe no indices?)
+ */
+template< typename U, size_t I >
+struct Variable : Expression
+{ 
+    using result_type = U; 
+    using dependent_types = tuple<>;
 };
-
-template< size_t I, typename Op >
-using dependent_t = dependent< I, Op >::type;
-
-template< size_t I, typename Op >
-static constexpr dependent_t< I, Op > get_dependent( Op x )
-{ return dependent< I, Op >::getter( x ); }
 
 /**
  * structure to hold values of variables
@@ -210,47 +204,190 @@ struct variable_values
 };
 
 /**
- * invokes an expression and returns the result_type
+ * prototype for evaluating expressions
  */
-template< typename T >
-struct Invoker;
+template< typename ExprT >
+result_t< ExprT > eval( ExprT const& expr, variable_values const& values );
 
-// forward decl
-template< typename T, size_t I >
-struct Variable;
+template< typename TupleT, size_t... Is >
+auto eval_tuple_helper( TupleT const& tup, variable_values const& values,
+    seq< Is... > )
+{ return make_tuple( eval( get< Is >( tup ), values )... ); }
+
+template< typename... Ts >
+tuple< result_t< Ts >... > eval( tuple< Ts... > const& expr, 
+    variable_values const& values )
+{ return eval_tuple_helper( expr, values, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename U, size_t I >
+U eval( Variable< U, I > const& expr, variable_values const& values )
+{ return any_cast< U >( values[I] ); }
+
 
 /**
- * accessor for the value of variable I with type T
+ * indexables implement the subscript operator
  */
-// template< typename T, size_t I >
-// struct VariableHarness
-// {
-//     friend Invoker< Variable< T, I >>;
-
-//     operator T() const
-//     { return any_cast< T >(( *m_values )[I]); }
-
-//     VariableHarness& operator=( T const& other )
-//     { ( *m_values )[I] = other; return *this; }
-
-// private:
-//     VariableHarness( variable_values const* values ) : m_values{ values } { }
-//     variable_values const* m_values;
-// };
+template< typename ExprT >
+concept indexable = requires( ExprT expr, size_t I )
+{ expr[I]; };
 
 /**
- * Expressions whose value may change
- * 
- * @tparam T is the type of this variable
- * @tparam I is an index to uniquely identify this variable
- * 
- * TODO: implement variables with more than a single index (and maybe no indices?)
+ * An expression with a unchanging value known at run time
  */
-template< typename T, size_t I >
-struct Variable : Expression
-{ 
-    using result_type = T; 
+template< unit U >
+struct StaticExpression : Expression
+{  
+    using result_type = U;
+    using dependent_types = tuple<>;
+
+    constexpr result_type get_value() const
+    { return value; }
+
+    constexpr operator result_type() const
+    { return value; }
+
+    constexpr result_type eval( variable_values const& ) const
+    { return get_value(); }
+
+    constexpr StaticExpression() = default;
+    constexpr StaticExpression( result_type value ) : value{ value } { }
+
+    result_type value;
 };
+
+template< unit U >
+U eval( StaticExpression< U > const& expr, variable_values const& )
+{ return expr.get_value(); }
+
+template< unit U >
+StaticExpression< U > static_expr( U value )
+{ return { value }; }
+
+StaticExpression< Scalar > static_expr( long double value )
+{ return { scalar( value ) }; }
+
+StaticExpression< Cardinal > static_expr( unsigned long long value )
+{ return { cardinal( value ) }; }
+
+/**
+ * an expression with a constant value known at compile time
+ */
+template< unit U, U Value >
+struct ConstantExpression : Expression
+{ 
+    using result_type = U;
+    using dependent_types = tuple<>;
+
+    static constexpr result_type get_value()
+    { return value; }
+    constexpr operator result_type() const
+    { return value; }
+
+    constexpr result_type eval( variable_values const& ) const
+    { return get_value(); }
+
+    static constexpr result_type value = Value;
+};
+
+template< unit U, U Value >
+U eval( ConstantExpression< U, Value > const& expr, variable_values const& )
+{ return Value; }
+
+template< unit U >
+using zero_expr = ConstantExpression< U, 0 >;
+
+template< unit U >
+using one_expr = ConstantExpression< U, 1 >;
+
+template< unit U, U Value >
+using constant_expr = ConstantExpression< U, Value >;
+
+
+
+/**
+ * unary expression
+ */
+template< typename UnaryT, typename T >
+struct Unary : Expression
+{
+    using result_type = decltype( UnaryT{}( result_t< T >{} ));
+    using dependent_types = tuple< T >;
+    
+    template< size_t I >
+    requires( I == 0 )
+    constexpr T get_dependent() { return first; }
+
+    constexpr result_type eval( variable_values const& values ) const
+    { return func( eval( first, values )); }
+
+    constexpr Unary() = default;
+    constexpr Unary( T const& t ) : first{ t } { }
+
+    T first;
+    static constexpr UnaryT func;
+};
+
+/**
+ * Associative binary expression
+ */
+template< typename BinaryT, typename T, typename... Ts >
+struct Associative : Associative< BinaryT, Ts... >
+{
+    using dependent_types = tuple< T, Ts... >;
+    using first_type = T;
+    using rest = Associative< BinaryT, Ts... >;
+    
+    template< size_t I >
+    constexpr tuple_element_t< I, dependent_types > get_dependent()
+    {
+        if( I == 0 ) 
+            return first;
+        return rest::template get_dependent< I - 1 >();
+    }
+
+    using rest::func;
+
+    using result_type = decltype( 
+        func( expressions::eval( T{}, {} ), typename rest::result_type{} ));
+
+    constexpr auto eval( variable_values const& values ) const
+    { return func( eval( first, values ), rest::eval( values )); }
+
+    constexpr Associative() = default;
+    constexpr Associative( T const& t, Ts const&... ts ) : first{ t }, rest{ ts... } { }
+
+    first_type first;
+};
+
+/**
+ * tail of an associative binary expression
+ */
+template< typename BinaryT, typename T >
+struct Associative< BinaryT, T > : Expression
+{
+    using result_type = result_t< T >;
+    using dependent_types = tuple< T >;
+    using first_type = T;
+
+    template< size_t I >
+    requires( I == 0 )
+    constexpr first_type get_dependent() { return first; }
+
+    constexpr result_type eval( variable_values const& values ) const
+    { return eval( first, values ); }
+
+    constexpr Associative() = default;
+    constexpr Associative( T const& t ) : first{ t } { }
+
+    first_type first;
+    static constexpr BinaryT func;
+};
+
+template< size_t I, typename TupleT >
+tuple_element_t< I, TupleT > get_element( TupleT const& tup )
+{ return get< I >( tup ); }
+
+
 
 template< typename T, size_t I >
 struct expression_traits< Variable< T, I >>
@@ -441,90 +578,6 @@ struct dependent_variables
 template< typename E >
 using dependent_variables_t = dependent_variables< E >::type;
 
-
-// by default, call the operator() on the expr to invoke it
-template< typename T >
-struct Invoker;
-
-template< typename T >
-requires expression_traits< T >::is_static_expression
-struct Invoker< T >
-{
-    T operator()( T value, variable_values const& ) 
-    { return value; }
-};
-
-template< typename T >
-result_t< T > invoke( T expr, variable_values const& values )
-{ return Invoker< T >{}( expr, values ); }
-
-template< unit U >
-U invoke( U expr, variable_values const& )
-{ return expr; }
-
-template< typename T >
-T invoke( StaticExpression< T > expr, variable_values const& )
-{ return expr; }
-
-template< unit U >
-U invoke( U expr )
-{ return expr; }
-
-template< typename T >
-T invoke( StaticExpression< T > expr )
-{ return expr; }
-
-template< expression T >
-// requires( tuple_size_v< dependent_variables_t< T >> == 0 )
-result_t< T > invoke( T expr )
-{ return Invoker< T >{}( expr, variable_values{} ); }
-
-template< typename T, size_t I >
-struct Invoker< Variable< T, I >>
-{ 
-    T operator()( Variable< T, I >, variable_values const& values )
-    { return any_cast< T >( values[I] ); }
-};
-
-// /**
-//  * Constant expression will never change it's value
-//  * 
-//  * @tparam T is the unit of this contstant
-//  * @tparam Value is the value of this constant
-//  * @returns the constant Value
-//  */
-// template< typename T, T Value >
-// struct Constant : public Expression
-// {
-//     using result_type = T;
-//     static constexpr T value = Value;
-// };
-
-// #ifndef NDEBUG
-// static_assert( is_same_v< tuple<>, dependent_variables_t< Constant< int, 0 >>> );
-// static_assert( is_same_v< tuple< Variable< int, 0 >>, 
-//     dependent_variables_t< Variable< int, 0 >>> );
-// static_assert( is_same_v< tuple< Variable< int, 0 >>, 
-//     dependent_variables_t< tuple< Constant< int, 0 >, Variable< int, 0 >>>> );
-// #endif
-
-// template< typename T, T Value >
-// struct Invoker< Constant< T, Value >>
-// { 
-//     T operator()( variable_values const& )
-//     { return Value; }
-// };
-
-// /**
-//  * trait to check if an expression is constant
-//  */
-// template< typename T >
-// struct is_constant_expression 
-// { static constexpr bool value = false; };
-
-// template< typename T, T Value >
-// struct is_constant_expression< Constant< T, Value >>
-// { static constexpr bool value = true; };
 
 } // namespace expression
 

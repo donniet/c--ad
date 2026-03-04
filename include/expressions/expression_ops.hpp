@@ -11,391 +11,417 @@
 #include "units.hpp"
 
 namespace expressions {
+namespace detail {
+// custom functors
+template< typename T = void>
+struct inverses
+{ static constexpr T operator()( T const& value ) { return T{ 1 } / value; }};
+
+template<>
+struct inverses<void>
+{ static constexpr auto operator()( auto const& value ) { return 1 / value; }};
+
+template< typename T = void, typename Bits = void >
+struct bitshift_left
+{ static constexpr T operator()( T const& value, Bits const& bits ) 
+    { return value << bits; } };
+
+template< typename T >
+struct bitshift_left< T, void >
+{ static constexpr T operator()( T const& value, auto const& bits ) 
+    { return value << bits; } };
+
+template<>
+struct bitshift_left< void, void >
+{ static constexpr auto operator()( auto const& value, auto const& bits ) 
+    { return value << bits; } };
+
+template< typename T = void, typename Bits = void >
+struct bitshift_right
+{ static constexpr T operator()( T const& value, Bits const& bits ) 
+    { return value >> bits; } };
+
+template< typename T >
+struct bitshift_right< T, void >
+{ static constexpr T operator()( T const& value, auto const& bits ) 
+    { return value >> bits; } };
+
+template<>
+struct bitshift_right< void, void >
+{ static constexpr auto operator()( auto const& value, auto const& bits ) 
+    { return value >> bits; } };
+
+template< typename T = void >
+struct sin
+{ static constexpr auto operator()( T const& value ) 
+    { return std::sin( value ); }};
+
+// default to long double
+template<>
+struct sin< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::sinl( value ); }};
+
+template< typename T = void >
+struct cos
+{ static constexpr auto operator()( T const& value ) 
+    { return std::cos( value ); }};
+
+// default to long double
+template<>
+struct cos< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::cosl( value ); }};
+
+template< typename T = void >
+struct tan
+{ static constexpr auto operator()( T const& value ) 
+    { return std::tan( value ); }};
+
+// default to long double
+template<>
+struct tan< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::tanl( value ); }};
+
+template< typename T = void >
+struct asin
+{ static constexpr auto operator()( T const& value ) 
+    { return std::asin( value ); }};
+
+// default to long double
+template<>
+struct asin< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::asinl( value ); }};
+
+template< typename T = void >
+struct acos
+{ static constexpr auto operator()( T const& value ) 
+    { return std::acos( value ); }};
+
+// default to long double
+template<>
+struct acos< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::acosl( value ); }};
+
+template< typename T = void >
+struct atan
+{ static constexpr auto operator()( T const& value ) 
+    { return std::atan( value ); }};
+
+// default to long double
+template<>
+struct atan< void >
+{ static constexpr auto operator()( long double const& value ) 
+    { return std::atanl( value ); }};
+
+template< typename Y = void, typename X = void >
+struct atan2
+{ 
+    using result_type = decltype( std::atan( Y{} / X{} ));
+    static constexpr result_type operator()( Y y, X x ) 
+    { 
+        if( x == 0 ) return 0; 
+        return std::atan( y / x );
+    }
+};
+
+template< typename Y >
+struct atan2< Y, void >
+{ 
+    using result_type = decltype( std::atan( Y{} ));
+    static constexpr result_type operator()( Y y, auto x ) 
+    { 
+        if( x == 0 ) return 0; 
+        return std::atan( y / x );
+    }
+};
+
+template< >
+struct atan2< void, void >
+{ 
+    using result_type = decltype( std::atanl( 0. ));
+    static constexpr result_type operator()( auto y, auto x ) 
+    { 
+        if( x == 0 ) return 0; 
+        return std::atanl( y / x );
+    }
+};
+
+} // namespace detail
 
 // boolean operators
 template< typename... Ts >
-struct Conjunction : DependsOn< Ts... >
-{
-    using result_type = bool;
-    constexpr Conjunction( Ts... ts ) :
-        DependsOn< Ts... >{ ts... }
-    { }
-};
+struct Conjunction : 
+    Associative< std::logical_and<>, Ts... >
+{ constexpr Conjunction( Ts const&... ts ) : 
+    Associative< std::logical_and< bool >, Ts... >{ ts... } {}};
 
 template< typename... Ts >
-struct Disjunction : DependsOn< Ts... >
-{
-    using result_type = bool;
-    constexpr Disjunction( Ts... ts ) :
-        DependsOn< Ts... >{ ts... }
-    { }
-};
+struct Disjunction : 
+    Associative< std::logical_or<>, Ts... >
+{ constexpr Disjunction( Ts const&... ts ) :
+    Associative< std::logical_or< bool >, Ts... >{ ts... } {}};
 
 template< typename T >
-struct Compliment : DependsOn< T >
-{ 
-    using result_type = bool;
-    constexpr Compliment( T arg ) : DependsOn< T >{ arg } { }
-};
+struct Compliment : 
+    Unary< std::logical_not<>, T >
+{ constexpr Compliment( T const& expr ) : 
+    Unary< std::logical_not< bool >, T >{ expr } {}};
 
 // comparison
-template< typename Left, typename Right >
-struct Equals : DependsOn< Left, Right >
-{ 
-    using result_type = bool; 
+template< typename LeftT, typename RightT >
+struct Equals : Associative< std::equal_to<>, LeftT, RightT >
+{ constexpr Equals( LeftT left, RightT right ) : 
+    Associative< std::equal_to< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); }
+template< typename LeftT, typename RightT >
+struct NotEquals : Associative< std::not_equal_to<>, LeftT, RightT >
+{ constexpr NotEquals( LeftT left, RightT right ) : 
+    Associative< std::not_equal_to< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
-    constexpr Equals() = default;
-    constexpr Equals( Left left, Right right ) : 
-        DependsOn< Left, Right >{ left, right } { }
-};
+template< typename LeftT, typename RightT >
+struct Less : Associative< std::less<>, LeftT, RightT >
+{ constexpr Less( LeftT left, RightT right ) : 
+    Associative< std::less< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
-template< typename Left, typename Right >
-struct NotEquals : DependsOn< Left, Right >
-{ 
-    using result_type = bool; 
+template< typename LeftT, typename RightT >
+struct LessOrEqual : Associative< std::less_equal<>, LeftT, RightT >
+{ constexpr LessOrEqual( LeftT left, RightT right ) : 
+    Associative< std::less_equal< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); }
+template< typename LeftT, typename RightT >
+struct Greater : Associative< std::greater<>, LeftT, RightT >
+{ constexpr Greater( LeftT left, RightT right ) : 
+    Associative< std::greater< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
-    constexpr NotEquals() = default;
-    constexpr NotEquals( Left left, Right right ) : 
-        DependsOn< Left, Right >{ left, right } { }
-};
-
-template< typename Left, typename Right >
-struct Less : DependsOn< Left, Right >
-{ 
-    using result_type = bool; 
-
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); }
-
-    constexpr Less() = default;
-    constexpr Less( Left left, Right right ) : 
-        DependsOn< Left, Right >{ left, right } { }
-};
-
-
-template< typename Left, typename Right >
-struct LessOrEqual : DependsOn< Left, Right >
-{ 
-    using result_type = bool; 
-
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); }
-
-    constexpr LessOrEqual() = default;
-    constexpr LessOrEqual( Left left, Right right ) : 
-        DependsOn< Left, Right >{ left, right } { }
-};
-
-
-template< typename Left, typename Right >
-struct Greater : DependsOn< Left, Right >
-{ 
-    using result_type = bool;
-    
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); } 
-
-    constexpr Greater() = default;
-    constexpr Greater( Left left, Right right ) : 
-        DependsOn< Left, Right >{ left, right } { }
-};
-
-template< typename Left, typename Right >
-struct GreaterOrEqual : DependsOn< Left, Right >
-{ 
-    using dependent_types = tuple< Left, Right >;
-    using result_type = bool;
-    
-    constexpr Left left() const { return get_dependent< 0 >( *this ); }
-    constexpr Right right() const { return get_dependent< 1 >( *this ); } 
-
-    constexpr GreaterOrEqual() = default;
-    constexpr GreaterOrEqual( Left left, Right right ) : DependsOn< Left, Right >{ left, right } { }
-};
+template< typename LeftT, typename RightT >
+struct GreaterOrEqual : Associative< std::greater_equal<>, LeftT, RightT >
+{ constexpr GreaterOrEqual( LeftT left, RightT right ) : 
+    Associative< std::greater_equal< result_t< LeftT >>, LeftT, RightT >{ left, right } {}};
 
 // accessor
 template< size_t I, typename E >
-struct Element : DependsOn< E >
-{
-    using dependent_types = tuple< E >;
-    using result_type = tuple_element_t< I, result_t< E >>;
+struct Element;
 
-    constexpr Element( E e ) : DependsOn< E >{ e } { }
+template< size_t I, typename E >
+requires tuple_like< E >
+struct Element< I, E > : Expression
+{
+    using result_type = result_t< tuple_element_t< I, E >>;
+    using dependent_types = tuple< E >;
+
+    template< size_t J >
+    requires( J == 0 )
+    constexpr E get_dependent() 
+    { return expr; }
+
+    constexpr result_type eval( variable_values const& values ) const
+    { return get< I >( eval( expr, values )); }
+
+    constexpr Element() = default;
+    constexpr Element( E const& expr ) : expr{ expr } { }
+
+    E expr;
+};
+
+template< size_t I, typename E >
+requires( not tuple_like< E > and tuple_like< result_t< E >> )
+struct Element< I, E > : Expression
+{
+    using result_type = tuple_element_t< I, result_t< E >>;
+    using dependent_types = tuple< E >;
+
+    template< size_t J >
+    requires( J == 0 )
+    constexpr E get_dependent() 
+    { return expr; }
+
+    constexpr result_type eval( variable_values const& values ) const
+    { return get< I >( eval( expr, values )); }
+
+    constexpr Element() = default;
+    constexpr Element( E const& expr ) : expr{ expr } { }
+
+    E expr;
+};
+
+template< size_t I, typename E >
+requires( not tuple_like< E > and not tuple_like< result_t< E >> and 
+    indexable< result_t< E >> )
+struct Element< I, E > : Expression
+{
+    using result_type = decltype( result_t< E >{}[I] );
+    using dependent_types = tuple< E >;
+
+    template< size_t J >
+    requires( J == 0 )
+    constexpr E get_dependent() 
+    { return expr; }
+
+    constexpr result_type eval( variable_values const& values ) const
+    { return eval( expr, values )[ I ]; }
+
+    constexpr Element() = default;
+    constexpr Element( E const& expr ) : expr{ expr } { }
+
+    E expr;
 };
 
 // real arithmetic
-template< typename E, typename... Es >
-struct Sum : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = result_t< E >; 
+template< typename... Ts >
+struct Sum : Associative< std::plus< result_t< Ts... >>, Ts... >
+{ constexpr Sum( Ts const&... ts ) : 
+    Associative< std::plus< result_t< Ts... >>, Ts... >{ ts... } {}};
 
-    constexpr Sum() = default;
-    constexpr Sum( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
+template< typename... Ts >
+struct Difference : Associative< bool, std::minus< result_t< Ts... >>, Ts... >
+{ constexpr Difference( Ts const&... ts ) : 
+    Associative< bool, std::minus< result_t< Ts... >>, Ts... >{ ts... } {} };
 
-template< typename E, typename... Es >
-struct Difference : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = result_t< E >; 
+template< typename T >
+struct Negation : Unary< std::negate< result_t< T>>, T >
+{ constexpr Negation( T const& expr ) : Unary< std::negate< result_t< T>>, T >{ expr } { }};
 
-    constexpr Difference() = default;
-    constexpr Difference( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
+template< typename T, typename... Ts >
+struct Product : Associative< std::multiplies< result_t< T >>, T, Ts... >
+{ constexpr Product( T const& t, Ts const&... ts ) : 
+    Associative< std::multiplies< result_t< T >>, T, Ts... >{ t, ts... } { }};
 
-template< typename E >
-struct Negation : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
+template< typename... Ts >
+struct Quotient : Associative< std::divides< result_t< Ts... >>, Ts... >
+{ constexpr Quotient( Ts const&... ts ) : 
+    Associative< std::divides< result_t< Ts... >>, Ts... >{ ts... } { }};
 
-    constexpr Negation() = default;
-    constexpr Negation( E e ) : DependsOn< E >{ e } { }
-};
-
-template< typename E, typename... Es >
-struct Product : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = unit_product< result_t< E >, result_t< Es >... >;
-
-    constexpr Product() = default;
-    constexpr Product( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
-
-template< typename E, typename... Es >
-struct Quotient : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = unit_quotient< result_t< E >, result_t< Es >... >;
-
-    constexpr Quotient() = default;
-    constexpr Quotient( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
-
-template< typename E >
-struct Inverse : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = unit_inverse< result_t< E >>;
-
-    constexpr Inverse() = default;
-    constexpr Inverse( E e ) : DependsOn< E >{ e } { }
-};
+template< typename T >
+struct Inverse : Unary< detail::inverses< T >, T >
+{ constexpr Inverse( T const& expr ) : 
+    Unary< detail::inverses< T >, T >{ expr } { }};
 
 // integer arithmetic
-template< typename E >
-struct BitwiseNot : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
+template< typename T >
+struct BitwiseNot : Unary< std::bit_not< result_t< T >>, T >
+{ constexpr BitwiseNot( T const& expr ): Unary< std::bit_not< result_t< T >>, T >{ expr } { }};
 
-    constexpr BitwiseNot() = default;
-    constexpr BitwiseNot( E e ) : DependsOn< E >{ e } { }
-};
+template< typename... Ts >
+struct BitwiseAnd : Associative< std::bit_and< result_t< Ts... >>, Ts... >
+{ constexpr BitwiseAnd( Ts const&... ts ) : 
+    Associative< std::bit_and< result_t< Ts... >>, Ts... >{ ts... } { }};
 
-template< typename E, typename... Es >
-struct BitwiseAnd : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = result_t< E >;
+template< typename... Ts >
+struct BitwiseOr : Associative< std::bit_or< result_t< Ts... >>, Ts... >
+{ constexpr BitwiseOr( Ts const&... ts ) : 
+    Associative< std::bit_or< result_t< Ts... >>, Ts... >{ ts... } { }};
 
-    constexpr BitwiseAnd() = default;
-    constexpr BitwiseAnd( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
+template< typename... Ts >
+struct BitwiseXor : Associative< std::bit_xor< result_t< Ts... >>, Ts... >
+{ constexpr BitwiseXor( Ts const&... ts ) : 
+    Associative< std::bit_xor< result_t< Ts... >>, Ts... >{ ts... } { }};
 
-template< typename E, typename... Es >
-struct BitwiseOr : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = result_t< E >;
+template< typename BitsT, typename ShiftT >
+struct BitshiftLeft : Associative< detail::bitshift_left< result_t< BitsT >, result_t< ShiftT >>, BitsT, ShiftT >
+{ constexpr BitshiftLeft( BitsT const& bits, ShiftT const& shift ) : 
+    Associative< detail::bitshift_left< result_t< BitsT >, result_t< ShiftT >>, BitsT, ShiftT >{ bits, shift } { }};
 
-    constexpr BitwiseOr() = default;
-    constexpr BitwiseOr( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
-
-template< typename E, typename... Es >
-struct BitwiseXor : DependsOn< E, Es... >
-{ 
-    using dependent_types = tuple< E, Es... >;
-    using result_type = result_t< E >;
-
-    constexpr BitwiseXor() = default;
-    constexpr BitwiseXor( E e, Es... es ) : DependsOn< E, Es... >{ e, es... } { }
-};
-
-template< typename Bits, typename Shift >
-struct BitshiftLeft : DependsOn< Bits, Shift >
-{ 
-    using dependent_types = tuple< Bits, Shift >;
-    using result_type = result_t< Bits >;
-
-    constexpr Bits bits() { return get_dependent< 0 >( *this ); }
-    constexpr Shift shift() { return get_dependent< 1 >( *this ); }
-
-    constexpr BitshiftLeft() = default;
-    constexpr BitshiftLeft( Bits bits, Shift shift ) : 
-        DependsOn< Bits, Shift >{ bits, shift } { }
-};
-
-template< typename Bits, typename Shift >
-struct BitshiftRight : DependsOn< Bits, Shift >
-{ 
-    using dependent_types = tuple< Bits, Shift >;
-    using result_type = result_t< Bits >;
-
-    constexpr Bits bits() { return get_dependent< 0 >( *this ); }
-    constexpr Shift shift() { return get_dependent< 1 >( *this ); }
-
-    constexpr BitshiftRight() = default;
-    constexpr BitshiftRight( Bits bits, Shift shift ) : 
-        DependsOn< Bits, Shift >{ bits, shift } { }
-};
+template< typename BitsT, typename ShiftT >
+struct BitshiftRight : Associative< detail::bitshift_right< result_t< BitsT >, result_t< ShiftT >>, BitsT, ShiftT >
+{ constexpr BitshiftRight( BitsT const& bits, ShiftT const& shift ) : 
+    Associative< detail::bitshift_right< result_t< BitsT >, result_t< ShiftT >>, BitsT, ShiftT >{ bits, shift } { }};
 
 // trig functions
-template< typename E >
-struct Sine : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
+template< typename T >
+struct Sine : Unary< detail::sin< result_t< T >>, T >
+{ constexpr Sine( T const& expr ) : Unary< detail::sin< result_t< T >>, T >{ expr } { }};
 
-    constexpr Sine() = default;
-    constexpr Sine( E e ) : DependsOn< E >{ e } { }
-};
+template< typename T >
+struct Cosine : Unary< detail::cos< result_t< T >>, T >
+{ constexpr Cosine( T const& expr ) : Unary< detail::cos< result_t< T >>, T >{ expr } { }};
 
-template< typename E >
-struct Cosine : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
+template< typename T >
+struct Tangent : Unary< detail::tan< result_t< T >>, T >
+{ constexpr Tangent( T const& expr ) : Unary< detail::tan< result_t< T >>, T >{ expr } { }};
 
-    constexpr Cosine() = default;
-    constexpr Cosine( E e ) : DependsOn< E >{ e } { }
-};
+template< typename T >
+struct Arcsine : Unary< detail::asin< result_t< T >>, T >
+{ constexpr Arcsine( T const& expr ) : Unary< detail::asin< result_t< T >>, T >{ expr } { }};
 
-template< typename E >
-struct Tangent : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
+template< typename T >
+struct Arccosine : Unary< detail::acos< result_t< T >>, T >
+{ constexpr Arccosine( T const& expr ) : Unary< detail::acos< result_t< T >>, T >{ expr } { }};
 
-    constexpr Tangent() = default;
-    constexpr Tangent( E e ) : DependsOn< E >{ e } { }
-};
+template< typename T >
+struct Arctangent : Unary< detail::atan< result_t< T >>, T >
+{ constexpr Arctangent( T const& expr ) : Unary< detail::atan< result_t< T >>, T >{ expr } { }};
 
-template< typename E >
-struct Arcsine : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
-
-    constexpr Arcsine() = default;
-    constexpr Arcsine( E e ) : DependsOn< E >{ e } { }
-};
-
-template< typename E >
-struct Arccosine : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
-
-    constexpr Arccosine() = default;
-    constexpr Arccosine( E e ) : DependsOn< E >{ e } { }
-};
-
-template< typename E >
-struct Arctangent : DependsOn< E >
-{ 
-    using dependent_types = tuple< E >;
-    using result_type = result_t< E >;
-
-    constexpr Arctangent() = default;
-    constexpr Arctangent( E e ) : DependsOn< E >{ e } { }
-};
-
-template< typename Num, typename Den >
-struct Arctangent2 : DependsOn< Num, Den >
-{ 
-    using dependent_types = tuple< Num, Den >;
-    using result_type = result_t< typename Quotient< Num, Den >::result_type >;
-
-    constexpr Num numerator() const { return get_dependent< 0 >( *this ); }
-    constexpr Den denominator() const { return get_dependent< 1 >( *this ); }
-
-    constexpr Arctangent2() = default;
-    constexpr Arctangent2( Num num, Den den ) : 
-        DependsOn< Num, Den >{ num, den } { }
-};
+template< typename Y, typename X >
+struct Arctangent2 : Associative< detail::atan2< result_t< Y >, result_t< X >>, Y, X >
+{ constexpr Arctangent2( Y const& y, X const& x ) : 
+     Associative< detail::atan2<>, Y, X >{ x, y } { } };
 
 /**
  * Helper methods
  */
 
 // boolean operators
-template< typename E, typename... Es >
-constexpr Conjunction< E, Es... > conjunction( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Conjunction< Ts... > conjunction( Ts... ts )
+{ return { ts... }; }
 
-template< typename E, typename... Es >
-constexpr Disjunction< E, Es... > disjunction( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Disjunction< Ts... > disjunction( Ts... ts )
+{ return { ts... }; }
 
 template< typename E >
 constexpr Compliment< E > compliment( E e )
 { return { e }; }
 
 // comparison
-template< typename Left, typename Right >
-constexpr Equals< Left, Right > equals( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr Equals< LeftT, RightT > equals( LeftT left, RightT right )
 { return { left, right }; }
 
-template< typename Left, typename Right >
-constexpr NotEquals< Left, Right > not_equals( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr NotEquals< LeftT, RightT > not_equals( LeftT left, RightT right )
 { return { left, right }; }
 
-template< typename Left, typename Right >
-constexpr Less< Left, Right > less( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr Less< LeftT, RightT > less( LeftT left, RightT right )
 { return { left, right }; }
 
-template< typename Left, typename Right >
-constexpr LessOrEqual< Left, Right > less_or_equal( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr LessOrEqual< LeftT, RightT > less_or_equal( LeftT left, RightT right )
 { return { left, right }; }
 
-template< typename Left, typename Right >
-constexpr Greater< Left, Right > greater( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr Greater< LeftT, RightT > greater( LeftT left, RightT right )
 { return { left, right }; }
 
-template< typename Left, typename Right >
-constexpr GreaterOrEqual< Left, Right > greater_or_equal( Left left, Right right )
+template< typename LeftT, typename RightT >
+constexpr GreaterOrEqual< LeftT, RightT > greater_or_equal( LeftT left, RightT right )
 { return { left, right }; }
 
 // real arithmetic
-template< typename E, typename... Es >
-constexpr Sum< E, Es... > sum( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Sum< Ts... > sum( Ts... ts )
+{ return { ts... }; }
 
-template< typename E, typename... Es >
-constexpr Difference< E, Es... > difference( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Difference< Ts... > difference( Ts... ts )
+{ return { ts... }; }
 
 template< typename E >
 constexpr Negation< E > negation( E e )
 { return { e }; }
 
-template< typename E, typename... Es >
-constexpr Product< E, Es... > product( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Product< Ts... > product( Ts... ts )
+{ return { ts... }; }
 
-template< typename E, typename... Es >
-constexpr Quotient< E, Es... > quotient( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr Quotient< Ts... > quotient( Ts... ts )
+{ return { ts... }; }
 
 template< typename E >
 constexpr Inverse< E > inverse( E e )
@@ -406,17 +432,17 @@ template< typename E >
 constexpr BitwiseNot< E > bitwise_not( E e )
 { return { e }; }
 
-template< typename E, typename... Es >
-constexpr BitwiseAnd< E, Es... > bitwise_and( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr BitwiseAnd< Ts... > bitwise_and( Ts... ts )
+{ return { ts... }; }
 
-template< typename E, typename... Es >
-constexpr BitwiseOr< E, Es... > bitwise_or( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr BitwiseOr< Ts... > bitwise_or( Ts... ts )
+{ return { ts... }; }
 
-template< typename E, typename... Es >
-constexpr BitwiseXor< E, Es... > bitwise_xor( E e, Es... es )
-{ return { e, es... }; }
+template< typename... Ts >
+constexpr BitwiseXor< Ts... > bitwise_xor( Ts... ts )
+{ return { ts... }; }
 
 template< typename Bits, typename Shift >
 constexpr BitshiftLeft< Bits, Shift > bitshift_left( Bits bits, Shift shift )
@@ -455,280 +481,7 @@ template< typename Num, typename Den >
 constexpr Arctangent2< Num, Den > arctangent2( Num num, Den den )
 { return { num, den }; }
 
-/**
- * Invokers
- */
-template< typename... Ts >
-struct Invoker< tuple< Ts... >>
-{
-    using tuple_type = tuple< Ts... >;
-    using result_type = tuple< result_t< Ts >... >;
-
-    constexpr result_type operator()( tuple_type const& tup, 
-        variable_values const& values )
-    { return helper( tup, values, make_seq< sizeof...( Ts )>{} ); }
-
-    template< size_t... Is >
-    constexpr result_type helper( tuple_type const& tup, 
-        variable_values const& values, seq< Is... > )
-    { return { invoke( get< Is >( tup ), values )... }; }
-};
-
-template< typename T, typename... Ts >
-struct Invoker< Conjunction< T, Ts... >>
-{
-    using conjunction_type = Conjunction< T, Ts... >;
-    using result_type = conjunction_type::result_type;
-
-    constexpr result_type operator()( conjunction_type const& expr, 
-        variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Ts )>{} ); }
-
-    template< size_t... Is >
-    constexpr result_type helper( conjunction_type const& expr, 
-        variable_values const& values, seq< Is... > )
-    { return ( invoke( get_dependent< Is >( expr ), values ) and ... ); }
-};
-
-template< typename T, typename... Ts >
-struct Invoker< Disjunction< T, Ts... >>
-{
-    using disjunction_type = Disjunction< T, Ts... >;
-    using result_type = disjunction_type::result_type;
-
-    constexpr result_type operator()( disjunction_type const& expr, 
-        variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Ts )>{} ); }
-
-    template< size_t... Is >
-    constexpr result_type helper( disjunction_type const& expr, 
-        variable_values const& values, seq< Is... > )
-    { return ( invoke( get_dependent< Is >( expr ), values ) or ... ); }
-};
-
-template< typename T >
-struct Invoker< Compliment< T >>
-{
-    using compliment_type = Compliment< T >;
-    using result_type = compliment_type::result_type;
-
-    constexpr result_type operator()( compliment_type const& expr, 
-        variable_values const& values )
-    { return not invoke( get_dependent< 0 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< Equals< Left, Right >>
-{
-    constexpr auto operator()( Equals< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) == invoke( get_dependent< 1 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< NotEquals< Left, Right >>
-{
-    constexpr auto operator()( NotEquals< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) != invoke( get_dependent< 1 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< Less< Left, Right >>
-{
-    constexpr auto operator()( Less< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) < invoke( get_dependent< 1 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< LessOrEqual< Left, Right >>
-{
-    constexpr auto operator()( LessOrEqual< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) <= invoke( get_dependent< 1 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< Greater< Left, Right >>
-{
-    constexpr auto operator()( Greater< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) > invoke( get_dependent< 1 >( expr )); }
-};
-
-template< typename Left, typename Right >
-struct Invoker< GreaterOrEqual< Left, Right >>
-{
-    constexpr auto operator()( GreaterOrEqual< Left, Right > expr, variable_values const& values )
-    { return invoke( get_dependent< 0 >( expr )) >= invoke( get_dependent< 1 >( expr )); }
-};
-
-template< size_t I, typename E >
-struct Invoker< Element< I, E >>
-{
-    constexpr auto operator()( Element< I, E > const& expr, variable_values const& values )
-    { return get_element< I >( invoke( get_dependent< 0 >( expr ), values )); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< Sum< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( Sum< E, Es... > expr, variable_values const& values, seq< Is... > )
-    { return ( ... + invoke( get_dependent< Is >( expr ), values )); }
-
-    constexpr auto operator()( Sum< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< Difference< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( Difference< E, Es... > expr, variable_values const& values, seq< Is... > )
-    { return ( ... - invoke( get_dependent< Is >( expr ), values )); }
-
-    constexpr auto operator()( Difference< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
-};
-
-template< typename E >
-struct Invoker< Negation< E >>
-{
-    constexpr auto operator()( Negation< E > expr, variable_values const& values )
-    { return -invoke( expr, values ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< Product< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( Product< E, Es... > expr, variable_values const& values, seq< Is... > )
-    { return ( ... * invoke( get_dependent< Is >( expr ), values )); }
-
-    constexpr auto operator()( Product< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es ) >{} ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< Quotient< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( Quotient< E, Es... > expr, variable_values const& values, seq< Is... > )
-    { return ( ... / invoke( get_dependent< Is >( expr ), values )); }
-
-    constexpr auto operator()( Quotient< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
-};
-
-template< typename E >
-struct Invoker< Inverse< E >>
-{
-    constexpr auto operator()( Inverse< E > expr, variable_values const& values )
-    { return result_t< E >{ 1. } / invoke( expr, values ); }
-};
-
-// bitwise operations
-template< typename E >
-struct Invoker< BitwiseNot< E >>
-{
-    constexpr auto operator()( BitwiseNot< E > expr, variable_values const& values )
-    { return ~invoke( expr, values ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< BitwiseAnd< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( BitwiseAnd< E, Es... > expr, variable_values const& values )
-    { return ( invoke( get_dependent< Is >( expr ), values ) & ... ); }
-
-    constexpr auto operator()( BitwiseAnd< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< BitwiseOr< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( BitwiseOr< E, Es... > expr, variable_values const& values )
-    { return ( invoke( get_dependent< Is >( expr ), values ) | ... ); }
-
-    constexpr auto operator()( BitwiseOr< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
-};
-
-template< typename E, typename... Es >
-struct Invoker< BitwiseXor< E, Es... >>
-{
-    template< size_t... Is >
-    constexpr auto helper( BitwiseXor< E, Es... > expr, variable_values const& values )
-    { return ( invoke( get_dependent< Is >( expr ), values ) ^ ... ); }
-
-    constexpr auto operator()( BitwiseXor< E, Es... > expr, variable_values const& values )
-    { return helper( expr, values, make_seq< 1 + sizeof...( Es )>{} ); }
-};
-
-template< typename Bits, typename Shift >
-struct Invoker< BitshiftLeft< Bits, Shift >>
-{
-    constexpr auto operator()( BitshiftLeft< Bits, Shift > expr, variable_values const& values )
-    { return invoke( expr.bits() ) << invoke( expr.shift() ); }
-};
-
-template< typename Bits, typename Shift >
-struct Invoker< BitshiftRight< Bits, Shift >>
-{
-    constexpr auto operator()( BitshiftRight< Bits, Shift > expr, variable_values const& values )
-    { return invoke( expr.bits() ) >> invoke( expr.shift() ); }
-};
-
-template< typename E >
-struct Invoker< Sine< E >>
-{
-    constexpr auto operator()( Sine< E > expr, variable_values const& values )
-    { return std::sin( invoke( expr, values )); }
-};
-
-template< typename E >
-struct Invoker< Cosine< E >>
-{
-    constexpr auto operator()( Cosine< E > expr, variable_values const& values )
-    { return std::cos( invoke( expr, values )); }
-};
-
-template< typename E >
-struct Invoker< Tangent< E >>
-{
-    constexpr auto operator()( Tangent< E > expr, variable_values const& values )
-    { return std::tan( invoke( expr, values )); }
-};
-
-template< typename E >
-struct Invoker< Arcsine< E >>
-{
-    constexpr auto operator()( Arcsine< E > expr, variable_values const& values )
-    { return std::asin( invoke( expr, values )); }
-};
-
-template< typename E >
-struct Invoker< Arccosine< E >>
-{
-    constexpr auto operator()( Arccosine< E > expr, variable_values const& values )
-    { return std::acos( invoke( expr, values )); }
-};
-
-template< typename E >
-struct Invoker< Arctangent< E >>
-{
-    constexpr auto operator()( Arctangent< E > expr, variable_values const& values )
-    { return std::atan( invoke( expr, values )); }
-};
-
-template< typename Num, typename Den >
-struct Invoker< Arctangent2< Num, Den >>
-{
-    constexpr auto operator()( Arctangent2< Num, Den > expr, variable_values const& values )
-    { return std::atan2( invoke( expr.numerator(), values ), 
-        invoke( expr.denominator(), values )); }
-};
-
+// operators
 namespace operators {
 
 template< expression LeftT, expression RightT >
@@ -887,64 +640,64 @@ template< expression E >
 constexpr auto operator ~( E arg )
 { return bitwise_not( arg ); }
 
-template< expression Left, expression Right >
-constexpr auto operator &( Left left, Right right )
+template< expression LeftT, expression RightT >
+constexpr auto operator &( LeftT left, RightT right )
 { return bitwise_and( left, right ); }
 
-template< expression Left, unit Right >
-constexpr auto operator &( Left left, Right right )
+template< expression LeftT, unit RightT >
+constexpr auto operator &( LeftT left, RightT right )
 { return bitwise_and( left, static_expr( right )); }
 
-template< unit Left, expression Right >
-constexpr auto operator &( Left left, Right right )
+template< unit LeftT, expression RightT >
+constexpr auto operator &( LeftT left, RightT right )
 { return bitwise_and( static_expr( left ), right ); }
 
-template< expression Left, expression Right >
-constexpr auto operator |( Left left, Right right )
+template< expression LeftT, expression RightT >
+constexpr auto operator |( LeftT left, RightT right )
 { return bitwise_or( left, right ); }
 
-template< expression Left, unit Right >
-constexpr auto operator |( Left left, Right right )
+template< expression LeftT, unit RightT >
+constexpr auto operator |( LeftT left, RightT right )
 { return bitwise_or( left, static_expr( right )); }
 
-template< unit Left, expression Right >
-constexpr auto operator |( Left left, Right right )
+template< unit LeftT, expression RightT >
+constexpr auto operator |( LeftT left, RightT right )
 { return bitwise_or( static_expr( left ), right ); }
 
-template< expression Left, expression Right >
-constexpr auto operator ^( Left left, Right right )
+template< expression LeftT, expression RightT >
+constexpr auto operator ^( LeftT left, RightT right )
 { return bitwise_xor( left, right ); }
 
-template< expression Left, unit Right >
-constexpr auto operator ^( Left left, Right right )
+template< expression LeftT, unit RightT >
+constexpr auto operator ^( LeftT left, RightT right )
 { return bitwise_xor( left, static_expr( right )); }
 
-template< unit Left, expression Right >
-constexpr auto operator ^( Left left, Right right )
+template< unit LeftT, expression RightT >
+constexpr auto operator ^( LeftT left, RightT right )
 { return bitwise_xor( static_expr( left ), right ); }
 
-template< expression Left, expression Right >
-constexpr auto operator <<( Left left, Right right )
+template< expression LeftT, expression RightT >
+constexpr auto operator <<( LeftT left, RightT right )
 { return bitshift_left( left, right ); }
 
-template< expression Left, unit Right >
-constexpr auto operator <<( Left left, Right right )
+template< expression LeftT, unit RightT >
+constexpr auto operator <<( LeftT left, RightT right )
 { return bitshift_left( left, static_expr( right )); }
 
-template< unit Left, expression Right >
-constexpr auto operator <<( Left left, Right right )
+template< unit LeftT, expression RightT >
+constexpr auto operator <<( LeftT left, RightT right )
 { return bitshift_left( static_expr( left ), right ); }
 
-template< expression Left, expression Right >
-constexpr auto operator >>( Left left, Right right )
+template< expression LeftT, expression RightT >
+constexpr auto operator >>( LeftT left, RightT right )
 { return bitshift_right( left, right ); }
 
-template< expression Left, unit Right >
-constexpr auto operator >>( Left left, Right right )
+template< expression LeftT, unit RightT >
+constexpr auto operator >>( LeftT left, RightT right )
 { return bitshift_right( left, static_expr( right )); }
 
-template< unit Left, expression Right >
-constexpr auto operator >>( Left left, Right right )
+template< unit LeftT, expression RightT >
+constexpr auto operator >>( LeftT left, RightT right )
 { return bitshift_right( static_expr( left ), right ); }
 
 template< expression E >

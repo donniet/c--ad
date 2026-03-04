@@ -8,41 +8,22 @@
 
 namespace expressions {
 
-/**
- * invoking a tensor creates a new tensor of the evaluated elements
- */
-template< shape S, typename... Ts >
-struct Invoker< Tensor< S, Ts... >>
-{
-    constexpr Tensor< S, result_t< Ts >... > operator()( Tensor< S, Ts... > ten, 
-        variable_values const& values )
-    { return helper( ten, values, make_seq< sizeof...( Ts )>{} ); }
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator==( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return equals_helper( left, right, make_seq< S::elements_size >{} ); }
 
-    template< size_t... Is >
-    constexpr Tensor< S, result_t< Ts >... > helper( Tensor< S, Ts... > ten, 
-        variable_values const& values, seq< Is... > )
-    { return { invoke( get_tensor_element< Is >( ten ), values )... }; }
-};
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator!=( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return not equals_helper( left, right, make_seq< S::elements_size >{} ); }
 
-template< typename LeftT, typename RightT >
-requires( tensor_like< LeftT > and tensor_like< RightT > and 
-    is_same_v< shape_of_t< LeftT >, shape_of_t< RightT >> )
-struct Invoker< Equals< LeftT, RightT >>
-{
-    using expression_type = Equals< LeftT, RightT >;
-    static constexpr size_t elements_size = shape_of_t< LeftT >::elements_size;
-    using result_type = Equals< LeftT, RightT >::result_type;
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator+( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return plus_helper( left, right, make_seq< S::elements_size >{} ); }
 
-    constexpr result_type operator()( expression_type const& expr, 
-        variable_values const& values )
-    { return helper( expr, values, make_seq< elements_size >{} ); }
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator-( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return minus_helper( left, right, make_seq< S::elements_size >{} ); }
 
-    template< size_t... Is >
-    constexpr result_type helper( expression_type const& expr, 
-        variable_values const& values, seq< Is... > )
-    { return (( invoke( get_tensor_element< Is >( expr.left() ), values ) == 
-        invoke( get_tensor_element< Is >( expr.right() ), values )) and ... ); }
-};
 
 template< index I, typename V >
 struct Subscript;
@@ -51,104 +32,79 @@ struct Subscript;
  * Subscript of a tuple
  */
 template< size_t I, typename... Ts >
-struct Subscript< Index< I >, tuple< Ts... >> : DependsOn< tuple< Ts... >>
+struct Subscript< Index< I >, tuple< Ts... >> : Expression
 {
     using tuple_type = tuple< Ts... >;
+    using dependent_types = tuple< tuple_type >;
     using type = tuple_element_t< I, tuple_type >;
     using result_type = result_t< type >;
 
-    constexpr Subscript( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
+    template< size_t J >
+    requires( J == 0 )
+    constexpr tuple_type get_dependent() const
+    { return tup; }
+    
+    constexpr result_type eval( variable_values const& values )
+    { return eval( get< I >( tup ), values ); }
+
+    constexpr Subscript( tuple_type const& tup ) : 
+        tup{ tup } 
+    { }
+
+    tuple_type tup;
 };
 
 /**
  * Subscript of a tensor
  */
-template< index I, shape S, typename... Es >
-struct Subscript< I, Tensor< S, Es... >> : DependsOn< Tensor< S, Es... >>
+template< index I, typename ExprT >
+requires( tensor_like< ExprT > )
+struct Subscript< I, ExprT > : Expression
 { 
-    using tensor_type = Tensor< S, Es... >;
-    using type = tensor_index_t< I, tensor_type >; 
+    using tensor_type = ExprT;
+    using shape_type = shape_of_t< tensor_type >;
+    using dependents_type = tuple< tensor_type >;
+    using type = tuple_element_t< index_to_element_v< I, tensor_type >, tensor_type >; 
     using result_type = result_t< type >;
 
-    constexpr Subscript( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
-};
+    template< size_t J >
+    requires( J == 0 )
+    constexpr tensor_type get_dependent() const
+    { return ten; }
 
-/**
- * Invoker for the subscript operation
- */
-template< index I, typename V >
-struct Invoker< Subscript< I, V >>
-{
-    using subscript_type = Subscript< I, V >;
-    using result_type = tensor_index_t< I, result_t< V >>;
+    constexpr result_type eval( variable_values const& values )
+    { return eval( get< I >( ten ), values ); }
 
-    constexpr result_type operator()( subscript_type const& sub, 
-        variable_values const& values )
-    { return get_tensor_index< I >( invoke( sub.tensor(), values )); }
+    constexpr Subscript( tensor_type const& ten ) : ten{ ten } { }
+
+    tensor_type ten;
 };
 
 /**
  * Element of a tuple
  */
-template< size_t I, typename... Ts >
-struct Element< I, tuple< Ts... >> : DependsOn< tuple< Ts... >>
+template< size_t I, typename TupleT >
+struct Element : Expression 
 {
-    using tuple_type = tuple< Ts... >;
+    using tuple_type = TupleT;
     using type = tuple_element_t< I, tuple_type >;
     using result_type = result_t< type >;
+    using dependents_type = tuple< tuple_type >;
 
-    constexpr tuple_type tup() const { return get_dependent< 0 >( *this ); }
+    template< size_t J >
+    requires( J == 0 )
+    constexpr tuple_type get_dependent() const
+    { return tup; }
 
-    constexpr Element( tuple_type const& tup ) : DependsOn< tuple_type >{ tup } { }
+    constexpr result_type eval( variable_values const& values )
+    { return eval( get< I >( tup ), values ); }
+
+    constexpr Element( tuple_type const& tup ) : tup{ tup } { }
+
+    tuple_type tup;
 };
 
-/**
- * Element of a tensor
- */
-template< size_t I, typename T >
-requires( tensor_like< T > )
-struct Element< I, T > : DependsOn< T >
-{ 
-    using tensor_type = T;
-    using type = tensor_element_t< I, tensor_type >; 
-    using result_type = result_t< type >;
-
-    constexpr tensor_type tensor() const { return get_dependent< 0 >( *this ); }
-
-    constexpr Element( tensor_type const& tup ) : DependsOn< tensor_type >{ tup } { }
-};
-
-/**
- * Invoker for tuple element
- */
-template< size_t I, typename... Ts >
-struct Invoker< Element< I, tuple< Ts... >>>
-{
-    using tuple_type = tuple< Ts... >;
-    using element_type = Element< I, tuple_type >;
-    using result_type = tuple_element_t< I, result_t< tuple_type >>;
-
-    constexpr result_type operator()( element_type const& el, 
-        variable_values const& values )
-    { return get< I >( invoke( el.tup(), values )); }
-};
-
-/** 
- * invoker for tensor element 
- */
-template< size_t I, typename T >
-requires( tensor_like< T > )
-struct Invoker< Element< I, T >>
-{
-    using tensor_type = T;
-    using element_type = Element< I, tensor_type >;
-    using result_type = tensor_element_t< I, result_t< tensor_type >>;
-
-    constexpr result_type operator()( element_type const& el, 
-        variable_values const& values )
-    { return get_tensor_element< I >( invoke( el.tensor(), values )); }
-};
-
+// forward declaration of uncontract for shapes and indices
 template< typename X, size_t I, size_t J, size_t N >
 struct uncontract;
 
@@ -224,203 +180,85 @@ struct contracted_shape
 template< size_t I, size_t J, shape S >
 using contracted_shape_t = contracted_shape< I, J, S >::type;
 
-template< size_t E, typename OutS, size_t I, size_t J, tensor_like T, typename DimSeq >
-struct contraction_element_selector;
+template< size_t E, size_t I, size_t J, tensor_like T, typename DimSeq >
+struct ContractedElementHelper;
 
-template< size_t E, shape OutS, size_t I, size_t J, tensor_like T, size_t... Ls >
-struct contraction_element_selector< E, OutS, I, J, T, seq< Ls... >>
+/**
+ * a contracted element is the sum of the I-J diagonal of the uncontracted 
+ * tensor
+ * 
+ * @tparam E is the element of the contracted tensor
+ * @tparam I is the first contraction index
+ * @tparam J is the second contraction index
+ * @tparam Ls is an integer sequence of size equal to the diagonal I-J
+ * 
+ */
+template< size_t E, size_t I, size_t J, tensor_like T, size_t... Ls >
+struct ContractedElementHelper< E, I, J, T, seq< Ls... >> : 
+    Sum< Subscript< uncontract_t< 
+        element_to_index_t< E, contracted_shape_t< I, J, shape_of_t< T >>>, 
+            I, J, Ls >, T >... >
 {
-    // get the subscripts of the contracted element
-    using tensor_type = T;
-    using contracted_index = element_to_index_t< E, OutS >;
-    // insert Dim into positions I and J of the contracted index
-    template< size_t L >
-    using uncontracted_index = uncontract_t< contracted_index, I, J, L >;
+    using base_type = Sum< Subscript< uncontract_t< 
+        element_to_index_t< E, contracted_shape_t< I, J, shape_of_t< T >>>, 
+            I, J, Ls >, T >... >;
 
-    template< size_t L >
-    static constexpr size_t uncontracted_element_v = 
-        index_to_element_v< uncontracted_index< L >, tensor_type >;
-
-    using elements_seq = seq< uncontracted_element_v< Ls >... >;
-    using type = Sum< tensor_index_t< uncontracted_index< Ls >, tensor_type >... >;
-    using result_type = result_t< type >;
-
-    // this can be invoked by ContractionElement
-    constexpr type value() const
-    { return { get_tensor_element< uncontracted_element_v< Ls >>( _ten )... }; }
-
-    constexpr contraction_element_selector( tensor_type const& ten ) : 
-        _ten{ ten }
+    constexpr ContractedElementHelper( T const& ten ) : 
+        base_type{ ( Ls, ten )... }
     { }
-
-    tensor_type _ten;
 };
 
 /**
  * Expression for the Eth element of an I, J contraction of T
  */
 template< size_t E, size_t I, size_t J, tensor_like T >
-struct ContractionElement : DependsOn< T >
+requires( shape_at_v< I, shape_of_t< T >> == shape_at_v< J, shape_of_t< T >> )
+struct ContractedElement : 
+    ContractedElementHelper< E, I, J, T, make_seq< 
+        shape_at_v< I, shape_of_t< T >>>>
 { 
-    using tensor_type = T;
-    using input_shape = shape_of_t< tensor_type >;
-    using output_shape = contracted_shape_t< I, J, input_shape >;
-    static constexpr size_t contraction_size = shape_at_v< I, input_shape >;
-    using elements_seq = contraction_element_selector< E, output_shape, I, J, 
-        T, make_seq< contraction_size >>::elements_seq;
-    using proxy_type = contraction_element_selector< E, output_shape, I, J, 
-        T, make_seq< contraction_size >>;
-    using type = proxy_type::type;
+    using base_type = ContractedElementHelper< E, I, J, T, make_seq< 
+        shape_at_v< I, shape_of_t< T >>>>;
 
-    // required to make this an expression
-    using result_type = result_t< type >;
-
-    constexpr tensor_type tensor() const
-    { return get_dependent< 0 >( *this ); }
-
-    constexpr type value() const 
-    { return _proxy.value(); }
-
-    constexpr ContractionElement( tensor_type const& tup ) : 
-        DependsOn< tensor_type >{ tup }, _proxy{ tup }
+    constexpr ContractedElement( T const& tup ) : 
+        base_type{ tup }
     { }
-
-    proxy_type _proxy;
 };
 
 /**
- * Invoker for ContractionElements
+ * Contraction helper
  */
-template< size_t E, size_t I, size_t J, tensor_like T >
-struct Invoker< ContractionElement< E, I, J, T >>
+template< size_t I, size_t J, tensor_like T, typename Seq >
+struct ContractionHelper;
+
+
+template< size_t I, size_t J, tensor_like T, size_t... Is >
+struct ContractionHelper< I, J, T, seq< Is... >> : 
+    Tensor< contracted_shape_t< I, J, shape_of_t< T >>, 
+        ContractedElement< Is, I, J, T >... >
 {
-    using tensor_type = T;
-    using element_type = ContractionElement< E, I, J, tensor_type >;
-    using result_type = element_type::result_type;
-    using elements_seq = element_type::elements_seq;
-
-    constexpr result_type operator()( element_type const& el, 
-        variable_values const& values )
-    { return invoke( el.value(), values ); }
+    using base_type = Tensor< contracted_shape_t< I, J, shape_of_t< T >>, 
+        ContractedElement< Is, I, J, T >... >;
+    
+    constexpr ContractionHelper( T const& tup ) :
+        base_type{ tup }
+    { }
 };
-
-template< typename OutSeq, size_t I, size_t J, tensor_like T >
-struct contraction_helper;
 
 /**
  * Contraction of V along the Ith and Jth indices
  */
-template< size_t I, size_t J, tensor_like V >
-requires( isless( I, shape_of_t< V >::size ) and 
-    isless( J, shape_of_t< V >::size ) and I != J )
-struct Contract : DependsOn< V >
+template< size_t I, size_t J, tensor_like T >
+requires( isless( I, shape_of_t< T >::size ) and 
+    isless( J, shape_of_t< T >::size ) and I != J )
+struct Contract : ContractionHelper< I, J, T, 
+    make_seq< contracted_shape_t< I, J, shape_of_t< T >>::elements_size >>
 {
-    using tensor_type = V;
-    using input_shape_type = shape_of_t< tensor_type >;
-    using shape_type = contracted_shape_t< I, J, input_shape_type >;
-    using helper_type = contraction_helper< 
-        make_seq< shape_type::elements_size >, I, J, tensor_type >;
+    using base_type = ContractionHelper< I, J, T, 
+        make_seq< contracted_shape_t< I, J, shape_of_t< T >>::elements_size >>;
 
-    // required to make this a tensor
-    using result_type = helper_type::result_type;
-
-    constexpr tensor_type tensor() const { return get_dependent< 0 >( *this ); }
-
-    constexpr Contract( tensor_type const& ten ) : DependsOn< tensor_type >{ ten } { }
+    constexpr Contract( T const& ten ) : base_type{ ten } { }
 };
-
-
-template< size_t... Es, size_t I, size_t J, tensor_like T >
-struct contraction_helper< seq< Es... >, I, J, T >
-{
-    using tensor_type = T;
-    using input_shape = shape_of_t< tensor_type >;
-    using shape_type = contracted_shape_t< I, J, input_shape >;
-    using type = Tensor< shape_type, ContractionElement< Es, I, J, tensor_type >... >;
-    using result_type = result_t< type >;
-};
-
-/**
- * tensor element of a contracted tensor
- */
-template< size_t E, size_t I, size_t J, typename T >
-struct tensor_element< E, Contract< I, J, T >>
-{
-    using tensor_type = T;
-    using contract_type = Contract< I, J, tensor_type >;
-    // a tensor of ContractionElements
-    using type = contract_type::result_type;
-
-    static constexpr size_t elements_size = 
-        shape_of_t< contract_type >::elements_size;
-    
-    static constexpr type value( contract_type const& x )
-    { return helper( x, make_seq< elements_size >{} ); }
-
-    // ContractionElements take the original tensor as a constructor param
-    template< size_t... Is >
-    static constexpr type helper( contract_type const& x, seq< Is... > )
-    { return { get_dependent< Is-Is >( x )... }; } // always returns x.tensor()
-};
-
-template< size_t E, size_t I, size_t J, tensor_like T >
-constexpr ContractionElement< E, I, J, T > get_tensor_element( Contract< I, J, T > const& x )
-{ return { x.tensor() }; }
-
-template< size_t I, size_t J, tensor_like V >
-struct Invoker< Contract< I, J, V >>
-{
-    using tensor_type = V;
-    using contract_type = Contract< I, J, tensor_type >;
-    using result_type = contract_type::result_type;
-    using shape_type = contract_type::shape_type;
-
-    constexpr result_type operator()( contract_type const& con, variable_values const& values )
-    { return helper( con, values, make_seq< shape_type::elements_size >{} ); }
-
-    template< size_t... Is >
-    constexpr result_type helper( contract_type const& con, 
-        variable_values const& values, seq< Is... > )
-    { return { invoke( get_tensor_element< Is >( con ), values )... }; }
-    
-};
-
-// template< size_t I, size_t J, tensor_like T >
-// struct contraction;
-
-
-// template< size_t I, size_t J, tensor_like T >
-// requires( not is_same_v< void, contracted_shape_t< I, J, shape_of_t< T >>> )
-// struct contraction< I, J, T >
-// { 
-//     using tensor_type = T;
-//     using input_shape = shape_of_t< T >;
-//     using shape_type = contracted_shape_t< I, J, input_shape >;
-//     static constexpr size_t contraction_size = shape_type::elements_size;
-
-//     using type = contraction_helper< make_seq< shape_type::elements_size >, 
-//         I, J, tensor_type >::type;
-
-//     static constexpr type contract( T v )
-//     { return contraction_helper< make_seq< contraction_size >, I, J, 
-//         tensor_type >::contract( v ); }
-// };
-
-// // this contraction results in a singular value
-// template< size_t I, size_t J, tensor_like T >
-// requires( is_same_v< void, contracted_shape_t< I, J, shape_of_t< T >>> )
-// struct contraction< I, J, T >
-// { using type = contraction_element< 0, I, J, T >::type; };
-
-// /**
-//  * a contraction of tensor T on indices I and J
-//  */
-// template< size_t I, size_t J, tensor_like T >
-// requires( isless( I, J ) and 
-//     isless( I, shape_of_t< T >::size ) and 
-//     isless( J, shape_of_t< T >::size ) and 
-//     shape_at_v< I, shape_of_t< T >> == shape_at_v< J, shape_of_t< T >> )
-// using contraction_t = contraction< I, J, T >::type;
 
 #ifndef NDEBUG
 using t22 = tensor_t< Shape< 2, 2 >, float, float, float, float >;
@@ -507,206 +345,85 @@ constexpr size_t right_prod_element_v =
     right_prod_element< I, LeftS, RightS >::value;
 
 template< size_t I, tensor_like LeftT, tensor_like RightT >
-struct TensorProductElement : DependsOn< LeftT, RightT >
+struct TensorProductElement : Product< 
+    Element< left_prod_element_v< I, shape_of_t< LeftT >, shape_of_t< RightT >>, LeftT >,
+    Element< right_prod_element_v< I, shape_of_t< LeftT >, shape_of_t< RightT >>, RightT >>
 { 
-    using left_type = LeftT;
-    using right_type = RightT;
-    using left_shape = shape_of_t< LeftT >;
-    using right_shape = shape_of_t< RightT >;
+    using base_type = Product< 
+        Element< left_prod_element_v< I, shape_of_t< LeftT >, shape_of_t< RightT >>, LeftT >,
+        Element< right_prod_element_v< I, shape_of_t< LeftT >, shape_of_t< RightT >>, RightT >>;
 
-    static constexpr size_t left_element = left_prod_element_v< I, 
-        left_shape, right_shape >;
-    static constexpr size_t right_element = right_prod_element_v< I, 
-        left_shape, right_shape >;
-    using type = Product< Element< left_element, LeftT >, 
-        Element< right_element, RightT >>;
-
-    // required for expressions
-    using result_type = result_t< type >;
-
-    constexpr left_type left() const
-    { return get_dependent< 0 >( *this ); }
-    
-    constexpr right_type right() const
-    { return get_dependent< 1 >( *this ); }
-
-    // this can be invoked in place of the parent expression
-    constexpr type value() const
-    { return {{ left() }, { right() }}; }
-
-    constexpr TensorProductElement( left_type left, right_type right ) : 
-        DependsOn< left_type, right_type >{ left, right }
+    constexpr TensorProductElement( LeftT const& left, RightT const& right ) : 
+        base_type{ left, right }
     { }
-};
-
-template< size_t I, tensor_like LeftT, tensor_like RightT >
-struct Invoker< TensorProductElement< I, LeftT, RightT >>
-{
-    using left_type = LeftT;
-    using right_type = RightT;
-    using product_element_type = TensorProductElement< I, LeftT, RightT >;
-    using result_type = product_element_type::result_type;
-
-    constexpr result_type operator()( product_element_type const& el, 
-        variable_values const& values )
-    { return invoke( el.value(), values ); }
 };
 
 template< tensor_like LeftT, tensor_like RightT, typename Seq >
 struct TensorProductHelper;
 
 template< tensor_like LeftT, tensor_like RightT, size_t... Is >
-struct TensorProductHelper< LeftT, RightT, seq< Is... >>
+struct TensorProductHelper< LeftT, RightT, seq< Is... >> : 
+    Tensor< shape_cat_t< shape_of_t< LeftT >, shape_of_t< RightT >>, 
+        TensorProductElement< Is, LeftT, RightT >... >
 {
-    using left_type = LeftT;
-    using right_type = RightT;
-    using left_shape = shape_of_t< left_type >;
-    using right_shape = shape_of_t< right_type >;
-    using shape_type = shape_cat_t< shape_of_t< left_type >, 
-        shape_of_t< right_type >>;
-
-    using type = Tensor< shape_type, TensorProductElement< Is, left_type, right_type >... >;
-    using result_type = result_t< type >;
-
-    template< size_t I >
-    static constexpr size_t left_element = left_prod_element_v< I, 
-        left_shape, right_shape >;
-
-    template< size_t I >
-    static constexpr size_t right_element = right_prod_element_v< I, 
-        left_shape, right_shape >;
-};
-
-template< shape S, typename... Ts >
-struct Product< Tensor< S, Ts... >> : DependsOn< Tensor< S, Ts... >>
-{
-    using tensor_type = Tensor< S, Ts... >;
-    using shape_type = Tensor< S, Ts... >::shape_type;
-    using result_type = result_t< Tensor< S, Ts... >>;
-
-    constexpr tensor_type left() const { return get_dependent< 0 >( *this ); }
-
-    constexpr Product( Tensor< S, Ts... > arg ) : DependsOn< Tensor< S, Ts... >>{ arg }
-    { }
-};
-
-template< shape S, typename... Ts, typename... Es >
-struct Product< Tensor< S, Ts... >, Es... > : 
-    DependsOn< Tensor< S, Ts... >, Es... >
-{
-    using left_type = Tensor< S, Ts... >;
-    using left_shape = shape_of_t< left_type >;
-    using right_type = Product< Es... >;
-    using right_shape = shape_of_t< right_type >;
-    // not sure this should be result_type...
-    using helper_type = TensorProductHelper< left_type, right_type, 
-        make_seq< left_shape::elements_size * right_shape::elements_size >>;
-
-    constexpr left_type left() const { return get_dependent< 0 >( *this ); }
-    constexpr right_type right() const 
-    { return right_helper( make_seq< sizeof...( Es )>{} ); }
-
-    template< size_t... Is >
-    constexpr right_type right_helper( seq< Is... > ) const
-    { return { get_dependent< 1 + Is >( *this )... }; }
+    using shape_type = shape_cat_t< 
+        shape_of_t< LeftT >, shape_of_t< RightT >>;
+    using base_type = Tensor< shape_type, 
+        TensorProductElement< Is, LeftT, RightT >... >;
     
-    // required for tensor_like objects
-    using shape_type = helper_type::shape_type;
-    using result_type = helper_type::result_type;
-
-    static constexpr size_t elements_size = shape_type::elements_size;
-
-    constexpr Product( Tensor< S, Ts... > arg, Es... es ) : 
-        DependsOn< Tensor< S, Ts... >, Es... >{ arg, es... }
+    constexpr TensorProductHelper( LeftT const& left, RightT const& right ) :
+        base_type{ left, right }
     { }
 };
 
-template< size_t I, shape S, typename... Ts >
-struct tensor_element< I, Product< Tensor< S, Ts... >>>
+template< typename ScalarT, tensor_like TensorT, typename Seq >
+struct TensorScaleHelper;
+
+template< typename ScalarT, tensor_like TensorT, size_t... Is >
+requires( not tensor_like< ScalarT > )
+struct TensorScaleHelper< ScalarT, TensorT, seq< Is... >> :
+    Tensor< shape_of_t< TensorT >, Product< ScalarT, Element< Is, TensorT >>... >
 {
-    using tensor_type = Tensor< S, Ts... >;
-    using product_type = Product< tensor_type >;
-    using type = tensor_element< I, tensor_type >::type;
-    static constexpr type value( product_type const& x )
-    { return tensor_element< I, tensor_type >::value( x.tensor() ); }
-};
+    using base_type = Tensor< shape_of_t< TensorT >, 
+        Product< ScalarT, Element< Is, TensorT >>... >;
 
-template< size_t I, tensor_like T, typename... Es >
-requires( isgreater( sizeof...( Es ), 0 ))
-struct tensor_element< I, Product< T, Es... >>
-{
-    using left_type = T;
-    using right_type = Product< Es... >;
-    using product_type = Product< T, Es... >;
-    using type = TensorProductElement< I, left_type, right_type >;
-
-    static constexpr type value( product_type const& x )
-    { return { x.left(), x.right() }; }
-};
-
-template< shape S, typename... Ts, typename... Es >
-requires( isgreater( sizeof...( Es ), 0 ))
-struct Invoker< Product< Tensor< S, Ts... >, Es... >>
-{
-    using product_type = Product< Tensor< S, Ts... >, Es... >;
-    using result_type = product_type::result_type;
-    using helper_type = product_type::helper_type;
-
-    static constexpr size_t elements_size = product_type::elements_size;
-
-    constexpr result_type operator()( product_type const& expr, 
-        variable_values const& values )
-    { return helper( expr, values, make_seq< elements_size >{} ); }
-
-    template< size_t... Is >
-    constexpr result_type helper( product_type const& expr, 
-        variable_values const& values, seq< Is... > )
-    { return { invoke( get_tensor_element< Is >( expr ), values )... }; }
-};
-
-template< typename E, tensor_like V, typename Seq >
-struct ScaleBase;
-
-template< typename E, tensor_like V, size_t... Is >
-struct ScaleBase< E, V, seq< Is... >> : DependsOn< E, V >
-{
-    using tensor_type = V;
-    // required to be tensor-like
-    using shape_type = shape_of_t< tensor_type >;
-    using scalar_type = E;
-    using type = Tensor< shape_type, Product< scalar_type, 
-        Element< Is , tensor_type >>... >;
-    using result_type = result_t< type >;
-
-    constexpr type proxy() const { return _proxy; }
-
-    constexpr ScaleBase( scalar_type s, tensor_type ten ) : 
-        DependsOn< scalar_type, tensor_type >{ s, ten }, 
-        _proxy{{ get_dependent< Is-Is >( *this ), { get_dependent< 1 + Is-Is >( *this )}}... }
+    constexpr TensorScaleHelper( ScalarT const& scalar, TensorT const& ten ):
+        base_type{ { scalar, Element< Is, TensorT >{ ten }}... }
     { }
-
-    type _proxy;
 };
 
-template< typename E, tensor_like V >
-struct Scale : ScaleBase< E, V, make_seq< shape_of_t< V >::elements_size >>
-{ 
-    using base_type = ScaleBase< E, V, 
-        make_seq< shape_of_t< V >::elements_size >>;
+struct tensor_product
+{   
+    template< tensor_like LeftT, tensor_like RightT >
+    constexpr auto operator()( LeftT const& left, RightT const& right ) const
+    { 
+        using shape_type = shape_cat_t< 
+            shape_of_t< LeftT >, shape_of_t< RightT >>;
+        return TensorProductHelper< LeftT, RightT, 
+            make_seq< shape_type::elements_size >>{ left, right };
+    }
+
+    template< tensor_like LeftT, typename RightT >
+    requires( not tensor_like< RightT >)
+    constexpr auto operator()( LeftT const& left, RightT const& right ) const
+    { return TensorScaleHelper< RightT, LeftT, 
+        make_seq< shape_of_t< LeftT >::element_size >>{ right, left }; }
     
-    constexpr Scale( base_type::scalar_type s, base_type::tensor_type ten ) : 
-        base_type{ s, ten } { }
+    template< typename LeftT, tensor_like RightT >
+    requires( not tensor_like< LeftT >)
+    constexpr auto operator()( LeftT const& left, RightT const& right ) const
+    { return TensorScaleHelper< LeftT, RightT, 
+        make_seq< shape_of_t< LeftT >::element_size >>{ left, right }; }
 };
 
-template< typename E, tensor_like V >
-struct Invoker< Scale< E, V >>
+template< typename T, typename... Ts >
+requires( tensor_like< T > and (tensor_like< Ts > and ... ) and 
+    expression< T > and ( expression< Ts > and ... ))
+struct Product< T, Ts... > : Associative< tensor_product, T, Ts... >
 {
-    using scale_type = Scale< E, V >;
-    using result_type = scale_type::result_type;
-
-    constexpr result_type operator()( scale_type const& op, 
-        variable_values const& values )
-    { return invoke( op.proxy(), values ); }
+    constexpr Product( T const& t, Ts const&... ts ) : 
+        Associative< tensor_product, T, Ts... >{ t, ts... }
+    { }
 };
 
 // static_assert( tensor_like< Scale< double, Vector< 1, double >>> );
@@ -769,7 +486,7 @@ constexpr Contract< I, J, A > contract( A a )
 { return { a }; }
 
 template< typename ScalarT, tensor_like V >
-constexpr Scale< ScalarT, V > scale( ScalarT s, V ten )
+constexpr Product< ScalarT, V > scale( ScalarT s, V ten )
 { return { s, ten }; }
 
 template< tensor_like A, tensor_like B >

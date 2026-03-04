@@ -244,6 +244,12 @@ using tensor_index_t = tensor_index< D, T >::type;
 template< index D, typename T >
 struct index_to_element;
 
+/**
+ * turns an index into an element
+ * 
+ * @tparam D is the index
+ * @tparam T is the tensor
+ */
 template< index D, typename T >
 constexpr size_t index_to_element_v = index_to_element< D, T >::value;
 
@@ -259,46 +265,34 @@ constexpr tensor_index_t< D, T > get_tensor_index( T const& t )
  */
 template< shape S, typename... Es >
 requires( S::elements_size == sizeof...( Es ))
-struct Tensor : DependsOn< Es... >
+struct Tensor : tuple< Es... >
 { 
     using shape_type = S;
     using result_type = Tensor< shape_type, result_t< Es >... >; 
-    using elements_tuple_type = tuple< Es... >;
+    using dependent_types = tuple< Es... >;
     static constexpr size_t elements_size = S::elements_size;
 
     template< size_t I >
-    constexpr tuple_element_t< I, elements_tuple_type > elem() const
-    { return get< I >( DependsOn< Es... >::exprs ); }
+    constexpr tuple_element_t< I, dependent_types > get_dependent() const
+    { return get< I >( *this ); }
+
+    constexpr result_type eval( variable_values const& values )
+    { return eval_helper( values, make_seq< elements_size >{} ); }
 
     template< size_t... Is >
     constexpr tensor_index_t< Index< Is... >, Tensor > subscript() const
-    { return get< index_to_element_v< Index< Is... >, Tensor >>( 
-        DependsOn< Es... >::exprs ); }
-
-    constexpr result_type operator()( result_t< Es >... xs )
-    { return { xs... }; }
-
-
-    template< typename Op >
-    constexpr auto each( Op&& op ) const
-    { return each_helper( op, make_seq< elements_size >{} ); }
-
-    template< typename Op >
-    constexpr auto all( Op&& op ) const
-    { return all_helper( op, make_seq< elements_size >{} ); }
+    { return get< index_to_element_v< Index< Is... >, Tensor >>( *this ); }
 
     constexpr Tensor() = default;
-    constexpr Tensor( Tensor const& ) = default;
-    constexpr Tensor( Es... es ) : DependsOn< Es... >{ es... } { }
+    constexpr Tensor( Es... es ) : dependent_types{ es... } { }
 
-private:
-    template< typename Op, size_t... Is >
-    constexpr auto each_helper( Op& op, seq< Is... > ) const;
-
-    template< typename Op, size_t... Is >
-    constexpr auto all_helper( Op& op, seq< Is... > ) const
-    { return op( elem< Is >()... ); }
+    template< size_t... Is >
+    constexpr result_type eval_helper( variable_values const& values, seq< Is... > )
+    { return { eval( get< Is >( *this ), values )... }; }
 };
+
+
+
 
 /**
  * The result of a tensor is a tensor of results of it's elements
@@ -310,12 +304,6 @@ struct Result< Tensor< S, Ts... >>
 template< shape S, typename... Es >
 Tensor< S, Es... > make_tensor( Es... es )
 { return { es... }; }
-
-template< shape S, typename... Es >
-requires( S::elements_size == sizeof...( Es ))
-template< typename Op, size_t... Is >
-constexpr auto Tensor< S, Es... >::each_helper( Op& op, seq< Is... > ) const
-{ return make_tensor< S >( op( elem< Is >() )... ); }
 
 template< tensor_like A, tensor_like B, size_t... Is >
 constexpr bool tensor_equals_helper( A const& a, B const& b, seq< Is... > )
