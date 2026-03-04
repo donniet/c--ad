@@ -20,6 +20,7 @@ add_executable(test_matrix test_matrix.cpp)
 add_executable(test_tensor test_tensor.cpp)
 add_executable(test_expressions test_expressions.cpp)
 add_executable(test_expressions2 test_expressions2.cpp)
+add_executable(test_expressions3 test_expressions3.cpp)
 add_executable(test_jacobian test_jacobian.cpp)
 add_executable(test_derivations test_derivations.cpp)
 

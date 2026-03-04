@@ -44,7 +44,9 @@ template< typename T >
 struct Expression;
 
 template< typename T >
-auto eval( Expression< T > const& expr, variable_values const& values );
+result_t< T > eval( T const& expr, variable_values const& )
+{ return expr; }
+
 
 /**
  * 
@@ -56,12 +58,21 @@ struct Expression
     constexpr value_type const& get_value() const
     { return _value; }
 
-    Expression( value_type const& expr ): _value{ expr } { }
+    constexpr Expression( value_type const& expr ): _value{ expr } { }
 
     value_type _value;
 };
 
+template< typename T >
+result_t< Expression< T >> eval( Expresison< T > const& expr, 
+    variable_values const& vars )
+{ return eval( expr.get_value(), vars ); }
 
+template< typename T, typename U >
+struct Sum
+{
+    
+};
 
 /**
  * trait to mark a type as an expression
