@@ -51,6 +51,17 @@ static constexpr size_t min_v = detail::Min< Is... >::value;
 template< size_t... Is >
 static constexpr size_t max_v = detail::Max< Is... >::value;
 
+template< size_t... Is >
+struct LeastUpperBound
+{ static constexpr size_t value = 1 + max_v< Is... >; };
+
+template<>
+struct LeastUpperBound<>
+{ static constexpr size_t value = 0; };
+
+template< size_t... Is >
+static constexpr size_t least_upper_bound_v = LeastUpperBound< Is... >::value;
+
 /**
  * noop_t always evaluates to it's template parameter no matter what size_t is
  * passed as the secon parameter.  This is useful for constructing uniform

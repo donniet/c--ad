@@ -21,12 +21,14 @@ int main( int ac, char* av[] )
     values[ 0 ] = 8.l;
 
     auto g = ( 5 + x - f );
+    println( "depends on: {}", g.dependents_size );
     println( "{}", eval( g, values ));
 
     auto a = array_of( zero );
     auto b = array_of( zero , 1 );
 
     println( "{}", eval( element_of< 1 >(b) ));
+    // println( "{}")
 
 
     return EXIT_SUCCESS;
