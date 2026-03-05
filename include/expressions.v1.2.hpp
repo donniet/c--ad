@@ -485,8 +485,11 @@ template< typename T >
 struct Negation : Unary< T >
 { 
     using result_type = decltype( -result_t< T >{} );
+
+    using Unary< T >::get;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return -eval( Unary< T >::get(), vars ); }
+    { return -eval( get(), vars ); }
 
     constexpr Negation( T arg ): Unary< T >{ arg } {} 
 };
@@ -498,9 +501,13 @@ template< typename T, typename U >
 struct Sum : Binary< T, U >
 { 
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
+
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
     constexpr auto eval( variable_values& vars ) const
-    { return expressions::eval( Binary< T, U >::get_left(), vars ) + 
-        expressions::eval( Binary< T, U >::get_right(), vars ); }
+    { return expressions::eval( get_left(), vars ) + 
+        expressions::eval( get_right(), vars ); }
 
     constexpr Sum( T left, U right ): 
         Binary< T, U >{ left, right } { } 
@@ -513,9 +520,13 @@ template< typename T, typename U >
 struct Difference : Binary< T, U >
 { 
     using result_type = decltype( result_t< T >{} - result_t< U >{} );
+
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( Binary< T, U >::get_left(), vars ) - 
-        expressions::eval( Binary< T, U >::get_right(), vars ); }
+    { return expressions::eval( get_left(), vars ) - 
+        expressions::eval( get_right(), vars ); }
 
     constexpr Difference( T left, U right ): 
         Binary< T, U >{ left, right } { } 
@@ -528,9 +539,13 @@ template< typename T, typename U >
 struct Product : Binary< T, U >
 { 
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
+
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( Binary< T, U >::get_left(), vars ) *
-        expressions::eval( Binary< T, U >::get_right(), vars ); }
+    { return expressions::eval( get_left(), vars ) *
+        expressions::eval( get_right(), vars ); }
 
     constexpr Product( T left, U right ): 
         Binary< T, U >{ left, right } { } 
@@ -545,9 +560,13 @@ template< typename T, typename U >
 struct Quotient : Binary< T, U >
 { 
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
+
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
     constexpr auto eval( variable_values& vars ) const
-    { return expressions::eval( Binary< T, U >::get_left(), vars ) / 
-        expressions::eval( Binary< T, U >::get_right(), vars ); }
+    { return expressions::eval( get_left(), vars ) / 
+        expressions::eval( get_right(), vars ); }
 
     constexpr Quotient( T numerator, U denominator ):
         Binary< T, U >{ numerator, denominator } { } 
@@ -561,8 +580,10 @@ struct ElementOf: Unary< ArrayT >
 { 
     using result_type = result_t< tuple_element_t< I, ArrayT >>;
 
+    using Unary< ArrayT >::get;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get< I >( Unary< ArrayT >::get() ), vars ); }
+    { return expressions::eval( get< I >( get() ), vars ); }
 
     constexpr ElementOf( ArrayT arr ): Unary< ArrayT >{ arr } {} 
 };
@@ -575,9 +596,13 @@ struct ArrayOf: Nary< Ts... >
 { 
     using result_type = tuple< result_t< Ts >... >;
 
+
     template< size_t... Is >
-    constexpr result_type eval_helper( variable_values& vars, seq< Is... > ) const
-    { return make_tuple( expressions::eval( Nary< Ts... >::template get< Is >(), vars )... ); }
+    constexpr result_type eval_helper( variable_values& vars, 
+        seq< Is... > ) const
+    { return make_tuple( expressions::eval( 
+        Unary< Ts... >::template get< Is >(), vars )... ); }
+
     constexpr auto eval( variable_values& vars ) const
     { return eval_helper( vars, make_seq< sizeof...( Ts )>{} ); }
 
@@ -592,8 +617,10 @@ struct ElementOf< I, ArrayOf< Ts... >>: Unary< ArrayOf< Ts... >>
 { 
     using result_type = result_t< tuple_element_t< I, tuple< Ts... >>>;
 
+    using Unary< ArrayOf< Ts... >>::get;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( Unary< ArrayOf< Ts... >>::get().template get< I >(), vars ); }
+    { return expressions::eval( get().template get< I >(), vars ); }
 
     constexpr ElementOf( ArrayOf< Ts... > arr ): 
         Unary< ArrayOf< Ts... > >{ arr } {} 
@@ -607,12 +634,31 @@ struct Equals : Binary< T, U >
 { 
     using result_type = bool;
 
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( Binary< T, U >::get_left(), vars ) == 
-        expressions::eval( Binary< T, U >::get_right(), vars ); }
+    { return expressions::eval( get_left(), vars ) == 
+        expressions::eval( get_right(), vars ); }
 
     constexpr Equals( T left, T right ):
         Binary< T, U >{ left, right } { } 
+};
+
+/**
+ * logical operations
+ */
+template< typename T, typename U >
+struct Conjunction: Binary< T, U >
+{
+    using result_type = bool;
+
+    using Binary< T, U >::get_left;
+    using Binary< T, U >::get_right;
+
+    constexpr result_type eval( variable_values& vars ) const
+    { return expressions::eval( get_left(), vars ) and
+        expressions::eval( get_right(), vars ); }
 };
 
 
@@ -873,6 +919,12 @@ template< typename T, typename U >
 constexpr auto operator==( Expression< T > const& left, 
     Expression< U > const& right )
 { return Expression< Equals< T, U >>{{ left.get(), right.get() }}; }
+
+// logical operations
+template< typename T, typename U >
+constexpr auto operator and( Expression< T > const& left, 
+    Expression< U > const& right )
+{ return Expression< Conjunction< T, U >>{{ left.get(), right.get() }}; }
 
 } // namespace expressions
 

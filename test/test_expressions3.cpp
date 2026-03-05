@@ -30,9 +30,9 @@ int main( int ac, char* av[] )
     println( "g() == {}", eval( dg ));
 
     variable< 1, Length > l;
-    values[ 1 ] = 5_mm;
+    values[ 1 ] = 12_in;
 
-    auto h = ( 1_m2 + l * l ) / 0.254_in;
+    auto h = ( 1_sqft + l * l ) / 25.4_mm;
     println( "h(x) == {}", eval( h, values ));
 
     auto dh = d< 1 >( h );
