@@ -8,6 +8,13 @@
 #include <tuple>
 #include <map>
 #include <any>
+#include <string>
+
+#ifndef NO_EXPRESSION_PRINTING
+#include <format>
+#endif
+
+// #include <string_view>
 
 namespace expressions {
 
@@ -120,8 +127,19 @@ struct Variable : ExpressionTag
     using result_type = value_type;
     static constexpr size_t index = I;
 
+    constexpr std::string name() const
+    { return _name; }
+
     constexpr T eval( variable_values& vars ) const
     { return any_cast< T >( vars[ I ] ); }
+
+    std::string _name = "var";
+
+#ifndef NO_EXPRESSION_PRINTING
+    constexpr Variable( std::string format ): 
+        _name{ std::format( std::runtime_format( format ), I ) } {}
+    constexpr Variable(): _name{ std::format( "var_{}", I ) } {}
+#endif
 };
 
 /** 
@@ -359,7 +377,7 @@ struct Expression : ExpressionTag
 
     static constexpr bool contains_expression = true;
 
-    constexpr value_type const& get() const
+    constexpr value_type get() const
     { return _value; }
 
     constexpr result_type eval( variable_values& vars ) const
@@ -369,6 +387,9 @@ struct Expression : ExpressionTag
     { return get(); }
     constexpr Expression() = default;
     explicit constexpr Expression( value_type const& expr ): _value{ expr } { }
+
+    // template< typename Arg, typename... Args >
+    // explicit constexpr Expression( Arg&& arg, Args&&... args ): _value{ arg, args... } {}
 
     value_type _value;
 };
@@ -402,6 +423,10 @@ Expression< T > static_expr( T const& value )
 template< size_t I, typename T >
 using variable = Expression< Variable< I, T >>;
 
+template< size_t I, typename T >
+constexpr variable< I, T > make_variable( std::string name_format = "var{}" )
+{ return {{ name_format }}; }
+
 /**
  * Constant expression
  */
@@ -412,7 +437,11 @@ struct Constant : ExpressionTag
     using result_type = value_type;
     using dependent_vars_type = VariableSet<>;
     static constexpr T value = Value;
-    constexpr value_type const& get() const { return value; };
+
+    constexpr operator T() const
+    { return value; }
+
+    constexpr value_type get() const { return value; };
 
     consteval result_type eval( variable_values& ) const
     { return value; }
@@ -596,7 +625,6 @@ struct ArrayOf: Nary< Ts... >
 { 
     using result_type = tuple< result_t< Ts >... >;
 
-
     template< size_t... Is >
     constexpr result_type eval_helper( variable_values& vars, 
         seq< Is... > ) const
@@ -641,7 +669,7 @@ struct Equals : Binary< T, U >
     { return expressions::eval( get_left(), vars ) == 
         expressions::eval( get_right(), vars ); }
 
-    constexpr Equals( T left, T right ):
+    constexpr Equals( T left, U right ):
         Binary< T, U >{ left, right } { } 
 };
 
@@ -659,6 +687,8 @@ struct Conjunction: Binary< T, U >
     constexpr result_type eval( variable_values& vars ) const
     { return expressions::eval( get_left(), vars ) and
         expressions::eval( get_right(), vars ); }
+
+    constexpr Conjunction( T left, U right ): Binary< T, U >{ left, right } {}
 };
 
 
@@ -928,5 +958,156 @@ constexpr auto operator and( Expression< T > const& left,
 
 } // namespace expressions
 
+
+#ifndef NO_EXPRESSION_PRINTING
+
+namespace std {
+
+template< typename ExprT >
+struct formatter< expressions::Expression< ExprT >, char >: 
+    formatter< ExprT >
+{
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Expression< ExprT > expr, 
+        FormatContext& ctx ) const
+    { return formatter< ExprT >::format( expr.get(), ctx ); }
+};
+
+template< typename T, T Value >
+struct formatter< expressions::Constant< T, Value >, char >: 
+    formatter< T >
+{
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Constant< T, Value > expr, 
+        FormatContext& ctx ) const
+    { return formatter< T >::format( Value, ctx ); }
+};
+
+template< size_t I, typename T >
+struct formatter< expressions::Variable< I, T >, char >:
+    formatter< std::string >
+{
+    string format_string;
+
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Variable< I, T > expr, 
+        FormatContext& ctx ) const
+    { return formatter< std::string >::format( expr.name(), ctx ); }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Product< LeftT, RightT >, char >:
+    formatter< std::string >
+{
+    formatter< LeftT > left_formatter;
+    formatter< RightT > right_formatter;
+    
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto i = ctx.out();
+        *i++ = '(';
+        ctx.advance_to(i);
+        i = left_formatter.format( expr.get_left(), ctx );
+        *i++ = '*';
+        ctx.advance_to(i);
+        i = right_formatter.format( expr.get_right(), ctx );
+        *i++ = ')';
+        return i;
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Sum< LeftT, RightT >, char >:
+    formatter< std::string >
+{
+    formatter< LeftT > left_formatter;
+    formatter< RightT > right_formatter;
+    
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Sum< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto i = ctx.out();
+        *i++ = '(';
+        ctx.advance_to(i);
+        i = left_formatter.format( expr.get_left(), ctx );
+        *i++ = '+';
+        ctx.advance_to(i);
+        i = right_formatter.format( expr.get_right(), ctx );
+        *i++ = ')';
+        return i;
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Difference< LeftT, RightT >, char >:
+    formatter< std::string >
+{
+    formatter< LeftT > left_formatter;
+    formatter< RightT > right_formatter;
+    
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Difference< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto i = ctx.out();
+        *i++ = '(';
+        ctx.advance_to(i);
+        i = left_formatter.format( expr.get_left(), ctx );
+        *i++ = '-';
+        ctx.advance_to(i);
+        i = right_formatter.format( expr.get_right(), ctx );
+        *i++ = ')';
+        return i;
+    }
+};
+
+template< typename ExprT >
+struct formatter< expressions::Negation< ExprT >, char >:
+    formatter< ExprT >
+{
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Negation< ExprT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto i = ctx.out();
+        *i++ = '-';
+        ctx.advance_to(i);
+        return formatter< ExprT >::format( expr.get(), ctx );
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Equals< LeftT, RightT >, char >:
+    formatter< std::string >
+{   
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Equals< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto str = std::format( "({}=={})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
+    formatter< std::string >
+{   
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto str = std::format( "({}and{})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
+    }
+};
+
+
+} // namespace std
+
+#endif
 
 #endif
