@@ -6,11 +6,37 @@
 #include <ranges>
 #include <memory>
 #include <type_traits>
+#include <string>
+#include <locale>
 
 using std::size_t;
 using std::tuple;
 using std::tuple_cat;
 using std::is_same_v;
+using std::string;
+using std::isspace;
+
+/**
+ * string utilities 
+ */
+constexpr string& ltrim( string& s )
+{
+    auto i = s.begin();
+    for(; i != s.end() and isspace( *i ); ++i ) {}
+    s.erase( s.begin(), i );
+    return s;
+}
+
+constexpr string& rtrim( string& s )
+{
+    auto i = s.rbegin();
+    for(; i != s.rend() and isspace( *i ); ++i ) {}
+    s.erase( i.base(), s.end() );
+    return s;
+}
+
+constexpr string& trim( string& s )
+{ return ltrim( rtrim( s )); }
 
 /**
  * math utilities

@@ -69,15 +69,18 @@ constexpr long double zero_celsius_in_kelvin = 273.15; /* K */
 constexpr long double celsius_per_fahrenheit = 5.l / 9.l;
 constexpr long double fahrenheit_at_zero_celsius = 32.l;
 
-
-// NOTE: we allow for a max of 16 units
-constexpr size_t total_units = 16;
+// start with 7 units including scalars
+constexpr size_t total_units = 7;
 using ull_t = unsigned long long;
 
 // powers of higher units will be severely limited due to Godel numbering
 constexpr std::array< ull_t, total_units > primes = 
-/*0  1  2  3  4   5   6   7   8   9   10  11  12  13  14  15 */
-{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+/*0  1  2  3  4   5   6         7   8   9  10  11  12  13  14  15  16 */
+{ 1, 2, 3, 5, 7, 11, 13 }; //, 17, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+constexpr std::array< string, total_units > base_unit_names =
+{ "", "m", "s", "kg", "A", "K", "cd" };
+constexpr std::array< string, total_units > base_unit_long_names =
+{ "", "meters", "seconds", "kilograms", "amperes", "kelvin", "candelas" };
 
 template< size_t I >
 struct prime_unit;
@@ -98,13 +101,13 @@ using prime_unit_t = prime_unit< I >::type;
  */
 using unit_id_type = pair< unsigned long long, unsigned long long >;
 
-constexpr unit_id_type scalar_unit_id = { 1, 1 };
-constexpr unit_id_type length_unit_id = { 2, 1 };
-constexpr unit_id_type time_unit_id = { 3, 1 };
-constexpr unit_id_type mass_unit_id = { 5, 1 };
-constexpr unit_id_type current_unit_id = { 7, 1 };
-constexpr unit_id_type temperature_unit_id = { 11, 1 };
-constexpr unit_id_type luminous_intensity_unit_id = { 13, 1 };
+constexpr unit_id_type scalar_unit_id =             { primes[0], 1 };
+constexpr unit_id_type length_unit_id =             { primes[1], 1 };
+constexpr unit_id_type time_unit_id =               { primes[2], 1 };
+constexpr unit_id_type mass_unit_id =               { primes[3], 1 };
+constexpr unit_id_type current_unit_id =            { primes[4], 1 };
+constexpr unit_id_type temperature_unit_id =        { primes[5], 1 };
+constexpr unit_id_type luminous_intensity_unit_id = { primes[6], 1 };
 
 constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
 { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
@@ -117,6 +120,76 @@ static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1
 static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 } );
 static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 } ) == unit_id_type{ 2, 3 } );
 static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 4, 3 } );
+
+// factor the unit id into it's prime factors
+constexpr std::array< int, total_units > factor( unit_id_type uid )
+{
+    std::array< int, total_units > ret;
+    std::fill( ret.begin(), ret.end(), 0 );
+    ret[0] = 1; // scalar exponent must be 1
+
+    // first factor the numerator
+    auto [ num, den ] = uid;
+    // TODO: there's gotta be a faster way to do this...
+    for( int i = 1; i < total_units; ++i )
+    {
+        while( num % primes[i] == 0 )
+        {
+            ret[i]++;
+            num /= primes[i];
+        }
+        while( den % primes[i] == 0 )
+        {
+            ret[i]--;
+            num /= primes[i];
+        }
+    }
+
+    return ret;
+}
+
+static_assert( factor( scalar_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 0 } );
+static_assert( factor( length_unit_id ) == 
+    std::array< int, total_units >{ 1, 1, 0, 0, 0, 0, 0 } );
+static_assert( factor( time_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 1, 0, 0, 0, 0 } );
+static_assert( factor( mass_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 1, 0, 0, 0 } );
+static_assert( factor( current_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 1, 0, 0 } );
+static_assert( factor( temperature_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 1, 0 } );
+static_assert( factor( luminous_intensity_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 1 } );
+static_assert( factor( luminous_intensity_unit_id * length_unit_id * length_unit_id ) == 
+    std::array< int, total_units >{ 1, 2, 0, 0, 0, 0, 1 } );
+
+
+// TODO: create a unit_format_type which is parsed by formatter< unit >::parse
+struct unit_format_type
+{ 
+};
+
+constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
+{
+    std::stringstream name;
+
+    auto powers = factor( uid );
+    for( int i = 1; i < total_units; ++i )
+    {
+        if( powers[i] == 0 )
+            continue;
+        
+        name << " " << base_unit_names[i];
+        if( powers[i] == 1 )
+            continue;
+        
+        name << "^" << powers[i];
+    }
+
+    return name.str();
+}
 
 template< unit_id_type Id, arithmetic T >
 struct base_unit
@@ -934,6 +1007,27 @@ constexpr auto operator""_ftps( long double feet_per_second )
 constexpr auto operator""_ftps( unsigned long long feet_per_second )
 { return Velocity{ (long double)feet_per_second * meters_per_foot }; }
 
+enum class velocity_unit_type: size_t 
+{ meters_per_second = 0, kilometers_per_hour, miles_per_hour, feet_per_second };
+constexpr string velocity_unit_names[] = 
+{ "m/s", "km/s", "mi/s", "ft/s" };
+constexpr const char* velocity_unit_long_names[] = 
+{ "meters per second", "kilometers per hour", "miles per hour", "feet per second" };
+constexpr long double velocity_value( Velocity v, velocity_unit_type u )
+{
+    switch( u ) {
+    case velocity_unit_type::meters_per_second: 
+    default:
+        return meters_per_second( v );
+    case velocity_unit_type::kilometers_per_hour:
+        return meters_per_second( v ) * 1e-3 * 3600.;
+    case velocity_unit_type::miles_per_hour:
+        return meters_per_second( v ) / meters_per_mile * 1e-3 * 3600.;
+    case velocity_unit_type::feet_per_second:
+        return meters_per_second( v ) / meters_per_foot;
+    }
+}
+
 
 /**
  * represents an electric current in Amperes
@@ -953,6 +1047,27 @@ constexpr auto operator""_kA ( long double kiloamperes )
 constexpr auto operator""_kA ( unsigned long long kiloamperes )
 { return Current{ (long double)kiloamperes * 1e3 }; }
 
+constexpr long double amperes( Current c )
+{ return c.get_value(); }
+enum class current_unit_type: size_t 
+{ amperes = 0, milliamperes, kiloamperes };
+constexpr string current_unit_names[] = 
+{ "A", "mA", "kA" };
+constexpr string current_unit_long_names[] =
+{ "amperes", "milliamperes", "kiloamperes" };
+constexpr long double current_value( Current c, current_unit_type u )
+{
+    switch( u ) {
+    case current_unit_type::amperes:
+    default:
+        return amperes( c );
+    case current_unit_type::milliamperes:
+        return amperes( c ) * 1e3;
+    case current_unit_type::kiloamperes:
+        return amperes( c ) * 1e-3;
+    }
+}
+
 /**
  * represents a unit of electric charge in coulombs ( amp seconds )
  */
@@ -962,6 +1077,24 @@ constexpr auto operator""_C ( long double coulombs )
 { return Charge{ coulombs }; }
 constexpr auto operator""_C ( unsigned long long coulombs )
 { return Charge{ (long double)coulombs }; }
+
+constexpr long double coulombs( Charge c )
+{ return c.get_value(); }
+
+enum class charge_unit_type: size_t 
+{ coulombs = 0 };
+constexpr string charge_unit_names[] = 
+{ "C" };
+constexpr string charge_unit_long_names[] =
+{ "coulombs" };
+constexpr long double charge_value( Charge c, charge_unit_type u )
+{
+    switch( u ) {
+    case charge_unit_type::coulombs:
+    default:
+        return coulombs( c );
+    }
+}
 
 /**
  * represents a mass in kilograms
@@ -1093,6 +1226,24 @@ constexpr auto operator""_mps2( unsigned long long meters_per_second_squared )
 static constexpr Acceleration standard_gravity = Acceleration
 { standard_acceleration_of_gravity /* m/s^2 */ };
 
+constexpr long double meters_per_second_squared( Acceleration a )
+{ return a.get_value(); }
+enum class acceleration_unit_type: size_t
+{ meters_per_second_squared };
+constexpr string acceleration_unit_names[] = 
+{ "m/s^2" };
+constexpr const char* acceleration_unit_long_names[] = 
+{ "meters per second-squared" };
+constexpr long double acceleration_value( Acceleration a, acceleration_unit_type u )
+{ 
+    switch( u ) {
+    case acceleration_unit_type::meters_per_second_squared:
+    default:
+        return meters_per_second_squared( a );
+    }
+}
+
+
 /**
  * a unit of force in kilogram meters per second squared
  */
@@ -1107,6 +1258,26 @@ constexpr auto operator""_lbf( long double pounds_force )
 constexpr auto operator""_lbf( unsigned long long pounds_force )
 { return Force{ (long double)pounds_force * kilograms_per_pound * standard_acceleration_of_gravity }; }
 
+constexpr long double newtons( Force f )
+{ return f.get_value(); }
+enum class force_unit_type : size_t 
+{ newtons = 0, pounds_force };
+constexpr string force_unit_names[] = 
+{ "N", "lbf" };
+constexpr string force_unit_long_names[] =
+{ "newtons", "pounds-force" };
+constexpr long double force_value( Force f, force_unit_type u )
+{
+    switch( u ) {
+    case force_unit_type::newtons:
+    default:
+        return newtons( f );
+    case force_unit_type::pounds_force:
+        return newtons( f ) / kilograms_per_pound / standard_acceleration_of_gravity;
+    }
+}
+
+
 /**
  *  a unit of energy in newton meters
  */
@@ -1116,6 +1287,23 @@ constexpr auto operator""_J( long double joules )
 { return Energy{ joules }; }
 constexpr auto operator""_J( unsigned long long joules )
 { return Energy{ (long double)joules }; }
+
+constexpr long double joules( Energy e )
+{ return e.get_value(); }
+enum class energy_unit_type : size_t 
+{ joules = 0 };
+constexpr string energy_unit_names[] = 
+{ "J" };
+constexpr string energy_unit_long_names[] = 
+{ "joules" };
+constexpr long double energy_value( Energy e, energy_unit_type u )
+{
+    switch( u ) {
+    case energy_unit_type::joules:
+    default:
+        return joules( e );
+    }
+}
 
 /** 
  * a unit of power in watts
@@ -1127,6 +1315,23 @@ constexpr auto operator""_W( long double watts )
 constexpr auto operator""_W( unsigned long long watts )
 { return Power{ (long double)watts }; }
 
+constexpr long double watts( Power p )
+{ return p.get_value(); }
+enum class power_unit_type : size_t 
+{ watts = 0 };
+constexpr string power_unit_names[] = 
+{ "W" };
+constexpr string power_unit_long_names[] =
+{ "watts" };
+constexpr long double power_value( Power p, power_unit_type u )
+{
+    switch( u ) {
+    case power_unit_type::watts:
+    default:
+        return watts( p );
+    }
+}
+
 /**
  * electric potential in volts
  */
@@ -1137,6 +1342,24 @@ constexpr auto operator""_V( long double volts )
 constexpr auto operator""_V( unsigned long long volts )
 { return ElectricPotential{ (long double)volts }; }
 
+constexpr long double volts( ElectricPotential v )
+{ return v.get_value(); }
+enum class electric_potential_unit_type : size_t 
+{ volts = 0 };
+constexpr string electric_potential_unit_names[] = 
+{ "V" };
+constexpr string electric_potential_unit_long_names[] = 
+{ "volts" };
+constexpr long double electric_potential_value( ElectricPotential v, 
+    electric_potential_unit_type u )
+{
+    switch( u ) {
+    case electric_potential_unit_type::volts:
+    default:
+        return volts( v );
+    }
+}
+
 /**
  * electrical resistance ohms
  */
@@ -1146,6 +1369,23 @@ constexpr auto operator""_Ω( long double ohms )
 { return Resistance{ ohms }; }
 constexpr auto operator""_Ω( unsigned long long ohms )
 { return Resistance{ (long double)ohms }; }
+
+constexpr long double ohms( Resistance r )
+{ return r.get_value(); }
+enum class resistance_unit_type : size_t 
+{ ohms = 0 };
+constexpr string resistance_unit_names[] =
+{ "Ω" };
+constexpr string resistance_unit_long_names[] = 
+{ "ohms" };
+constexpr long double resistance_value( Resistance r, resistance_unit_type u )
+{
+    switch( u ) {
+    case resistance_unit_type::ohms: 
+    default:
+        return ohms( r );
+    }
+}
 
 /**
  * electrical inductance henries
@@ -1160,6 +1400,23 @@ constexpr auto operator""_mH( long double millihenries )
 { return Inductance{ millihenries * 1e-3 }; }
 constexpr auto operator""_mH( unsigned long long millihenries )
 { return Inductance{ (long double)millihenries * 1e-3 }; }
+
+constexpr long double henries( Inductance c )
+{ return c.get_value(); }
+enum class inductance_unit_type : size_t 
+{ henries = 0, millihenries };
+constexpr string inductance_unit_names[] = 
+{ "H", "mH" };
+constexpr string inductance_unit_long_names[] = 
+{ "henries", "millihenries" };
+
+constexpr long double inductance_value( Inductance c, inductance_unit_type u )
+{
+    switch( u ) {
+    case inductance_unit_type::henries: return henries( c );
+    case inductance_unit_type::millihenries: return henries( c ) * 1e3;
+    }
+} 
 
 /**
  * electrical capacitance in farads
@@ -1187,6 +1444,26 @@ constexpr auto operator""_mF( long double millifarads )
 constexpr auto operator""_mF( unsigned long long millifarads )
 { return Capacitance{ (long double)millifarads * 1e-3 }; }
 
+constexpr long double farads( Capacitance c )
+{ return c.get_value(); }
+enum class capacitance_unit_type : size_t 
+{ farads = 0, picofarads, nanofarads, microfarads, millifarads };
+constexpr string capacitance_unit_names[] = 
+{ "F", "pF", "nF", "µF", "mF" };
+constexpr string capacitance_unit_long_names[] = 
+{ "farads", "picofarads", "nanofarads", "microfarads", "millifarads" };
+
+constexpr long double capacitance_value( Capacitance c, capacitance_unit_type u )
+{
+    switch( u ) {
+    case capacitance_unit_type::farads: return farads( c );
+    case capacitance_unit_type::picofarads: return farads( c ) * 1e12;
+    case capacitance_unit_type::nanofarads: return farads( c ) * 1e9;
+    case capacitance_unit_type::microfarads: return farads( c ) * 1e6;
+    case capacitance_unit_type::millifarads: return farads( c ) * 1e3;
+    }
+} 
+
 /**
  * magnetic flux in webers
  */
@@ -1197,6 +1474,21 @@ constexpr auto operator""_Wb( long double webers )
 constexpr auto operator""_Wb( unsigned long long webers )
 { return MagneticFlux{ (long double)webers }; }
 
+constexpr long double webers( MagneticFlux m )
+{ return m.get_value(); }
+enum class magnetic_flux_unit_type { webers = 0 };
+constexpr string magnetic_flux_unit_names[] = { "wb" };
+constexpr string magnetic_flux_unit_long_names[] = { "webers" };
+constexpr long double magnetic_flux_value( MagneticFlux m, 
+    magnetic_flux_unit_type u )
+{
+    switch( u ) {
+    case magnetic_flux_unit_type::webers:
+    default:
+        return webers( m );
+    }
+}
+
 /**
  * magnetic flux density in teslas
  */
@@ -1206,6 +1498,25 @@ constexpr auto operator""_T( long double teslas )
 { return MagneticFluxDensity{ teslas }; }
 constexpr auto operator""_T( unsigned long long teslas )
 { return MagneticFluxDensity{ (long double)teslas }; }
+
+constexpr long double teslas( MagneticFluxDensity m )
+{ return m.get_value(); }
+
+enum class magnetic_flux_density_unit_type : size_t
+{ teslas = 0 };
+
+constexpr string magnetic_flux_density_unit_names[] = { "T" };
+constexpr string magnetic_flux_density_unit_long_names[] = { "teslas" };
+
+constexpr long double magnetic_flux_density_value( MagneticFluxDensity m, 
+    magnetic_flux_density_unit_type u )
+{
+    switch( u ) {
+    case magnetic_flux_density_unit_type::teslas:
+    default:
+        return teslas( m );
+    }
+}
 
 /**
  * frequency in hertz
@@ -1260,6 +1571,28 @@ constexpr auto operator""_cd( long double candelas )
 constexpr auto operator""_cd( unsigned long long candelas )
 { return LuminousIntensity{ (long double)candelas }; }
 
+constexpr long double candelas( LuminousIntensity lum )
+{ return lum.get_value(); }
+
+enum class luminous_intensity_unit_type : size_t 
+{ candelas = 0 };
+
+static constexpr string luminous_intensity_unit_names[] = 
+{ "cd" };
+
+static constexpr string luminous_intensity_unit_long_names[] = 
+{ "candelas" };
+
+constexpr long double luminous_intensity_value( LuminousIntensity lums, 
+    luminous_intensity_unit_type u )
+{
+    switch( u ) {
+    case luminous_intensity_unit_type::candelas: 
+    default:
+        return candelas( lums );
+    }
+}
+
 /** 
  * pressure in pascals, ie: newtons per meter squared 
  */
@@ -1293,6 +1626,34 @@ constexpr auto operator""_mmHg( long double millimeters_of_mercury )
 constexpr auto operator""_mmHg( unsigned long long millimeters_of_mercury )
 { return Pressure{ (long double)millimeters_of_mercury / density_of_mercury / 
     standard_acceleration_of_gravity * 1e3 }; }
+
+constexpr long double pascals( Pressure p )
+{ return p.get_value(); }
+
+enum class pressure_unit_type : size_t
+{ pascals = 0, atmospheres, bars, millibars, pounds_per_square_inch, millimeters_mercury };
+
+static constexpr string pressure_unit_names[] =
+{ "Pa", "atm", "bar", "mbar", "psi", "mmHg" };
+
+static constexpr const char* pressure_unit_long_names[] = 
+{ "pascals", "atmospheres", "bars", "millibars", "pounds_per_square_inch", "millimeters_mercury" };
+
+constexpr long double pressure_value( Pressure p, pressure_unit_type u )
+{
+    switch( u ) {
+    case pressure_unit_type::pascals: return pascals( p );
+    case pressure_unit_type::atmospheres: return pascals( p ) * 
+        atmospheres_per_pascal;;
+    case pressure_unit_type::bars: return pascals( p ) * 1e-5;
+    case pressure_unit_type::millibars: return pascals( p ) * 1e-2;
+    case pressure_unit_type::pounds_per_square_inch: return pascals( p ) / 
+        kilograms_per_pound / standard_acceleration_of_gravity * 
+        meters_per_inch * meters_per_inch;
+    case pressure_unit_type::millimeters_mercury: return pascals( p ) *
+        density_of_mercury / standard_acceleration_of_gravity * 1e-3;
+    }
+}
 
 /**
  * Thermodynamic temperature in Kelvin
@@ -1355,6 +1716,18 @@ struct multiplies< units::base_unit< Id, T >>
     constexpr auto operator()( units::base_unit< Id, T > const& left, 
         U const& right ) const
     { return left * right; }
+};
+
+template< units::unit_id_type uid, units::arithmetic T >
+struct formatter< units::base_unit< uid, T >, char >:
+    formatter< T >
+{
+    template< class FormatContext >
+    FormatContext::iterator format( units::base_unit< uid, T > u, FormatContext& ctx )
+    { 
+        auto out = formatter< T >::format( u.get_value(), ctx );
+        return ranges::copy( units::unit_id_name( uid ), out ).out; 
+    }
 };
     
 template<>

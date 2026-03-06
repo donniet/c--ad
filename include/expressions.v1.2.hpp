@@ -996,71 +996,54 @@ struct formatter< expressions::Variable< I, T >, char >:
 };
 
 template< typename LeftT, typename RightT >
-struct formatter< expressions::Product< LeftT, RightT >, char >:
-    formatter< std::string >
-{
-    formatter< LeftT > left_formatter;
-    formatter< RightT > right_formatter;
-    
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto i = ctx.out();
-        *i++ = '(';
-        ctx.advance_to(i);
-        i = left_formatter.format( expr.get_left(), ctx );
-        *i++ = '*';
-        ctx.advance_to(i);
-        i = right_formatter.format( expr.get_right(), ctx );
-        *i++ = ')';
-        return i;
-    }
-};
-
-template< typename LeftT, typename RightT >
 struct formatter< expressions::Sum< LeftT, RightT >, char >:
     formatter< std::string >
-{
-    formatter< LeftT > left_formatter;
-    formatter< RightT > right_formatter;
-    
+{   
     template< typename FormatContext >
     FormatContext::iterator format( expressions::Sum< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto i = ctx.out();
-        *i++ = '(';
-        ctx.advance_to(i);
-        i = left_formatter.format( expr.get_left(), ctx );
-        *i++ = '+';
-        ctx.advance_to(i);
-        i = right_formatter.format( expr.get_right(), ctx );
-        *i++ = ')';
-        return i;
+        auto str = std::format( "({}+{})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Product< LeftT, RightT >, char >:
+    formatter< std::string >
+{   
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto str = std::format( "({}*{})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
+    }
+};
+
+template< typename LeftT, typename RightT >
+struct formatter< expressions::Quotient< LeftT, RightT >, char >:
+    formatter< std::string >
+{   
+    template< typename FormatContext >
+    FormatContext::iterator format( expressions::Quotient< LeftT, RightT > expr, 
+        FormatContext& ctx ) const
+    { 
+        auto str = std::format( "({}/{})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
     }
 };
 
 template< typename LeftT, typename RightT >
 struct formatter< expressions::Difference< LeftT, RightT >, char >:
     formatter< std::string >
-{
-    formatter< LeftT > left_formatter;
-    formatter< RightT > right_formatter;
-    
+{   
     template< typename FormatContext >
     FormatContext::iterator format( expressions::Difference< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto i = ctx.out();
-        *i++ = '(';
-        ctx.advance_to(i);
-        i = left_formatter.format( expr.get_left(), ctx );
-        *i++ = '-';
-        ctx.advance_to(i);
-        i = right_formatter.format( expr.get_right(), ctx );
-        *i++ = ')';
-        return i;
+        auto str = std::format( "({}-{})", expr.get_left(), expr.get_right() );
+        return formatter< std::string >::format( str, ctx );
     }
 };
 

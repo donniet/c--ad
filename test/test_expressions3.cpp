@@ -21,7 +21,7 @@ int main( int ac, char* av[] )
 
     println( "{}", eval( f ));
 
-    variable< 0, long double > x{{ "x{}" }};
+    variable< 0, long double > x{{ "x_{}" }};
     println( "{}", x );
     println( "{}", x * one );
     println( "{}", x + one );
@@ -37,20 +37,23 @@ int main( int ac, char* av[] )
     auto g = ( 5 + 3*x - f );
     println( "depends on g: {}", g.dependents_size );
     println( "{}", eval( g, values ));
-    // println( std::runtime_format( "g == {}" ), g );
+    println( std::runtime_format( "g == {}" ), g );
 
-    // auto dg = d< 0 >( g );
-    // println( "depends on dg: {}", dg.dependents_size );
-    // println( "g() == {}", eval( dg ));
+    auto dg = d< 0 >( g );
+    println( "{}", dg );
+    println( "depends on dg: {}", dg.dependents_size );
+    println( "g() == {}", eval( dg ));
 
-    // variable< 1, Length > l;
-    // values[ 1 ] = 12_in;
 
-    // auto h = ( 1_sqft + l * l ) / 254_mm;
-    // println( "h(x) == {:ft}", eval( h, values ));
+    variable< 1, Length > l{{ "l_{}" }};
+    values[ 1 ] = 12_in;
 
-    // auto dh = d< 1 >( h );
-    // println( "dh(x) == {:ft}", eval( dh, values ));
+    auto h = ( 1_sqft + l * l ) / 254_mm;
+    println( "h(x) == {:ft}", eval( h, values ));
+
+    auto dh = d< 1 >( h );
+    println( "{}", dh );
+    println( "dh(x) == {:ft}", eval( dh, values ));
 
     // auto a = array_of( zero );
     // auto b = array_of( zero , 1 );
