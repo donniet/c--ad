@@ -125,8 +125,8 @@ static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 
 constexpr std::array< int, total_units > factor( unit_id_type uid )
 {
     std::array< int, total_units > ret;
-    std::fill( ret.begin(), ret.end(), 0 );
-    ret[0] = 1; // scalar exponent must be 1
+    for( int i = 0; i < total_units; ++i )
+        ret[i] = ( i == 0 ? 1 : 0 );
 
     // first factor the numerator
     auto [ num, den ] = uid;
@@ -148,6 +148,23 @@ constexpr std::array< int, total_units > factor( unit_id_type uid )
     return ret;
 }
 
+constexpr unit_id_type reconstitute( std::array< int, total_units > factors )
+{
+    unsigned long long num = 1;
+    unsigned long long den = 1;
+
+    for( int i = 1; i < total_units; ++i )
+    {
+        int power = factors[i];
+        for(; power < 0; ++power )
+            den *= primes[i];
+        for(; power > 0; --power )
+            num *= primes[i];
+    }
+
+    return { num, den };
+}
+
 static_assert( factor( scalar_unit_id ) == 
     std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 0 } );
 static_assert( factor( length_unit_id ) == 
@@ -164,6 +181,35 @@ static_assert( factor( luminous_intensity_unit_id ) ==
     std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 1 } );
 static_assert( factor( luminous_intensity_unit_id * length_unit_id * length_unit_id ) == 
     std::array< int, total_units >{ 1, 2, 0, 0, 0, 0, 1 } );
+
+constexpr bool is_square_unit_id( unit_id_type uid )
+{
+    auto factors = factor( uid );
+    for( int i = 1; i < total_units; i++ )
+    {
+        if( std::abs( factors[i] ) % 2 != 0 )
+            return false;
+    }
+
+    return true;
+}
+
+constexpr unit_id_type unit_id_square_root( unit_id_type uid )
+{
+    auto factors = factor( uid );
+    for( int i = 1; i < total_units; ++i )
+        factors[i] /= 2;
+    return reconstitute( factors );
+}
+
+template< int Exp >
+constexpr unit_id_type unit_id_power( unit_id_type uid )
+{ 
+    auto factors = factor( uid );
+    for( int i = 1; i < total_units; ++i )
+        factors[i] *= Exp;
+    return reconstitute( factors );
+}
 
 
 // TODO: create a unit_format_type which is parsed by formatter< unit >::parse
@@ -311,6 +357,31 @@ struct UnitInverse
 
 template< unit U >
 using unit_inverse = UnitInverse< U >::type;
+
+template< unit U >
+struct UnitSquareRoot
+{
+    static constexpr unit_id_type unit_id = 
+        unit_id_square_root( unit_traits< U >::unit_id );
+    using scalar_type = unit_traits< U >::scalar_type;
+
+    using type = base_unit< unit_id, scalar_type >;
+};
+
+template< unit U >
+using unit_square_root_t = UnitSquareRoot< U >::type;
+
+template< int Exp, unit U >
+struct UnitPower
+{
+    static constexpr unit_id_type unit_id = 
+        unit_id_power< Exp >( unit_traits< U >::unit_id );
+    using scalar_type = unit_traits< U >::scalar_type;
+    using type = base_unit< unit_id, scalar_type >;
+};
+
+template< int Exp, unit U >
+using unit_power_t = UnitPower< Exp, U >::type;
 
 /**
  * represents a continuous dimensionless value
@@ -1707,6 +1778,37 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
 
 // formating of units
 namespace std {
+
+template< units::unit U >
+requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
+constexpr units::unit_square_root_t< U > sqrt( U u )
+{ return units::unit_square_root_t< U >{ std::sqrt( u.get_value()) }; }
+
+/**
+ * pow function with templated exponent
+ */
+template< int Exp, typename T >
+constexpr T pow( T arg );
+
+template< int Exp, typename T >
+requires( Exp == 0 )
+constexpr T pow( T arg )
+{ return 1.; }
+
+template< int Exp, typename T >
+requires( Exp > 0 )
+constexpr T pow( T arg )
+{ return ( Exp % 2 ? arg : 1. ) * pow< Exp/2 >( arg * arg ); }
+
+template< int Exp, typename T >
+requires( Exp < 0 )
+constexpr T pow( T arg )
+{ return 1. / pow< -Exp >( arg ); }
+
+template< int Exp, units::unit U >
+constexpr units::unit_power_t< Exp, U > pow( U u )
+{ return units::unit_power_t< Exp, U >{ pow< Exp >( u.get_value() ) }; }
+
 
 // overrides for std function objects
 template< units::unit_id_type Id, typename T >

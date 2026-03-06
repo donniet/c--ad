@@ -583,7 +583,7 @@ struct Product : Binary< T, U >
 static_assert( not depends_on_v< 0, Expression< Product< int, Constant< long double, 0.l >>>> );
 
 /**
- * a quotent
+ * a quotient
  */
 template< typename T, typename U >
 struct Quotient : Binary< T, U >
@@ -593,13 +593,46 @@ struct Quotient : Binary< T, U >
     using Binary< T, U >::get_left;
     using Binary< T, U >::get_right;
 
-    constexpr auto eval( variable_values& vars ) const
+    constexpr result_type eval( variable_values& vars ) const
     { return expressions::eval( get_left(), vars ) / 
         expressions::eval( get_right(), vars ); }
 
     constexpr Quotient( T numerator, U denominator ):
         Binary< T, U >{ numerator, denominator } { } 
 };
+
+/**
+ * square root
+ */
+template< typename T >
+struct SquareRoot : Unary< T >
+{
+    using result_type = decltype( std::sqrt( result_t< T >{} ));
+
+    using Unary< T >::get;
+
+    constexpr result_type eval( variable_values& vars ) const
+    { return std::sqrt( expressions::eval( get() )); }
+
+    constexpr SquareRoot( T arg ): Unary< T >{ arg } { }
+};
+
+/**
+ * power
+ */
+template< int Exp, typename T >
+struct Power : Unary< T >
+{
+    using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
+    using Unary< T >::get;
+    constexpr result_type eval( variable_values& vars ) const
+    { return std::pow< Exp >( expressions::eval( get(), vars )); }
+    constexpr Power( T arg ): Unary< T >{ arg } { }
+};
+
+/**
+ * 
+ */
 
 /**
  * ElementOf expression
@@ -861,6 +894,27 @@ struct Derivative< I, Quotient< NumT, DenT >>
     { return { d< I >( expr.get_left()), expr.get_right() }; }
 };
 
+template< size_t I, typename ExprT >
+requires( depends_on_v< I, ExprT > )
+struct Derivative< I, SquareRoot< ExprT >>
+{
+    using type = Product< Constant< long double, -0.5l >, 
+        Quotient< derivative_t< I, ExprT >, SquareRoot< ExprT >>>;
+    static constexpr type construct( SquareRoot< ExprT > const& expr )
+    { return {{}, { d< I >( expr.get() ), expr }}; }
+};
+
+template< size_t I, int Exp, typename ExprT >
+requires( depends_on_v< I, ExprT > )
+struct Derivative< I, Power< Exp, ExprT >>
+{
+    using type = Product< Constant< int, Exp >, 
+        Product< Power< Exp-1, ExprT >, derivative_t< I, ExprT >>>;
+
+    static constexpr type construct( Power< Exp, ExprT > const& expr )
+    { return {{}, { expr, d< I >( expr.get() ) }}; }
+};
+
 /**
  * OPERATORS
  */
@@ -944,6 +998,16 @@ constexpr auto operator/( Expression< T > const& left,
     Expression< U > const& right )
 { return Expression< Quotient< T, U >>{{ left.get(), right.get() }}; }
 
+// sqrt
+template< typename T >
+constexpr auto sqrt( Expression< T > const& arg )
+{ return Expression< SquareRoot< T >>{{ arg }}; }
+
+// pow
+template< int Exp, typename T >
+constexpr auto pow( Expression< T > const& arg )
+{ return Expression< Power< Exp, T >>{{ arg }}; }
+
 // equality
 template< typename T, typename U >
 constexpr auto operator==( Expression< T > const& left, 
@@ -956,12 +1020,15 @@ constexpr auto operator and( Expression< T > const& left,
     Expression< U > const& right )
 { return Expression< Conjunction< T, U >>{{ left.get(), right.get() }}; }
 
+
+
 } // namespace expressions
 
 
 #ifndef NO_EXPRESSION_PRINTING
 
 namespace std {
+
 
 template< typename ExprT >
 struct formatter< expressions::Expression< ExprT >, char >: 
