@@ -1723,7 +1723,7 @@ struct formatter< units::base_unit< uid, T >, char >:
     formatter< T >
 {
     template< class FormatContext >
-    FormatContext::iterator format( units::base_unit< uid, T > u, FormatContext& ctx )
+    FormatContext::iterator format( units::base_unit< uid, T > u, FormatContext& ctx ) const
     { 
         auto out = formatter< T >::format( u.get_value(), ctx );
         return ranges::copy( units::unit_id_name( uid ), out ).out; 

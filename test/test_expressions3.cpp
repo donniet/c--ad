@@ -49,11 +49,12 @@ int main( int ac, char* av[] )
     values[ 1 ] = 12_in;
 
     auto h = ( 1_sqft + l * l ) / 254_mm;
-    println( "h(x) == {:ft}", eval( h, values ));
+    println( "h({}) == {}", l, h );
+    println( "h({}) == {:ft}", 12_in, eval( h, values ));
 
     auto dh = d< 1 >( h );
     println( "{}", dh );
-    println( "dh(x) == {:ft}", eval( dh, values ));
+    println( "dh({}) == {:ft}", 12_in, eval( dh, values ));
 
     // auto a = array_of( zero );
     // auto b = array_of( zero , 1 );
