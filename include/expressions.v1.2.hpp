@@ -72,7 +72,6 @@ struct variable_values
     map< size_t, any > values;
 };
 
-
 template< typename T >
 struct Evaluator;
 
@@ -362,7 +361,6 @@ static_assert( std::is_same_v<
 template< size_t I, typename ExprT >
 static constexpr bool depends_on_v = includes_variable_v< Variable< I, int >, dependent_variables_t< ExprT >>;
 
-
 /**
  * Wrapper to identify something as an expression
  */
@@ -631,24 +629,108 @@ struct Power : Unary< T >
 };
 
 /**
- * 
+ * Shape
  */
+template< size_t... >
+struct Shape;
+
+template< >
+struct Shape< >
+{ 
+    static constexpr size_t dimensions = 0.;
+    static constexpr size_t size = 1;
+};
+
+template< size_t First, size_t... Rest >
+struct Shape< First, Rest... > : Shape< Rest... >
+{
+    static constexpr size_t first = First;
+    static constexpr size_t dimensions = 1 + Shape< Rest... >::dimensions;
+    static constexpr size_t size = first * Shape< Rest... >::size;
+};
+
+template< typename A, typename B >
+struct ShapeCat;
+
+template< size_t... Is, size_t... Js >
+struct ShapeCat< Shape< Is... >, Shape< Js... >>
+{ using type = Shape< Is..., Js... >; };
+
+template< typename A, typename B >
+using shape_cat_t = ShapeCat< A, B >::type;
+
+template< typename T >
+struct IsShape : std::integral_constant< bool, false > { };
+
+template< size_t... Is >
+struct IsShape< Shape< Is... >> : std::integral_constant< bool, true > { };
+
+template< typename T >
+static constexpr bool is_shape_v = IsShape< T >::value;
+
+template< typename T >
+concept shape = is_shape_v< T >;
+
+template< typename ExprT >
+struct ShapeOf
+{ using type = Shape< >; };
+
+template< typename T >
+struct ShapeOf< Expression< T >>
+{ using type = ShapeOf< T >::type; };
+
+template< typename... Ts >
+struct ShapeOf< tuple< Ts... >>
+{ using type = Shape< sizeof...( Ts ) >; };
+
+template< typename ExprT >
+using shape_of_t = ShapeOf< ExprT >::type;
+
 
 /**
- * ElementOf expression
+ * Element expression transformer
  */
-template< size_t I, typename ArrayT >
-struct ElementOf: Unary< ArrayT >
-{ 
-    using result_type = result_t< tuple_element_t< I, ArrayT >>;
+template< size_t I, typename ExprT >
+struct Element;
 
-    using Unary< ArrayT >::get;
+template< size_t I, typename ExprT >
+using element_t = Element< I, ExprT >::type;
 
-    constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get< I >( get() ), vars ); }
+template< size_t I, typename ExprT >
+constexpr element_t< I, ExprT > get_element( ExprT const& expr )
+{ return Element< I, ExprT >::construct( expr ); }
 
-    constexpr ElementOf( ArrayT arr ): Unary< ArrayT >{ arr } {} 
+/**
+ * Subscript of an expression, transformer
+ */
+template< typename ExprT, size_t... >
+struct Subscript;
+
+template< typename ExprT, size_t... Is >
+using subscript_t = Subscript< ExprT, Is... >::type;
+
+template< typename ExprT >
+struct SubscriptHelper
+{
+
 };
+
+template< typename ExprT >
+struct Subscript< ExprT >
+{
+    using type = ExprT;
+    static constexpr type construct( ExprT expr ) 
+    { return expr; }
+};
+
+template< typename ExprT, size_t I, size_t... Is >
+struct Subscript< ExprT, I, Is... >
+{
+    using type = tuple_element_t< I, Subscript< ExprT, Is... >>;
+    static constexpr type construct( ExprT expr )
+    { return std::get< I >( Subscript< ExprT, Is... >::construct( expr )); }
+};
+
 
 /**
  * ArrayOf expression
@@ -656,13 +738,14 @@ struct ElementOf: Unary< ArrayT >
 template< typename... Ts >
 struct ArrayOf: Nary< Ts... >
 { 
+    static constexpr size_t size = sizeof...( Ts );
     using result_type = tuple< result_t< Ts >... >;
 
     template< size_t... Is >
     constexpr result_type eval_helper( variable_values& vars, 
         seq< Is... > ) const
     { return make_tuple( expressions::eval( 
-        Unary< Ts... >::template get< Is >(), vars )... ); }
+        Nary< Ts... >::template get< Is >(), vars )... ); }
 
     constexpr auto eval( variable_values& vars ) const
     { return eval_helper( vars, make_seq< sizeof...( Ts )>{} ); }
@@ -670,22 +753,160 @@ struct ArrayOf: Nary< Ts... >
     constexpr ArrayOf( Ts... ts ): Nary< Ts... >{ ts... } {} 
 };
 
-/**
- * ElementOf expression
- */
+template< typename... Ts >
+struct ShapeOf< ArrayOf< Ts... >>
+{ using type = Shape< sizeof...( Ts )>; };
+
+template< typename... Ts, size_t I >
+struct Subscript< ArrayOf< Ts... >, I >
+{
+
+}
+
+// template< typename T >
+// concept has_size = requires( T t )
+// { T::size; };
+
+// template< typename T >
+// struct SizeOf;
+
+// template< typename T >
+// requires( has_size< T > )
+// struct SizeOf< T > : std::integral_constant< size_t, T::size > { };
+
+// template< typename T >
+// requires( not has_size< T > )
+// struct SizeOf< T > : std::integral_constant< size_t, 1 > { };
+
+// template< typename T >
+// using size_of_v = SizeOf< T >::value;
+
 template< size_t I, typename... Ts >
-struct ElementOf< I, ArrayOf< Ts... >>: Unary< ArrayOf< Ts... >>
-{ 
-    using result_type = result_t< tuple_element_t< I, tuple< Ts... >>>;
-
-    using Unary< ArrayOf< Ts... >>::get;
-
-    constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get().template get< I >(), vars ); }
-
-    constexpr ElementOf( ArrayOf< Ts... > arr ): 
-        Unary< ArrayOf< Ts... > >{ arr } {} 
+struct Element< I, ArrayOf< Ts... >>
+{
+    using type = tuple_element_t< I, result_t< ArrayOf< Ts... >>>;
+    static constexpr type construct( ArrayOf< Ts... > const& expr )
+    { return expr.template get< I >(); }
 };
+
+template< size_t I, typename T >
+struct Element< I, Negation< T >>
+{
+    using type = Negation< element_t< I, T >>;
+    static constexpr type construct( Negation< T > const& expr )
+    { return { get_element< I >( expr.get()) }; }
+};
+
+template< size_t I, typename T, typename U >
+struct Element< I, Sum< T, U >>
+{
+    using type = Sum< element_t< I, T >, element_t< I, U >>;
+    static constexpr type construct( Sum< T, U > const& expr )
+    { return { get_element< I >( expr.get_left()), 
+        get_element< I >( expr.get_right()) }; }
+};
+
+template< size_t I, typename T, typename U >
+struct Element< I, Difference< T, U >>
+{
+    using type = Difference< element_t< I, T >, element_t< I, U >>;
+    static constexpr type construct( Difference< T, U > const& expr )
+    { return { get_element< I >( expr.get_left()), 
+        get_element< I >( expr.get_right()) }; }
+};
+
+template< size_t I, typename T, typename U >
+struct Element< I, Product< T, U >>
+{
+    using type = Product< element_t< I, T >, element_t< I, U >>;
+    static constexpr type construct( Product< T, U > const& expr )
+    { return { get_element< I >( expr.get_left()), 
+        get_element< I >( expr.get_right()) }; }
+};
+
+template< size_t I, typename T, typename U >
+struct Element< I, Quotient< T, U >>
+{
+    using type = Quotient< element_t< I, T >, element_t< I, U >>;
+    static constexpr type construct( Quotient< T, U > const& expr )
+    { return { get_element< I >( expr.get_left()), 
+        get_element< I >( expr.get_right()) }; }
+};
+
+template< size_t I, typename T >
+struct Element< I, SquareRoot< T >>
+{
+    using type = SquareRoot< element_t< I, T >>;
+    static constexpr type construct( SquareRoot< T > const& expr )
+    { return { get_element< I >( expr.get()) }; }
+};
+
+template< size_t I, int Exp, typename T >
+struct Element< I, Power< Exp, T >>
+{
+    using type = Power< Exp, element_t< I, T >>;
+    static constexpr type construct( Power< Exp, T > const& expr )
+    { return { get_element< I >( expr.get()) }; }
+};
+
+template< typename T, typename U >
+struct OuterProduct: Binary< T, U >
+{
+
+    constexpr OuterProduct( T left, U right ): Binary< T, U >{ left, right } { }
+};
+
+template< typename T, typename U >
+struct ShapeOf< OuterProduct< T, U >>
+{ using type = shape_cat_t< shape_of_t< T >, shape_of_t< U >>; };
+
+
+
+// template< typename T, typename U, typename Seq = make_seq< size_of_v< T >>>
+// struct OuterProductHelper;
+
+// template< typename T, typename U, size_t... Is >
+// struct OuterProductHelper< T, U, seq< Is... >>
+// {
+//     using type = 
+// };
+
+// template< typename T, typename U >
+// struct OuterProduct
+// {
+//     using type = OuterProductHelper< T, U >::type;
+// };
+
+// template< size_t I, typename T, typename U >
+// struct Element< I, OuterProduct< T, U >>
+// {
+//     using type = Product< element_t< I / size_of_v< U >, T >,
+//         element_t< I % sizeof_v< U >, U >>;
+
+//     static constexpr type construct( OuterProduct< T, U > const& expr )
+//     { return { get_element< I / sizeof_v< U >>( expr.get_left()),
+//         get_element< I % sizeof_v< U >>( expr.get_right()) }; }
+    
+// };
+
+/**
+ * array_shape
+ */
+template< typename T >
+struct ArrayShape;
+
+/**
+ * Shapen expression
+ */
+template< shape S, typename T >
+struct Shapen : Unary< T >
+{
+
+};
+
+/**
+ * Flatten expression
+ */
 
 /**
  * equality testing
@@ -924,77 +1145,68 @@ template< typename... Ts >
 constexpr auto array_of( Ts const&... ts )
 { return Expression< ArrayOf< stripped_t< Ts >... >>{{ strip( ts )... }}; }
 
-// accessor
-template< size_t I, typename T >
-constexpr auto element_of( Expression< T > const& arg )
-{ return Expression< ElementOf< I, T >>{ arg.get() }; }
-
-template< size_t I, typename T >
-constexpr auto element_of( T const& arg )
-{ return Expression< ElementOf< I, T >>{ arg }; }
-
 // negation
 template< typename T >
-constexpr auto operator-( Expression< T > const& arg )
+constexpr auto operator -( Expression< T > const& arg )
 { return Expression< Negation< T >>{ arg.get() }; }
 
 // addition
 template< typename T, typename U >
-constexpr auto operator+( Expression< T > const& left, 
+constexpr auto operator +( Expression< T > const& left, 
     Expression< U > const& right )
 { return Expression< Sum< T, U >>{{  left.get(), right.get() }}; }
 
 template< typename T, typename U >
-constexpr auto operator+( Expression< T > const& left, 
+constexpr auto operator +( Expression< T > const& left, 
     U const& right )
 { return Expression< Sum< T, U >>{{ left.get(), right }}; }
 
 template< typename T, typename U >
-constexpr auto operator+( T const& left, 
+constexpr auto operator +( T const& left, 
     Expression< U > const& right )
 { return Expression< Sum< T, U >>{{ left, right.get() }}; }
 
 // subtraction
 template< typename T, typename U >
-constexpr auto operator-( Expression< T > const& left, Expression< U > const& right )
+constexpr auto operator -( Expression< T > const& left, Expression< U > const& right )
 { return Expression< Difference< T, U >>{{ left.get(), right.get() }}; }
 
 template< typename T, typename U >
-constexpr auto operator-( Expression< T > const& left, 
+constexpr auto operator -( Expression< T > const& left, 
     U const& right )
 { return Expression< Difference< T, U >>{{ left.get(), right }}; }
 
 template< typename T, typename U >
-constexpr auto operator-( T const& left, 
+constexpr auto operator -( T const& left, 
     Expression< U > const& right )
 { return Expression< Difference< T, U >>{{ left, right.get() }}; }
 
 // multiplication
 template< typename T, typename U >
-constexpr auto operator*( Expression< T > const& left, 
+constexpr auto operator *( Expression< T > const& left, 
     Expression< U > const& right )
 { return Expression< Product< T, U >>{{ left.get(), right.get() }}; }
 
 template< typename T, typename U >
-constexpr auto operator*( T const& left, 
+constexpr auto operator *( T const& left, 
     Expression< U > const& right )
 { return Expression< Product< T, U >>{{ left, right.get() }}; }
 
 template< typename T, typename U >
-constexpr auto operator*( Expression< T > const& left, U const& right )
+constexpr auto operator *( Expression< T > const& left, U const& right )
 { return Expression< Product< T, U >>{{ left.get(), right }}; }
 
 // division
 template< typename T, typename U >
-constexpr auto operator/( Expression< T > const& left, U const& right )
+constexpr auto operator /( Expression< T > const& left, U const& right )
 { return Expression< Quotient< T, U >>{{ left.get(), right }}; }
 
 template< typename T, typename U >
-constexpr auto operator/( T const& left, Expression< U > const& right )
+constexpr auto operator /( T const& left, Expression< U > const& right )
 { return Expression< Quotient< T, U >>{{ left, right.get() }}; }
 
 template< typename T, typename U >
-constexpr auto operator/( Expression< T > const& left, 
+constexpr auto operator /( Expression< T > const& left, 
     Expression< U > const& right )
 { return Expression< Quotient< T, U >>{{ left.get(), right.get() }}; }
 
@@ -1010,7 +1222,7 @@ constexpr auto pow( Expression< T > const& arg )
 
 // equality
 template< typename T, typename U >
-constexpr auto operator==( Expression< T > const& left, 
+constexpr auto operator ==( Expression< T > const& left, 
     Expression< U > const& right )
 { return Expression< Equals< T, U >>{{ left.get(), right.get() }}; }
 
@@ -1021,13 +1233,33 @@ constexpr auto operator and( Expression< T > const& left,
 { return Expression< Conjunction< T, U >>{{ left.get(), right.get() }}; }
 
 
-
 } // namespace expressions
 
 
 #ifndef NO_EXPRESSION_PRINTING
 
 namespace std {
+
+/**
+ * Shape is tuple-like
+ */
+template< size_t I, size_t... Is >
+struct tuple_element< I, Shape< Is... >>
+{ using type = size_t; };
+
+template< size_t... Is >
+struct tuple_size< Shape< Is... >> :
+    integral_constant< size_t, sizeof...( Is )> { };
+
+template< size_t I, size_t First, size_t... Rest >
+requires( I == 0 )
+size_t get( expressions::Shape< First, Rest... > const& )
+{ return First; }
+
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+size_t get( expressions::Shape< First, Rest... > const& )
+{ return get< I-1 >( expressions::Shape< Rest... >{} ); }
 
 
 template< typename ExprT >

@@ -1796,19 +1796,18 @@ constexpr T pow( T arg )
 { return 1.; }
 
 template< int Exp, typename T >
-requires( Exp > 0 )
+requires( isgreater( Exp, 0 ))
 constexpr T pow( T arg )
 { return ( Exp % 2 ? arg : 1. ) * pow< Exp/2 >( arg * arg ); }
 
 template< int Exp, typename T >
-requires( Exp < 0 )
+requires( isless( Exp, 0 ))
 constexpr T pow( T arg )
 { return 1. / pow< -Exp >( arg ); }
 
 template< int Exp, units::unit U >
 constexpr units::unit_power_t< Exp, U > pow( U u )
 { return units::unit_power_t< Exp, U >{ pow< Exp >( u.get_value() ) }; }
-
 
 // overrides for std function objects
 template< units::unit_id_type Id, typename T >
