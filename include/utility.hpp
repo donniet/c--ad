@@ -8,13 +8,15 @@
 #include <type_traits>
 #include <string>
 #include <locale>
+#include <cmath>
 
 using std::size_t;
-using std::tuple;
-using std::tuple_cat;
+using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t, 
+    std::make_tuple;
 using std::is_same_v;
 using std::string;
 using std::isspace;
+using std::isless, std::isgreater;
 
 /**
  * string utilities 
@@ -318,11 +320,18 @@ template< typename TupleType, size_t... Is >
 struct TupleSelect
 { using type = std::tuple< std::tuple_element_t< Is, TupleType >... >; };
 
+template< typename TupleType, typename Seq >
+struct TupleSelectSeq;
+
+template< typename TupleType, size_t... Is >
+struct TupleSelectSeq< TupleType, seq< Is... >>
+{ using type = TupleSelect< TupleType, Is... >::type; };
+
 template< typename TupleType, size_t... Is >
 using tuple_select_t = typename TupleSelect< TupleType, Is... >::type;
 
 template< typename TupleType, size_t... Is >
-TupleSelect< TupleType, Is... >::type 
+constexpr TupleSelect< TupleType, Is... >::type 
 tuple_select( TupleType const& tup, index_sequence< Is... > )
 { return std::make_tuple( std::get< Is >( tup )... ); }
 
@@ -344,7 +353,7 @@ template< size_t N, typename TupleType >
 using remove_nth_t = typename RemoveNth< TupleType, N >::type;
 
 template< size_t N, typename TupleType, size_t... Is >
-remove_nth_t< N, TupleType >
+constexpr remove_nth_t< N, TupleType >
 remove_nth_helper( TupleType const& tup, index_sequence< Is... > )
 { return tuple_select( tup, std::index_sequence< ( Is < N ? Is : Is + 1 )... >{} ); }
 
@@ -352,12 +361,13 @@ remove_nth_helper( TupleType const& tup, index_sequence< Is... > )
 
 template< size_t N, typename... Ts >
 requires ( N < sizeof...( Ts ) )
-auto remove_nth( std::tuple< Ts... > const& tup )
+constexpr auto remove_nth( std::tuple< Ts... > const& tup )
 { return detail::remove_nth_helper< N >( tup, 
     std::make_index_sequence< sizeof...( Ts ) - 1 >{} ); }
 
-
-
+template< typename First, typename... Rest >
+constexpr std::tuple< Rest... > remove_first( std::tuple< First, Rest... > const& tup )
+{ return remove_nth< 0 >( tup ); }
 
 /**
  * Pack helpers
@@ -476,8 +486,24 @@ template< typename... Ts, typename... Us, typename... Rest >
 struct TupleCat< tuple< Ts... >, tuple< Us... >, Rest... >
 { using type = TupleCat< tuple< Ts..., Us... >, Rest... >::type; };
 
-template< typename... TupleTypes >
-using tuple_cat_t = TupleCat< TupleTypes... >::type;
+template< typename... Tuples >
+using tuple_cat_t = TupleCat< Tuples... >::type;
+
+template< size_t I, typename T, typename TupleT >
+struct TupleInsert;
+
+template< typename T, typename... Ts >
+struct TupleInsert< 0, T, tuple< Ts... >>
+{ using type = tuple< T, Ts... >; };
+
+template< size_t I, typename T, typename First, typename... Rest >
+requires( isgreater( I, 0 ))
+struct TupleInsert< I, T, tuple< First, Rest... >>
+{ using type = tuple_cat_t< tuple< First >, 
+    typename TupleInsert< I-1, T, tuple< Rest... >>::type >; };
+
+template< size_t I, typename T, typename TupleT >
+using tuple_insert_t = TupleInsert< I, T, TupleT >::type;
 
 template< typename TupleType >
 struct TupleUnique;

@@ -1,6 +1,7 @@
 #ifndef __EXPRESSIONS_HPP__
 #define __EXPRESSIONS_HPP__
 
+#include "tensor.v1.2.hpp"
 #include "utility.hpp"
 
 #include <cmath>
@@ -436,6 +437,7 @@ struct Constant : ExpressionTag
     using value_type = T;
     using result_type = value_type;
     using dependent_vars_type = VariableSet<>;
+    static consteval size_t size() { return 1; }
     static constexpr T value = Value;
 
     constexpr operator T() const
@@ -457,127 +459,91 @@ static constexpr constant< bool, false > constant_false = constant< bool, false 
 
 
 /**
- * a unary expression
- */
-template< typename T >
-struct Unary : ExpressionTag
-{
-    using value_type = T;
-    using dependent_vars_type = dependent_variables_t< T >;
-    constexpr value_type get() const { return _arg; }
-    constexpr Unary( value_type arg ): _arg{ arg } { }
-    value_type _arg;
-};
-
-/**
- * a binary expression
- */
-template< typename T, typename U >
-struct Binary : ExpressionTag
-{
-    using left_value_type = T;
-    using right_value_type = U;
-    using dependent_vars_type = dependent_variables_t< T, U >;
-
-    constexpr left_value_type get_left() const { return _left; }
-    constexpr right_value_type get_right() const { return _right; }
-
-    constexpr Binary( T left, U right ) : _left{ left }, _right{ right }
-    { }
-
-    left_value_type _left;
-    right_value_type _right;
-};
-
-/**
- * an nary expression
- */
-template< typename... Ts >
-struct Nary : ExpressionTag
-{
-    using value_tuple_type = tuple< Ts... >;
-    using dependent_vars_type = dependent_variables_t< Ts... >;
-
-    template< size_t I >
-    constexpr tuple_element_t< I, value_tuple_type > get() const
-    { return std::get< I >( _values ); }
-
-    constexpr Nary( Ts... ts ): _values{ ts... } {}
-
-    value_tuple_type _values;
-};
-
-/**
  * a negation
  */
 template< typename T >
-struct Negation : Unary< T >
+struct Negation: ExpressionTag
 { 
     using result_type = decltype( -result_t< T >{} );
+    using dependent_vars_type = dependent_variables_t< T >;
 
-    using Unary< T >::get;
+    constexpr T arg() const { return _arg; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return -eval( get(), vars ); }
+    { return -eval( arg(), vars ); }
 
-    constexpr Negation( T arg ): Unary< T >{ arg } {} 
+    constexpr Negation( T arg ): _arg{ arg } {} 
+
+    T _arg;
 };
 
 /**
  * a sum
  */
 template< typename T, typename U >
-struct Sum : Binary< T, U >
+struct Sum: ExpressionTag
 { 
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
 
     constexpr auto eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) + 
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( left_arg(), vars ) + 
+        expressions::eval( right_arg(), vars ); }
 
     constexpr Sum( T left, U right ): 
-        Binary< T, U >{ left, right } { } 
+        _left{ left }, _right{ right } { } 
+    
+    T _left;
+    U _right;
 };
 
 /**
  * a difference
  */
 template< typename T, typename U >
-struct Difference : Binary< T, U >
+struct Difference: ExpressionTag
 { 
     using result_type = decltype( result_t< T >{} - result_t< U >{} );
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) - 
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( left_arg(), vars ) - 
+        expressions::eval( right_arg(), vars ); }
 
     constexpr Difference( T left, U right ): 
-        Binary< T, U >{ left, right } { } 
+        _left{ left }, _right{ right } { } 
+
+    T _left;
+    U _right;
 };
 
 /**
  * a product
  */
 template< typename T, typename U >
-struct Product : Binary< T, U >
+struct Product: ExpressionTag
 { 
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) *
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( left_arg(), vars ) *
+        expressions::eval( right_arg(), vars ); }
 
     constexpr Product( T left, U right ): 
-        Binary< T, U >{ left, right } { } 
+        _left{ left }, _right{ right } { } 
+
+    T _left;
+    U _right;
 };
 
 static_assert( not depends_on_v< 0, Expression< Product< int, Constant< long double, 0.l >>>> );
@@ -586,142 +552,172 @@ static_assert( not depends_on_v< 0, Expression< Product< int, Constant< long dou
  * a quotient
  */
 template< typename T, typename U >
-struct Quotient : Binary< T, U >
+struct Quotient: ExpressionTag
 { 
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T numerator_arg() const { return _numerator; }
+    constexpr U denominator_arg() const { return _denominator; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) / 
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( numerator_arg(), vars ) / 
+        expressions::eval( denominator_arg(), vars ); }
 
     constexpr Quotient( T numerator, U denominator ):
-        Binary< T, U >{ numerator, denominator } { } 
+        _numerator{ numerator }, _denominator{ denominator } { } 
+
+    T _numerator;
+    U _denominator;
 };
 
 /**
  * square root
  */
 template< typename T >
-struct SquareRoot : Unary< T >
+struct SquareRoot: ExpressionTag
 {
     using result_type = decltype( std::sqrt( result_t< T >{} ));
+    using dependent_vars_type = dependent_variables_t< T >;
 
-    using Unary< T >::get;
+    constexpr T arg() const { return _arg; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return std::sqrt( expressions::eval( get() )); }
+    { return std::sqrt( expressions::eval( arg() )); }
 
-    constexpr SquareRoot( T arg ): Unary< T >{ arg } { }
+    constexpr SquareRoot( T arg ): _arg{ arg } {} 
+
+    T _arg;
 };
 
 /**
  * power
  */
 template< int Exp, typename T >
-struct Power : Unary< T >
+struct Power: ExpressionTag
 {
     using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
-    using Unary< T >::get;
+    using dependent_vars_type = dependent_variables_t< T >;
+
+    constexpr T arg() const { return _arg; }
+
     constexpr result_type eval( variable_values& vars ) const
-    { return std::pow< Exp >( expressions::eval( get(), vars )); }
-    constexpr Power( T arg ): Unary< T >{ arg } { }
+    { return std::pow< Exp >( expressions::eval( arg(), vars )); }
+
+    constexpr Power( T arg ): _arg{ arg } {} 
+
+    T _arg;
 };
 
 /**
- * 
- */
-
-/**
- * ElementOf expression
+ * Element expression
  */
 template< size_t I, typename ArrayT >
-struct ElementOf: Unary< ArrayT >
-{ 
-    using result_type = result_t< tuple_element_t< I, ArrayT >>;
-
-    using Unary< ArrayT >::get;
-
-    constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get< I >( get() ), vars ); }
-
-    constexpr ElementOf( ArrayT arr ): Unary< ArrayT >{ arr } {} 
+struct Element: tuple_element_t< I, ArrayT >
+{  
+    constexpr Element( ArrayT arr ): 
+        tuple_element_t< I, ArrayT >{ std::get< I >( arr ) }
+    { }
 };
 
 /**
- * ArrayOf expression
+ * Array expression
  */
 template< typename... Ts >
-struct ArrayOf: Nary< Ts... >
+struct Array: tuple< Ts... >, ExpressionTag
 { 
     using result_type = tuple< result_t< Ts >... >;
+    using dependent_vars_type = dependent_variables_t< Ts... >;
 
     template< size_t... Is >
     constexpr result_type eval_helper( variable_values& vars, 
         seq< Is... > ) const
     { return make_tuple( expressions::eval( 
-        Unary< Ts... >::template get< Is >(), vars )... ); }
+        std::get< Is >( *this ), vars )... ); }
 
     constexpr auto eval( variable_values& vars ) const
     { return eval_helper( vars, make_seq< sizeof...( Ts )>{} ); }
 
-    constexpr ArrayOf( Ts... ts ): Nary< Ts... >{ ts... } {} 
+    constexpr Array( Ts... ts ): tuple< Ts... >{ ts... } { } 
 };
 
-/**
- * ElementOf expression
- */
-template< size_t I, typename... Ts >
-struct ElementOf< I, ArrayOf< Ts... >>: Unary< ArrayOf< Ts... >>
-{ 
-    using result_type = result_t< tuple_element_t< I, tuple< Ts... >>>;
 
-    using Unary< ArrayOf< Ts... >>::get;
+template< typename ShapeT, typename... Ts >
+struct ShapedArray : Array< Ts... >
+{
 
-    constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get().template get< I >(), vars ); }
-
-    constexpr ElementOf( ArrayOf< Ts... > arr ): 
-        Unary< ArrayOf< Ts... > >{ arr } {} 
 };
+
+
+// template< size_t I, typename... Ts >
+// struct ElementOf< I, Array< Ts... >>: Unary< Ts...[I] >
+// {
+//     using result_type = result_t< Ts...[I] >;
+
+//     using Unary< Ts...[I] >::get;
+
+//     constexpr auto eval( variable_values& vars ) const
+//     { return eval( get(), vars ); }
+
+//     constexpr ElementOf( Array< Ts... > expr ): 
+//         Unary< Ts...[I] >{ std::get< I >( expr ) }
+//     { }
+// };
+
+// template< size_t I, typename T, typename U >
+// struct ElementOf< I, Product< T, U >>:
+//     Product< ElementOf< I / U::size(), T >, ElementOf< I % U::size(), U >>
+// {
+//     constexpr ElementOf( Product< T, U >> expr ):
+//         Product< ElementOf< I / U::size(), T >, ElementOf< I % U::size(), U >>
+//         { expr.left_arg(), expr.right_arg() }
+//     { }
+// };
 
 /**
  * equality testing
  */
 template< typename T, typename U >
-struct Equals : Binary< T, U >
+struct Equals : ExpressionTag
 { 
     using result_type = bool;
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) == 
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( left_arg(), vars ) == 
+        expressions::eval( right_arg(), vars ); }
 
-    constexpr Equals( T left, U right ):
-        Binary< T, U >{ left, right } { } 
+    constexpr Equals( T left, U right ): 
+        _left{ left }, _right{ right } { } 
+    
+    T _left;
+    U _right;
 };
 
 /**
  * logical operations
  */
 template< typename T, typename U >
-struct Conjunction: Binary< T, U >
+struct Conjunction: ExpressionTag
 {
     using result_type = bool;
+    using dependent_vars_type = dependent_variables_t< T, U >;
 
-    using Binary< T, U >::get_left;
-    using Binary< T, U >::get_right;
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return expressions::eval( get_left(), vars ) and
-        expressions::eval( get_right(), vars ); }
+    { return expressions::eval( left_arg(), vars ) and
+        expressions::eval( right_arg(), vars ); }
 
-    constexpr Conjunction( T left, U right ): Binary< T, U >{ left, right } {}
+    constexpr Conjunction( T left, U right ): 
+        _left{ left }, _right{ right } { } 
+    
+    T _left;
+    U _right;
 };
 
 
@@ -781,7 +777,7 @@ struct Derivative< I, Sum< LeftT, RightT >>
 {
     using type = Sum< derivative_t< I, LeftT >, derivative_t< I, RightT >>;
     static constexpr type construct( Sum< LeftT, RightT > const& expr )
-    { return { d< I >( expr.get_left() ), d< I >( expr.get_right() ) }; }
+    { return { d< I >( expr.left_arg() ), d< I >( expr.right_arg() ) }; }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -790,7 +786,7 @@ struct Derivative< I, Sum< LeftT, RightT >>
 {
     using type = derivative_t< I, LeftT >;
     static constexpr type construct( Sum< LeftT, RightT > const& expr )
-    { return d< I >( expr.get_left() ); }
+    { return d< I >( expr.left_arg() ); }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -799,7 +795,7 @@ struct Derivative< I, Sum< LeftT, RightT >>
 {
     using type = derivative_t< I, RightT >;
     static constexpr type construct( Sum< LeftT, RightT > const& expr )
-    { return d< I >( expr.get_right() ); }
+    { return d< I >( expr.right_arg() ); }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -808,7 +804,7 @@ struct Derivative< I, Difference< LeftT, RightT >>
 {
     using type = Difference< derivative_t< I, LeftT >, derivative_t< I, RightT >>;
     static constexpr type construct( Difference< LeftT, RightT > const& expr )
-    { return { d< I >( expr.get_left() ), d< I >( expr.get_right() ) }; }
+    { return { d< I >( expr.left_arg() ), d< I >( expr.right_arg() ) }; }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -817,7 +813,7 @@ struct Derivative< I, Difference< LeftT, RightT >>
 {
     using type = derivative_t< I, LeftT >;
     static constexpr type construct( Difference< LeftT, RightT > const& expr )
-    { return d< I >( expr.get_left() ); }
+    { return d< I >( expr.left_arg() ); }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -826,7 +822,7 @@ struct Derivative< I, Difference< LeftT, RightT >>
 {
     using type = Negation< derivative_t< I, RightT >>;
     static constexpr type construct( Difference< LeftT, RightT > const& expr )
-    { return { d< I >( expr.get_left() ) }; }
+    { return { d< I >( expr.left_arg() ) }; }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -836,8 +832,8 @@ struct Derivative< I, Product< LeftT, RightT >>
     using type = Sum< Product< derivative_t< I, LeftT >, RightT >, 
         Product< LeftT, derivative_t< I, RightT >>>;
     static constexpr type construct( Product< LeftT, RightT > const& expr )
-    { return {{ d< I >( expr.get_left() ), expr.get_right() },
-        { expr.get_left(), d< I >( expr.get_right() ) }}; }
+    { return {{ d< I >( expr.left_arg() ), expr.right_arg() },
+        { expr.left_arg(), d< I >( expr.right_arg() ) }}; }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -847,7 +843,7 @@ struct Derivative< I, Product< LeftT, RightT >>
     using type = Product< derivative_t< I, LeftT >, RightT >;
 
     static constexpr type construct( Product< LeftT, RightT > const& expr )
-    { return { d< I >( expr.get_left() ), expr.get_right() }; }
+    { return { d< I >( expr.left_arg() ), expr.right_arg() }; }
 };
 
 template< size_t I, typename LeftT, typename RightT >
@@ -856,7 +852,7 @@ struct Derivative< I, Product< LeftT, RightT >>
 {
     using type = Product< LeftT, derivative_t< I, RightT >>;
     static constexpr type construct( Product< LeftT, RightT > const& expr )
-    { return { expr.get_left(), d< I >( expr.get_right() ) }; }
+    { return { expr.left_arg(), d< I >( expr.right_arg() ) }; }
 };
 
 template< size_t I, typename NumT, typename DenT >
@@ -868,8 +864,8 @@ struct Derivative< I, Quotient< NumT, DenT >>
         Product< DenT, DenT >>;
 
     static constexpr type construct( Quotient< NumT, DenT > const& expr )
-    { return {{{ d< I >( expr.get_left() ), expr.get_right() }, { expr.get_left(), d< I >( expr.get_right() )}}, 
-            { expr.get_right(), expr.get_right() }}; }
+    { return {{{ d< I >( expr.left_arg() ), expr.right_arg() }, { expr.left_arg(), d< I >( expr.right_arg() )}}, 
+            { expr.right_arg(), expr.right_arg() }}; }
 };
 
 template< size_t I, typename NumT, typename DenT >
@@ -880,8 +876,8 @@ struct Derivative< I, Quotient< NumT, DenT >>
         Product< DenT, DenT >>;
 
     static constexpr type construct( Quotient< NumT, DenT > const& expr )
-    { return {{{ expr.get_left(), d< I >( expr.get_right() )}}, 
-            { expr.get_right(), expr.get_right() }}; }
+    { return {{{ expr.left_arg(), d< I >( expr.right_arg() )}}, 
+            { expr.right_arg(), expr.right_arg() }}; }
 };
 
 template< size_t I, typename NumT, typename DenT >
@@ -891,7 +887,7 @@ struct Derivative< I, Quotient< NumT, DenT >>
     using type = Quotient< derivative_t< I, NumT >, DenT >;
 
     static constexpr type construct( Quotient< NumT, DenT > const& expr )
-    { return { d< I >( expr.get_left()), expr.get_right() }; }
+    { return { d< I >( expr.numerator_arg()), expr.denominator_arg() }; }
 };
 
 template< size_t I, typename ExprT >
@@ -920,18 +916,18 @@ struct Derivative< I, Power< Exp, ExprT >>
  */
 
 // arrays
-template< typename... Ts >
-constexpr auto array_of( Ts const&... ts )
-{ return Expression< ArrayOf< stripped_t< Ts >... >>{{ strip( ts )... }}; }
+// template< typename... Ts >
+// constexpr auto array_of( Ts const&... ts )
+// { return Expression< Array< stripped_t< Ts >... >>{{ strip( ts )... }}; }
 
-// accessor
-template< size_t I, typename T >
-constexpr auto element_of( Expression< T > const& arg )
-{ return Expression< ElementOf< I, T >>{ arg.get() }; }
+// // accessor
+// template< size_t I, typename T >
+// constexpr auto element_of( Expression< T > const& arg )
+// { return Expression< ElementOf< I, T >>{ arg.get() }; }
 
-template< size_t I, typename T >
-constexpr auto element_of( T const& arg )
-{ return Expression< ElementOf< I, T >>{ arg }; }
+// template< size_t I, typename T >
+// constexpr auto element_of( T const& arg )
+// { return Expression< ElementOf< I, T >>{ arg }; }
 
 // negation
 template< typename T >
@@ -1029,6 +1025,10 @@ constexpr auto operator and( Expression< T > const& left,
 
 namespace std {
 
+// template< size_t I, typename... Ts >
+// Ts...[I] get( expressions::Array< Ts... > const& arr )
+// { return get< I >( arr.values() ); }
+
 
 template< typename ExprT >
 struct formatter< expressions::Expression< ExprT >, char >: 
@@ -1070,7 +1070,7 @@ struct formatter< expressions::Sum< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Sum< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}+{})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}+{})", expr.left_arg(), expr.right_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -1083,7 +1083,7 @@ struct formatter< expressions::Product< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}*{})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}*{})", expr.left_arg(), expr.right_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -1096,7 +1096,7 @@ struct formatter< expressions::Quotient< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Quotient< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}/{})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}/{})", expr.numerator_arg(), expr.denominator_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -1109,7 +1109,7 @@ struct formatter< expressions::Difference< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Difference< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}-{})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}-{})", expr.left_arg(), expr.right_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -1125,7 +1125,7 @@ struct formatter< expressions::Negation< ExprT >, char >:
         auto i = ctx.out();
         *i++ = '-';
         ctx.advance_to(i);
-        return formatter< ExprT >::format( expr.get(), ctx );
+        return formatter< ExprT >::format( expr.arg(), ctx );
     }
 };
 
@@ -1137,7 +1137,7 @@ struct formatter< expressions::Equals< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Equals< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}=={})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}=={})", expr.left_arg(), expr.right_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -1150,7 +1150,7 @@ struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}and{})", expr.get_left(), expr.get_right() );
+        auto str = std::format( "({}and{})", expr.left_arg(), expr.right_arg() );
         return formatter< std::string >::format( str, ctx );
     }
 };
