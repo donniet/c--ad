@@ -81,10 +81,11 @@ int main( int ac, char* av[] )
 //     /**
 //      * Transpose tests
 //      */
-//     auto u5u6_t = make_tensor< shape< 2,2>>(
-//         35., 42.,
-//         40., 48. );
+    auto u5u6_t = make_tensor< Shape< 2,2>>(
+        35., 42.,
+        40., 48. );
 
+    assert(( transpose< 0, 1 >( u5u6 ) == u5u6_t ));
 //     if( transpose(u7) != u5u6_t )
 //         throw std::logic_error("FAIL: transpose test");
     

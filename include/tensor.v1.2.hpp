@@ -98,6 +98,28 @@ struct Shape< First, Rest... >: Shape< Rest... >
     size_t _element;
 };
 
+template< size_t I, typename S >
+struct ShapeGet;
+
+template< size_t First, size_t... Rest >
+struct ShapeGet< 0, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return shp.first(); } 
+};
+
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct ShapeGet< I, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return ShapeGet< I-1, Shape< Rest... >>::value( shp ); } 
+};
+
+template< size_t I, typename S >
+constexpr size_t shape_get( S shp )
+{ return ShapeGet< I, S >::value( shp ); }
+
 static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2, 2 >{ 1, 1 } );
 static_assert( Shape< 2, 2 >{ 1, 1 }.element() == Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
 static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2 >{ 1 }.cat( Shape< 2 >{ 1 }));
@@ -229,12 +251,27 @@ struct RemoveShapeElement;
 
 template< size_t First, size_t... Rest >
 struct RemoveShapeElement< 0, Shape< First, Rest... >>
-{ using type = Shape< Rest... >; };
+{ 
+    using type = Shape< Rest... >; 
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return shp; }
+};
 
 template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
 struct RemoveShapeElement< I, Shape< First, Rest... >>
-{ using type = shape_cat_t< Shape< First >, 
-    typename RemoveShapeElement< I - 1, Shape< Rest... >>::type >; };
+{ 
+    using type = shape_cat_t< Shape< First >, 
+        typename RemoveShapeElement< I - 1, Shape< Rest... >>::type >; 
+
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return Shape< First >{ shp.first() }.cat(
+            RemoveShapeElement< I-1, Shape< Rest... >>::value( shp )); }
+};
+
+template< size_t I, shape S >
+constexpr auto remove_shape_element( S shp )
+{ return RemoveShapeElement< I, S >::value( shp ); }
 
 template< size_t I, size_t J, shape S >
 requires( isless( I, J ) and shape_element_v< I, S > == shape_element_v< J, S > )
@@ -333,12 +370,36 @@ static_assert( uncontract_index< 3, 0, 1 >( 1, Shape< >{} ).element() == 1 + 3*1
 static_assert( uncontract_index< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 2 }).element() == 2 + 4*( 2 + 3*( 2 + 3*( 1 + 1 * 0 ))) );
 // static_assert( Shape< 1, 2, 3, 3, 4 >{ 0, 1, 2, 2, 3 } == uncontract< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 3 }) );
 
-// template< size_t K, size_t I, size_t J, typename... Indices >
-// tuple< size_t, size_t, Indices... > uncontract( size_t K, 
-//     tuple< size_t, Indices... > indices )
-// {
-    
-// }
+template< size_t I, size_t J, shape S >
+struct TransposeShape
+{ 
+    static constexpr size_t ith = shape_element_v< I, S >;
+    static constexpr size_t jth = shape_element_v< J, S >;
+
+    using base_type = RemoveShapeElement< I, 
+        typename RemoveShapeElement< J, S >::type >::type;
+    using type = InsertShapeElement< ith, J, 
+        typename InsertShapeElement< jth, I, base_type >::type >::type;
+
+    static constexpr type value( S shp )
+    {
+        size_t i = shape_get< I >( shp );
+        size_t j = shape_get< J >( shp );
+
+        auto base = remove_shape_element< I >( 
+            remove_shape_element< J >( shp ));
+
+        return insert_shape_element< ith, J >( i,
+            insert_shape_element< jth, I >( j, base ));
+    }
+};
+
+template< size_t I, size_t J, shape S >
+using transpose_shape_t = TransposeShape< I, J, S >::type;
+
+template< size_t I, size_t J, shape S >
+constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
+{ return TransposeShape< I, J, S >::value( shp ); }
 
 /**
  * A tensor is a shaped array
@@ -477,6 +538,23 @@ constexpr auto contract_helper( TensorT const& ten, seq< Is... > )
     return make_tensor< shape_type >( contracted_element< Is, i0, i1 >( ten )... );
 }
 
+template< size_t K, size_t I, size_t J, typename TensorT >
+constexpr auto transposed_element( TensorT const& ten )
+{
+    using shape_type = tensor_shape_t< TensorT >;
+    using transposed_shape_type = transpose_shape_t< I, J, tensor_shape_t< TensorT >>;
+
+    static constexpr auto k = transpose_shape< I, J >( transposed_shape_type::from_element( K ));
+    return get< k >( ten );
+}
+
+template< size_t I, size_t J, typename TensorT, size_t... Ks >
+constexpr auto transpose_helper( TensorT const& ten, seq< Ks... > )
+{
+    using shape_type = transpose_shape_t< I, J, tensor_shape_t< TensorT >>;
+    return make_tensor< shape_type >( transposed_element< Ks, I, J >( ten )... );
+}
+
 template< size_t K, typename Seq, typename TensorT >
 constexpr auto subtensor_element( TensorT const& ten )
 {
@@ -534,6 +612,14 @@ constexpr auto contract( TensorT const& ten )
 }
 
 /**
+ * transpose a tensor along two indices
+ */
+template< size_t I, size_t J, typename TensorT >
+constexpr auto transpose( TensorT const& ten )
+{ return transpose_helper< I, J >( ten, 
+    make_seq< tensor_shape_t< TensorT >::size() >{} ); }
+
+/**
  * returns a sub-tensor of the original by removing the dimensions containing  
  * Index
  */
@@ -549,10 +635,10 @@ constexpr auto subtensor( TensorT const& ten )
 namespace std {
 
 template< size_t I, size_t First, size_t... Rest >
-constexpr size_t get( tensor::Shape< First, Rest... >&& shape )
+constexpr size_t get( tensor::Shape< First, Rest... > shape )
 { 
     if constexpr( I == 0 )
-        return shape.element();
+        return shape.first();
 
     return get< I-1 >( static_cast< tensor::Shape< Rest... >>( shape )); 
 }
