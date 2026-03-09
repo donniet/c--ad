@@ -632,17 +632,4 @@ constexpr auto subtensor( TensorT const& ten )
 
 } // namespace tensor
 
-namespace std {
-
-template< size_t I, size_t First, size_t... Rest >
-constexpr size_t get( tensor::Shape< First, Rest... > shape )
-{ 
-    if constexpr( I == 0 )
-        return shape.first();
-
-    return get< I-1 >( static_cast< tensor::Shape< Rest... >>( shape )); 
-}
-
-} // namespace std
-
 #endif
