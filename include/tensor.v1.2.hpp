@@ -511,6 +511,14 @@ struct Tensor : tuple< T, Ts... >
     { equal_helper( other, make_seq< size() >{} ); }
 };
 
+template< size_t I, typename TensorT >
+constexpr auto tensor_get( TensorT const& ten )
+{ return get< I >( ten ); }
+
+template< typename T, typename TensorT >
+constexpr T tensor_at( size_t element, TensorT const& ten )
+{ return any_cast< T >( tuple_access( element, ten )); }
+
 template< typename TensorT >
 struct tensor_shape
 { using type = TensorT::shape_type; };
@@ -561,6 +569,14 @@ constexpr auto divide_scale_helper( T scalar, TensorT const& ten,
     seq< Is... > )
 { return make_tensor< tensor_shape_t< TensorT >>(
     ( get< Is >( ten ) / scalar )... ); }
+
+/**
+ * returns a tensor composed of op(E) where E is the corresponding element from 
+ * ten
+ */
+template< typename Op, typename TensorT, size_t... Is >
+constexpr auto op_helper( Op& op, TensorT const& ten, seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>( op( get< Is >( ten ))... ); }
 
 // forward decl
 template< size_t K, size_t I, size_t J, shape S, typename Seq >
@@ -718,6 +734,7 @@ constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
 template< typename T, shape S, typename... Ts >
 constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten )
 { return divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
 
 /**
  * contracts a tensor along equinumerous indices

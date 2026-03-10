@@ -10,6 +10,8 @@
 #include <locale>
 #include <cmath>
 #include <array>
+#include <functional>
+#include <any>
 
 using std::size_t;
 using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t, 
@@ -19,6 +21,8 @@ using std::string;
 using std::isspace;
 using std::isless, std::isgreater;
 using std::array;
+using std::function;
+using std::any, std::make_any, std::any_cast;
 
 /**
  * string utilities 
@@ -383,6 +387,37 @@ constexpr auto remove_nth( std::tuple< Ts... > const& tup )
 template< typename First, typename... Rest >
 constexpr std::tuple< Rest... > remove_first( std::tuple< First, Rest... > const& tup )
 { return remove_nth< 0 >( tup ); }
+
+/**
+ * runtime access to tuples
+ */
+template< typename TupleT >
+struct TupleAccessor;
+
+template< typename TupleT, typename Seq >
+struct TupleAccessorBase;
+
+template< typename TupleT, size_t... Is >
+struct TupleAccessorBase< TupleT, seq< Is... >>
+{
+    using accessor_type = function< any( TupleT const& ) >;
+    
+    template< size_t I >
+    static any accessor( TupleT const& tup )
+    { return { get< I >( tup )}; }
+
+    static constexpr array< accessor_type, sizeof...( Is )> at = 
+    { accessor< Is >... };
+};
+
+template< typename... Ts >
+struct TupleAccessor< tuple< Ts... >>:
+    TupleAccessorBase< tuple< Ts... >, make_seq< sizeof...( Ts )>>
+{ };
+
+template< typename TupleT >
+any tuple_access( size_t i, TupleT const& tup )
+{ return TupleAccessor< TupleT >::at[i](tup); }
 
 /**
  * Pack helpers

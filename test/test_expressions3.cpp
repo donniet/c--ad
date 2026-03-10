@@ -35,13 +35,13 @@ int main( int ac, char* av[] )
     values[ 0 ] = 8.l;
 
     auto g = ( 5 + 3*x - f );
-    println( "depends on g: {}", g.dependents_size );
+    println( "depends on g: {}", depends( g ).size() );
     println( "{}", eval( g, values ));
     println( std::runtime_format( "g == {}" ), g );
 
     auto dg = d< 0 >( g );
     println( "{}", dg );
-    println( "depends on dg: {}", dg.dependents_size );
+    println( "depends on dg: {}", depends( dg ).size() );
     println( "g() == {}", eval( dg ));
 
 

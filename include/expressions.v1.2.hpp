@@ -24,25 +24,9 @@ using std::tuple, std::make_tuple, std::tuple_element_t, std::get;
 using std::map;
 using std::any, std::any_cast;
 
-/**
- * Depdendencies
- */
-template< typename... Vars >
-struct VariableSet;
 
-template< typename FirstT, typename... Rest >
-struct VariableSet< FirstT, Rest... >
-{
-    static constexpr size_t size = 1 + sizeof...( Rest );
-    using first = FirstT;
-    using rest = VariableSet< Rest... >;
-};
-
-template<>
-struct VariableSet<>
-{ static constexpr size_t size = 0; };
-
-// parent class must define result_type and eval members
+/// @brief base class of any expression
+///
 struct ExpressionTag 
 { 
     // using result_type...
@@ -50,18 +34,29 @@ struct ExpressionTag
     // constexpr result_type eval( variable_values& ) const...
 };
 
+/// @brief trait to identify a type as an expression type
+/// @tparam T is the type to be checked
 template< typename T >
 struct is_expression
 { static constexpr bool value = std::is_base_of_v< ExpressionTag, T >; };
 
+/// @brief is true if T is an expression type
+/// @tparam T is the type to be checked
+///
 template< typename T >
 static constexpr bool is_expression_v = is_expression< T >::value;
 
-/**
- * storage for variable valuess
- */
+template< typename T >
+concept expression = is_expression_v< T >;
+
+/// @brief storage for values of variables
+///
 struct variable_values 
 { 
+    /// @brief access the value of variable I without modifying the container
+    /// @param I is the index of the variable
+    /// @return an std::any containing the value of the variable, if it exists
+    ///
     any operator[]( size_t I ) const 
     { 
         auto i = values.find( I );
@@ -69,14 +64,38 @@ struct variable_values
             return {};
         return i->second;
     }
+
+    /// @brief access the value of variable I creating a new entry if this value
+    ///        does not exist
+    /// @param I is the index of the variable
+    /// @return an std::any reference containing the value of the variable
+    ///
     any& operator[]( size_t I ) { return values[I]; }
+
+    /// map of the variable values
     map< size_t, any > values;
 };
 
+/// @brief extracts a typed variable value from a values container
+/// @tparam T the type to be returned
+/// @tparam I the index of the variable
+/// @param vals the variable values
+/// @return the value of variable I cast to type T
+///
+template< size_t I, typename T >
+constexpr T get_variable_value( variable_values const& vals )
+{ return any_cast< T >( vals[I] ); }
 
+namespace detail {
+/// @brief evaluates a type T
+/// @tparam T the type to be evaluated
+///
 template< typename T >
 struct Evaluator;
 
+/// @brief evaluator for expressions of type T
+/// @tparam T the type of the expression
+///
 template< typename T >
 requires( is_expression_v< T > )
 struct Evaluator< T >
@@ -88,36 +107,48 @@ struct Evaluator< T >
     { return expr.eval( vars ); }
 };
 
+/// @brief evaluator for non-expression types
+/// @tparam T the type of the non-expression
+///
 template< typename T >
 requires( not is_expression_v< T > )
 struct Evaluator< T >
 { 
     using result_type = T;
-    constexpr static T evaluate( T const& expr, variable_values& )
-    { return expr; }; 
+
+    // always return the value itselv
+    constexpr static T evaluate( T const& value, variable_values& )
+    { return value; }; 
 };
 
-template< typename T >
-using result_t = Evaluator< T >::result_type;
+} // namespace detail
 
-/**
- * expressions can be evaluated, and by default just return the expression.
- */
+/// @brief trait for the result_type of an expression
+/// @tparam T the tested type
+///
+template< typename T >
+using result_t = detail::Evaluator< T >::result_type;
+
+/// @brief evaluates an expression given a set of variable values
+/// @tparam T the expression type
+/// @param expr the expression to be evaluated
+/// @param vars the values of variables in the expression
+/// @return the result of evaluating expression expr using values stored in vars
+///
 template< typename T >
 constexpr result_t< T > eval( T const& expr, 
     variable_values& vars)
-{ return Evaluator< T >::evaluate( expr, vars ); }
+{ return detail::Evaluator< T >::evaluate( expr, vars ); }
 
-template< typename T >
-constexpr result_t< T > eval( T const& expr )
-{ 
-    variable_values _;
-    return eval( expr, _ ); 
-}
 
-/**
- * expressions can have variables
- */
+/// @brief a depnedent variable
+/// @tparam T the type the variable represents
+/// @tparam I the unique index of this variable 
+/// 
+/// variables are uniquely identified only by their index.  Undefined behavior
+/// will occur if two variables with the same index but different types are 
+/// used in the same expression
+///
 template< size_t I, typename T >
 // DT: do we need this?
 // requires( not is_expression_v< T > )
@@ -143,9 +174,35 @@ struct Variable : ExpressionTag
 #endif
 };
 
-/** 
- * Dependency Helpers
- */
+
+/// @brief Set of variables used in an expression
+/// @tparam ...Vars are the variable types
+///
+template< typename... Vars >
+struct VariableSet;
+
+/// @brief a set containing at least one variable
+/// @tparam FirstT is the first variable type
+/// @tparam ...Rest are the remaining variable types
+///
+template< typename FirstT, typename... Rest >
+struct VariableSet< FirstT, Rest... >
+{
+    static constexpr size_t size() { return 1 + sizeof...( Rest ); }
+    using first = FirstT;
+    using rest = VariableSet< Rest... >;
+};
+
+/// @brief an empty set of variables
+///
+template<>
+struct VariableSet<>
+{ static constexpr size_t size() { return 0; } };
+
+
+/// depdency details
+namespace detail {
+
 template< size_t I, typename... Vars >
 struct VariableTypeInList;
 
@@ -340,9 +397,15 @@ requires( not is_expression_v< T > )
 struct DependentVariables< T >
 { using type = VariableSet<>; };
 
+} // namespace detail
+
+/// @brief resolve the dependent variables in an expression
+/// @tparam ...T the expressions
+///
 template< typename... T >
-using dependent_variables_t = merge_variable_set_t< 
-    typename DependentVariables< T >::type... >;
+using dependent_variables_t = detail::merge_variable_set_t< 
+    typename detail::DependentVariables< T >::type... >;
+
 
 static_assert( std::is_same_v< 
     dependent_variables_t< >,
@@ -350,31 +413,47 @@ static_assert( std::is_same_v<
 static_assert( std::is_same_v< 
     dependent_variables_t< int >,
     VariableSet< >> );
-// static_assert( std::is_same_v< 
-//     Variable< 0, int >::dependent_vars_type,
-//     VariableSet< Variable< 0, int >>> );
 static_assert( std::is_same_v< 
-    DependentVariables< Variable< 0, int >>::type,
+    detail::DependentVariables< Variable< 0, int >>::type,
     VariableSet< Variable< 0, int >>> );
 static_assert( std::is_same_v< 
     dependent_variables_t< Variable< 0, int >>,
     VariableSet< Variable< 0, int >>> );
 
 template< size_t I, typename ExprT >
-static constexpr bool depends_on_v = includes_variable_v< Variable< I, int >, dependent_variables_t< ExprT >>;
+static constexpr bool depends_on_v = 
+    detail::includes_variable_v< Variable< I, int >, 
+        dependent_variables_t< ExprT >>;
 
+template< typename... Ts >
+consteval dependent_variables_t< Ts... > depends( Ts&&... )
+{ return {}; }
 
-/**
- * Wrapper to identify something as an expression
- */
+/// @brief evaluates an expression that does not have any depdendent variables
+/// @tparam T the expression type
+/// @param expr the expression to be evaluated
+/// @return the result of evaluating expr
+///
 template< typename T >
+requires( dependent_variables_t< T >::size() == 0 )
+constexpr result_t< T > eval( T const& expr )
+{ 
+    variable_values _;
+    return eval( expr, _ ); 
+}
+
+/// @brief wrapper to turn any type into an expression
+/// @tparam T the wrapped type
+///
+template< typename T >
+requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
 struct Expression : ExpressionTag
 { 
     using value_type = T;
     using dependent_vars_type = dependent_variables_t< T >;
     using result_type = result_t< T >;
 
-    static constexpr size_t dependents_size = dependent_vars_type::size;
+    static constexpr size_t dependents_size = dependent_vars_type::size();
 
     static constexpr bool contains_expression = true;
 
@@ -384,10 +463,12 @@ struct Expression : ExpressionTag
     constexpr result_type eval( variable_values& vars ) const
     { return expressions::eval( get(), vars ); }
 
+    // casting to and from an expression should be explicit
     explicit operator value_type() const
-    { return get(); }
-    constexpr Expression() = default;
+    { return get(); } 
     explicit constexpr Expression( value_type const& expr ): _value{ expr } { }
+
+    constexpr Expression() = default;
 
     // template< typename Arg, typename... Args >
     // explicit constexpr Expression( Arg&& arg, Args&&... args ): _value{ arg, args... } {}
@@ -414,15 +495,20 @@ struct strip_expression< Expression< T >>
 template< typename T >
 using stripped_t = strip_expression< T >::type;
 
-/**
- * A static expression with an unchanging value defined at run-time
- */
+/// @brief helper to create expressions with unchanging values
+/// @tparam T the type of this expression
+/// @param value the value of this expression
+/// @return returns an expression that will always evaluate to value
+///
 template< typename T >
+requires( not is_expression_v< T > )
 Expression< T > static_expr( T const& value )
-{ return { value }; }
+{ return Expression< T >{ value }; }
+
 
 template< size_t I, typename T >
-using variable = Expression< Variable< I, T >>;
+// using variable = Expression< Variable< I, T >>;
+using variable = Variable< I, T >;
 
 template< size_t I, typename T >
 constexpr variable< I, T > make_variable( std::string name_format = "var{}" )
@@ -450,7 +536,7 @@ struct Constant : ExpressionTag
 };
 
 template< typename T, T Value >
-using constant = Expression< Constant< T, Value >>;
+using constant = Constant< T, Value >;
 
 static constexpr constant< long double, 0.l > constant_zero = constant< long double, 0.l >{{}};
 static constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l >{{}};
@@ -546,7 +632,7 @@ struct Product: ExpressionTag
     U _right;
 };
 
-static_assert( not depends_on_v< 0, Expression< Product< int, Constant< long double, 0.l >>>> );
+static_assert( not depends_on_v< 0, Product< int, Constant< long double, 0.l >>> );
 
 /**
  * a quotient
@@ -930,93 +1016,127 @@ struct Derivative< I, Power< Exp, ExprT >>
 // { return Expression< ElementOf< I, T >>{ arg }; }
 
 // negation
-template< typename T >
-constexpr auto operator-( Expression< T > const& arg )
-{ return Expression< Negation< T >>{ arg.get() }; }
+template< expression T >
+constexpr auto operator -( T const& arg )
+{ return Negation< T >{ arg }; }
 
 // addition
-template< typename T, typename U >
-constexpr auto operator+( Expression< T > const& left, 
-    Expression< U > const& right )
-{ return Expression< Sum< T, U >>{{  left.get(), right.get() }}; }
+template< expression T, expression U >
+constexpr auto operator +( T const& left, U const& right )
+{ return Sum< T, U >{ left, right }; }
 
-template< typename T, typename U >
-constexpr auto operator+( Expression< T > const& left, 
-    U const& right )
-{ return Expression< Sum< T, U >>{{ left.get(), right }}; }
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator +( T const& left, U const& right )
+{ return Sum< T, Expression< U >>{ left, static_expr( right )}; }
 
-template< typename T, typename U >
-constexpr auto operator+( T const& left, 
-    Expression< U > const& right )
-{ return Expression< Sum< T, U >>{{ left, right.get() }}; }
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator +( T const& left, U const& right )
+{ return Sum< Expression< T >, U >{ static_expr( left ), right }; }
 
 // subtraction
-template< typename T, typename U >
-constexpr auto operator-( Expression< T > const& left, Expression< U > const& right )
-{ return Expression< Difference< T, U >>{{ left.get(), right.get() }}; }
+template< expression T, expression U >
+constexpr auto operator -( T const& left, U const& right )
+{ return Difference< T, U >{ left, right }; }
 
-template< typename T, typename U >
-constexpr auto operator-( Expression< T > const& left, 
-    U const& right )
-{ return Expression< Difference< T, U >>{{ left.get(), right }}; }
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator -( T const& left, U const& right )
+{ return Difference< T, Expression< U >>{ left, static_expr( right )}; }
 
-template< typename T, typename U >
-constexpr auto operator-( T const& left, 
-    Expression< U > const& right )
-{ return Expression< Difference< T, U >>{{ left, right.get() }}; }
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator -( T const& left, U const& right )
+{ return Difference< Expression< T >, U >{ static_expr( left ), right }; }
 
 // multiplication
-template< typename T, typename U >
-constexpr auto operator*( Expression< T > const& left, 
-    Expression< U > const& right )
-{ return Expression< Product< T, U >>{{ left.get(), right.get() }}; }
+template< expression T, expression U >
+constexpr auto operator *( T const& left, U const& right )
+{ return Product< T, U >{ left, right }; }
 
-template< typename T, typename U >
-constexpr auto operator*( T const& left, 
-    Expression< U > const& right )
-{ return Expression< Product< T, U >>{{ left, right.get() }}; }
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator *( T const& left, U const& right )
+{ return Product< T, Expression< U >>{ left, static_expr( right )}; }
 
-template< typename T, typename U >
-constexpr auto operator*( Expression< T > const& left, U const& right )
-{ return Expression< Product< T, U >>{{ left.get(), right }}; }
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator *( T const& left, U const& right )
+{ return Product< Expression< T >, U >{ static_expr( left ), right }; }
 
 // division
-template< typename T, typename U >
-constexpr auto operator/( Expression< T > const& left, U const& right )
-{ return Expression< Quotient< T, U >>{{ left.get(), right }}; }
+template< expression T, expression U >
+constexpr auto operator /( T const& left, U const& right )
+{ return Quotient< T, U >{ left, right }; }
 
-template< typename T, typename U >
-constexpr auto operator/( T const& left, Expression< U > const& right )
-{ return Expression< Quotient< T, U >>{{ left, right.get() }}; }
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator /( T const& left, U const& right )
+{ return Quotient< T, Expression< U >>{ left, static_expr( right )}; }
 
-template< typename T, typename U >
-constexpr auto operator/( Expression< T > const& left, 
-    Expression< U > const& right )
-{ return Expression< Quotient< T, U >>{{ left.get(), right.get() }}; }
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator /( T const& left, U const& right )
+{ return Quotient< Expression< T >, U >{ static_expr( left ), right }; }
 
 // sqrt
-template< typename T >
-constexpr auto sqrt( Expression< T > const& arg )
-{ return Expression< SquareRoot< T >>{{ arg }}; }
+template< expression T >
+constexpr auto sqrt( T const& arg )
+{ return SquareRoot< T >{ arg }; }
 
 // pow
-template< int Exp, typename T >
-constexpr auto pow( Expression< T > const& arg )
-{ return Expression< Power< Exp, T >>{{ arg }}; }
+template< int Exp, expression T >
+constexpr auto pow( T const& arg )
+{ return Power< Exp, T >{ arg }; }
 
 // equality
-template< typename T, typename U >
-constexpr auto operator==( Expression< T > const& left, 
-    Expression< U > const& right )
-{ return Expression< Equals< T, U >>{{ left.get(), right.get() }}; }
+template< expression T, expression U >
+constexpr auto operator ==( T const& left, U const& right )
+{ return Equals< T, U >{ left, right }; }
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator ==( T const& left, U const& right )
+{ return Equals< T, Expression< U >>{ left, static_expr( right )}; }
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator ==( T const& left, U const& right )
+{ return Equals< Expression< T >, U >{ static_expr( left ), right }; }
 
 // logical operations
-template< typename T, typename U >
-constexpr auto operator and( Expression< T > const& left, 
-    Expression< U > const& right )
-{ return Expression< Conjunction< T, U >>{{ left.get(), right.get() }}; }
+template< expression T, expression U >
+constexpr auto operator and( T const& left, U const& right )
+{ return Conjunction< T, U >{ left, right }; }
 
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator and( T const& left, U const& right )
+{ return Conjunction< T, Expression< U >>{ left, static_expr( right )}; }
 
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator and( T const& left, U const& right )
+{ return Conjunction< Expression< T >, U >{ static_expr( left ), right }; }
+
+/**
+ * solver
+ */
+template< typename ExprT >
+struct Solver;
+
+template< typename SolverT, typename ExprT >
+constexpr variable_values solve( ExprT const& expr, SolverT&& solver = {} )
+{
+    // get the dependent variables for this expression
+
+    // construct a container for the variable values
+    variable_values values;
+
+    initialize_variables( values, expr, solver );
+    // 
+};
 
 } // namespace expressions
 
