@@ -38,6 +38,9 @@ struct Shape< >
     constexpr operator size_t() const { return element(); }
     constexpr size_t first() const { return element(); }
 
+    constexpr Shape insert( Shape here ) const
+    { return {}; }
+
     // TODO: throw an error if passed something larger than 1
     static consteval Shape from_element( size_t )
     { return {}; }
@@ -75,7 +78,12 @@ struct Shape< First, Rest... >: Shape< Rest... >
 
     static constexpr Shape from_element( size_t elem )
     { return Shape{ elem / Shape< Rest... >::size(), 
-        Shape< Rest... >::from_element( elem % Shape< Rest... >::size() ) }; }
+        Shape< Rest... >::from_element( elem % Shape< Rest... >::size() )}; }
+
+    constexpr Shape< First+1, ( Rest+1 )... > 
+    insert( Shape< First+1, ( Rest+1 )... > here ) const
+    { return Shape< First+1, ( Rest+1 )... >{ first() < here ? first() : 1 + first(), 
+        Shape< Rest... >::insert( here )}; }
 
     constexpr operator size_t() const 
     { return element(); }
@@ -204,6 +212,28 @@ static constexpr bool is_shape_v = IsShape< T >::value;
 template< typename T >
 concept shape = is_shape_v< T >;
 
+template< size_t I, shape S >
+struct IsElementEven;
+
+template<>
+struct IsElementEven< 0, Shape<>>
+{ static constexpr bool value = true; };
+
+template< size_t I, size_t First, size_t... Rest >
+struct IsElementEven< I, Shape< First, Rest... >>
+{
+    static constexpr size_t first = I / Shape< Rest... >::size();
+    static constexpr size_t rest = I % Shape< Rest... >::size();
+
+    static constexpr bool is_first_even = ( first % 2 == 0 );
+    static constexpr bool is_rest_even = IsElementEven< rest, Shape< Rest... >>::value;
+    static constexpr bool value = ( is_first_even and is_rest_even ) or
+        (not is_first_even and not is_rest_even );
+};
+
+template< size_t I, shape S >
+static constexpr bool is_element_even_v = IsElementEven< I, S >::value;
+
 /**
  * creates a super shape object by inserting 1 into each dimension
  */
@@ -223,9 +253,38 @@ struct ShapeInsertAt< Shape< First, Rest... >, seq< I, Is... >>
         ShapeInsertAt< Shape< Rest... >, seq< Is... >>::insert( from ) }; }
 };  
 
+template< shape S, size_t I >
+struct ShapeInsertAtElement;
+
+template< >
+struct ShapeInsertAtElement< Shape< >, 0 >
+{ static consteval Shape< > insert( Shape< > ) { return {}; } };
+
+template< size_t First, size_t... Rest, size_t I  >
+struct ShapeInsertAtElement< Shape< First, Rest... >, I >
+{
+    using type = Shape< 1+First, (1+Rest)... >;
+    using rest_type = Shape<( 1+Rest )... >;
+    static constexpr size_t first = I / rest_type::size();
+    static constexpr size_t rem = I % rest_type::size();
+
+    static constexpr type insert( Shape< First, Rest... > from )
+    { return type{ from.first() < first ? from.first() : 1 + from.first(),  
+        ShapeInsertAtElement< Shape< Rest... >, rem >::insert( from ) }; }
+};  
+
 template< typename Seq, shape S >
 consteval auto shape_insert_at( S shp )
 { return ShapeInsertAt< S, Seq >::insert( shp ); }
+
+template< size_t First, size_t... Rest >
+consteval auto shape_insert_at( Shape< 1+First, (1+Rest)... > here, 
+    Shape< First, Rest... > shp )
+{ return shp.insert( here ); }
+
+template< size_t I, shape S >
+consteval auto shape_insert_at_element( S shp )
+{ return ShapeInsertAtElement< S, I >::insert( shp ); }
 
 /**
  * shape elements
@@ -404,7 +463,19 @@ template< size_t I, size_t J, shape S >
 constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
 { return TransposeShape< I, J, S >::value( shp ); }
 
+// template< shape S, typename Seq >
+// struct ElementToIndexSequenceHelper;
 
+// template< shape S, size_t.. Is >
+// struct ElementToIndexSequenceHelper< S, seq< Is... >>
+// { using type = seq< shape_get< Is >( S )... >; };
+
+// template< shape S >
+// struct ElementToIndexSequence
+// { using type = ElementToIndexSequenceHelper< S, make_seq< S::dimensions() >>::type };
+
+// template< shape S >
+// 
 
 /**
  * A tensor is a shaped array
@@ -571,11 +642,38 @@ constexpr auto subtensor_element( TensorT const& ten )
     return get< L >( ten );
 }
 
+template< size_t I, size_t K, typename TensorT >
+constexpr auto element_subtensor_element( TensorT const& ten )
+{
+    using shape_type = tensor_shape_t< TensorT >;
+    using sub_shape_type = sub_tensor_shape_t< shape_type >;
+
+    static constexpr const auto sub = sub_shape_type::from_element( K );
+    static constinit const size_t L = shape_insert_at_element< I >( sub );
+    return get< L >( ten );
+}
+
 template< typename Seq, typename TensorT, size_t... Ks >
 constexpr auto subtensor_helper( TensorT const& ten, seq< Ks... > )
 { 
     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
     return make_tensor< sub_shape_type >( subtensor_element< Ks, Seq >( ten )... ); 
+}
+
+// template< typename TensorT, size_t... Ks >
+// constexpr auto subtensor_helper( tensor_shape_t< TensorT > shp, 
+//     TensorT const& ten, seq< Ks... > )
+// { 
+//     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+//     return make_tensor< sub_shape_type >( subtensor_element< Ks >( shp, ten )... ); 
+// }
+
+template< size_t I, typename TensorT, size_t... Ks >
+constexpr auto element_subtensor_helper( TensorT const& ten, seq< Ks... > )
+{ 
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return make_tensor< sub_shape_type >( 
+        element_subtensor_element< I, Ks >( ten )... ); 
 }
 
 /**
@@ -634,6 +732,24 @@ constexpr auto subtensor( TensorT const& ten )
     return subtensor_helper< Seq >( ten, make_seq< sub_shape_type::size() >{} );
 }
 
+// template< typename TensorT >
+// constexpr auto subtensor( tensor_shape_t< TensorT > shp, TensorT const& ten )
+// {
+//     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+//     return subtensor_helper( shp, ten, make_seq< sub_shape_type::size() >{} );
+// }
+
+/**
+ * returns the subtensor of element I in tensor ten
+ */
+template< size_t I, typename TensorT >
+constexpr auto element_subtensor( TensorT const& ten )
+{
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return element_subtensor_helper< I >( ten, 
+        make_seq< sub_shape_type::size() >{} );
+}
+
 // forward decl
 template< typename TensorT >
 requires( tensor_shape_t< TensorT >::dimensions() == 2 and
@@ -657,26 +773,42 @@ template< typename TensorT >
 constexpr auto det_helper( TensorT const& ten, seq< 0 > )
 { return get< 0 >( ten ); }
 
-// template< typename TensorT >
-// struct Determinant;
-
-// template< typename TensorT >
-// requires( tensor_shape_t< TensorT >::dimensions() == 2 and
-//     shape_element_v< 0, tensor_shape_t< TensorT >> ==
-//         shape_element_v< 1, tensor_shape_t< TensorT >> and 
-//     isgreater( shape_element_v< 0, tensor_shape_t< TensorT >>, 1 ))
-// struct Determinant< TensorT >
-// {
-    
-// }
-
+/**
+ * determinant of a square tensor
+ * 
+ * @tparam TensorT the type of the tensor
+ * @param ten the tensor itself
+ */
 template< typename TensorT >
 requires( tensor_shape_t< TensorT >::dimensions() == 2 and
     shape_element_v< 0, tensor_shape_t< TensorT >> ==
         shape_element_v< 1, tensor_shape_t< TensorT >> )
 constexpr auto det( TensorT const& ten )
 { return det_helper( ten, 
-        make_seq< shape_element_v< 0, tensor_shape_t< TensorT >> >{} ); }
+    make_seq< shape_element_v< 0, tensor_shape_t< TensorT >> >{} ); }
+
+template< typename TensorT, size_t... Is >
+constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
+{ 
+    using shape_type = tensor_shape_t< TensorT >;
+    return make_tensor< shape_type >((
+        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * // i think this works for element ids too...
+        det( element_subtensor< Is >( ten )))... );
+}
+
+// forward decl
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto cofactor( TensorT const& ten )
+{ 
+    using shape_type = tensor_shape_t< TensorT >;
+    return cofactor_helper( ten, make_seq< shape_type::size() >{} );
+}
+
+
+
 
 } // namespace tensor
 

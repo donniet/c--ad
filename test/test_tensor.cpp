@@ -1,12 +1,13 @@
 #include "tensor.v1.2.hpp"
 
-#include <iostream>
+#include <print>
 #include <stdexcept>
 #include <cassert>
 
 int main( int ac, char* av[] )
 {
-    using std::cout, std::cerr, std::endl;
+    // using std::cout, std::cerr, std::endl;
+    using std::println;
     using namespace tensor;
     using std::is_same_v;
 
@@ -97,40 +98,26 @@ int main( int ac, char* av[] )
     /**
      * Determinant tests
      */
-    auto d = det( t5 );
-    assert( d == 1*5*9 - 1*8*6 - 4*2*9 + 4*8*3 + 7*2*6 - 7*5*3 );
+    assert( det( t5 ) == 1*5*9 - 1*8*6 - 4*2*9 + 4*8*3 + 7*2*6 - 7*5*3 );
 
+    auto d2 = make_tensor< Shape< 2, 2 >>(
+        3., 2.,
+        2., 3. );
 
-//     if( d != 0. )
-//         throw std::logic_error("FAIL: determinant test");
-    
-//     cout << "PASS: determinant test" << endl;
-    
-//     auto d1 = make_tensor< shape< 1, 1 >>( 5. );
+    assert( det( d2 ) == 3*3 - 2*2 );
 
-//     if( determinant( d1 ) != 5. )
-//         throw std::logic_error("FAIL: determinant test 1x1");
-    
-//     cout << "PASS: determinant test 1x1" << endl;
+    /**
+     * Cofactor tests
+     */
+    auto cofactor_d2 = make_tensor< Shape< 2, 2 >>(
+        3., -2., 
+        -2., 3. );
 
-//     auto d2 = make_tensor< shape< 2, 2 >>(
-//         3., 2.,
-//         2., 3. );
+    auto d2_co = cofactor( d2 );
 
-//     if( determinant( d2 ) != 5. )
-//         throw std::logic_error("FAIL: determinant test 2x2");
-    
-//     cout << "PASS: determinant test 2x2" << endl;
-
-//     /**
-//      * Cofactor tests
-//      */
-//     auto c2 = cofactor( d2 );
-//     static_assert( is_same_v< shape< 2, 2 >, shape_of< decltype( c2 )>> );
-
-//     auto cofactor_c2 = make_tensor< shape< 2, 2 >>(
-//         3., -2., 
-//         -2., 3. );
+    println( "d2_co:\n{} {}\n{} {}", get< 0 >( d2_co ), get< 1 >( d2_co ), 
+        get< 2 >( d2_co ), get< 3 >( d2_co ));
+    assert( cofactor( d2 ) == cofactor_d2 );
     
 //     if( c2 != cofactor_c2 )
 //         throw std::logic_error("FAIL: cofactor test");
