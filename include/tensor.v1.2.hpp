@@ -550,6 +550,12 @@ constexpr auto product_helper( LeftT const& left, RightT const& right,
         get< Is % right.size() >( right ))... );
 }
 
+template< typename T, typename TensorT, size_t... Is >
+constexpr auto divide_scale_helper( T scalar, TensorT const& ten, 
+    seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>(
+    ( get< Is >( ten ) / scalar )... ); }
+
 // forward decl
 template< size_t K, size_t I, size_t J, shape S, typename Seq >
 struct ContractedElementSequenceHelper;
@@ -699,6 +705,10 @@ template< shape A, typename... Ts, shape B, typename... Us >
 constexpr auto operator *( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
 { return product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
 
+template< typename T, shape S, typename... Ts >
+constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten )
+{ return divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
 /**
  * contracts a tensor along equinumerous indices
  */
@@ -796,7 +806,13 @@ constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
         det( element_subtensor< Is >( ten )))... );
 }
 
-// forward decl
+/**
+ * cofactor matrix of a square matrix
+ * 
+ * @tparam TensorT is the type of the tensor
+ * @param ten is the tensor itself
+ * @returns a tensor of the same shape containing the cofactors of ten
+ */
 template< typename TensorT >
 requires( tensor_shape_t< TensorT >::dimensions() == 2 and
     shape_element_v< 0, tensor_shape_t< TensorT >> ==
@@ -807,7 +823,15 @@ constexpr auto cofactor( TensorT const& ten )
     return cofactor_helper( ten, make_seq< shape_type::size() >{} );
 }
 
-
+/**
+ * inverse of a square matrix
+ */
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto inverse( TensorT const& ten )
+{ return divide_scale( det( ten ), transpose< 0, 1 >( cofactor( ten ))); }
 
 
 } // namespace tensor

@@ -115,21 +115,21 @@ int main( int ac, char* av[] )
 
     auto d2_co = cofactor( d2 );
 
-    println( "d2_co:\n{} {}\n{} {}", get< 0 >( d2_co ), get< 1 >( d2_co ), 
-        get< 2 >( d2_co ), get< 3 >( d2_co ));
+    // println( "d2_co:\n{} {}\n{} {}", get< 0 >( d2_co ), get< 1 >( d2_co ), 
+    //     get< 2 >( d2_co ), get< 3 >( d2_co ));
     assert( cofactor( d2 ) == cofactor_d2 );
     
-//     if( c2 != cofactor_c2 )
-//         throw std::logic_error("FAIL: cofactor test");
 
-//     cout << "PASS: cofactor test" << endl;
+    /**
+     * Inverse tests
+     */
+    auto i2 = make_tensor< Shape< 2, 2 >>(
+        5., 4.,
+        3., 4. );
 
-//     /**
-//      * Inverse tests
-//      */
-//     auto i2 = make_tensor< shape< 2, 2 >>(
-//         5., 4.,
-//         3., 4. );
+    assert(( inverse( i2 ) == make_tensor< Shape< 2, 2 >>( 
+        4. / 8., -4. / 8.,
+        -3. / 8., 5. / 8. )));
 
 //     auto i2i = inverse( i2 );
 //     static_assert( is_same_v< shape< 2, 2 >, shape_of< decltype( i2i )>> );
