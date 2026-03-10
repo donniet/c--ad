@@ -9,6 +9,7 @@
 #include <string>
 #include <locale>
 #include <cmath>
+#include <array>
 
 using std::size_t;
 using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t, 
@@ -17,6 +18,7 @@ using std::is_same_v;
 using std::string;
 using std::isspace;
 using std::isless, std::isgreater;
+using std::array;
 
 /**
  * string utilities 
@@ -43,6 +45,19 @@ constexpr string& trim( string& s )
 /**
  * math utilities
  */
+constexpr size_t perm( size_t n )
+{
+    size_t p = 1;
+    for(; n > 0; --n ) 
+        p *= n;
+    return p;
+}
+
+static_assert( perm(0) == 1. );
+static_assert( perm(1) == 1. );
+static_assert( perm(5) == 120 );
+
+
 template< size_t X >
 struct Identity { static constexpr size_t value = X; };
 

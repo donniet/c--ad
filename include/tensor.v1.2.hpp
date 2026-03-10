@@ -23,6 +23,8 @@ struct Shape< >
 {  
     // empty shapes have size == 1
     static constexpr size_t size() { return 1; }
+    // the number of dimensions in this shape
+    static constexpr size_t dimensions() { return 0; }
 
     // instances of shapes are always equivalent 
     constexpr bool operator ==( Shape const& other ) const
@@ -57,8 +59,9 @@ struct Shape< First, Rest... >: Shape< Rest... >
     // the size of the first dimension is First
     static constexpr size_t first_size() { return First; }
     // the overall size is the product of each size dimension
-    static consteval size_t size() { return First * ( Rest * ... * 1 ); }
-
+    static constexpr size_t size() { return First * ( Rest * ... * 1 ); }
+    // the number of dimensions in this shape
+    static constexpr size_t dimensions() { return 1 + sizeof...( Rest ); }
     
     template< size_t... Others >
     constexpr Shape< First, Rest..., Others... > cat( Shape< Others... > other )
@@ -401,6 +404,8 @@ template< size_t I, size_t J, shape S >
 constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
 { return TransposeShape< I, J, S >::value( shp ); }
 
+
+
 /**
  * A tensor is a shaped array
  */
@@ -573,7 +578,6 @@ constexpr auto subtensor_helper( TensorT const& ten, seq< Ks... > )
     return make_tensor< sub_shape_type >( subtensor_element< Ks, Seq >( ten )... ); 
 }
 
-
 /**
  * operators
  */
@@ -629,6 +633,50 @@ constexpr auto subtensor( TensorT const& ten )
     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
     return subtensor_helper< Seq >( ten, make_seq< sub_shape_type::size() >{} );
 }
+
+// forward decl
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto det( TensorT const& ten );
+
+template< typename TensorT, size_t... Is >
+requires( isgreater( sizeof...( Is ), 1 ))
+constexpr auto det_helper( TensorT const& ten, seq< Is... > )
+{ 
+    // we know this is a 2D tensor with equal sizes, sizeof...( Is )
+    using shape = tensor_shape_t< TensorT >;
+    return ((
+        ( Is % 2 == 0 ? 1 : -1 ) * // odd or even permutation
+        get< shape{ 0, Is } >( ten ) * // 
+        det( subtensor< seq< 0, Is >>( ten ))) + ... );
+}
+
+template< typename TensorT >
+constexpr auto det_helper( TensorT const& ten, seq< 0 > )
+{ return get< 0 >( ten ); }
+
+// template< typename TensorT >
+// struct Determinant;
+
+// template< typename TensorT >
+// requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+//     shape_element_v< 0, tensor_shape_t< TensorT >> ==
+//         shape_element_v< 1, tensor_shape_t< TensorT >> and 
+//     isgreater( shape_element_v< 0, tensor_shape_t< TensorT >>, 1 ))
+// struct Determinant< TensorT >
+// {
+    
+// }
+
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto det( TensorT const& ten )
+{ return det_helper( ten, 
+        make_seq< shape_element_v< 0, tensor_shape_t< TensorT >> >{} ); }
 
 } // namespace tensor
 

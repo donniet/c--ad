@@ -86,36 +86,20 @@ int main( int ac, char* av[] )
         40., 48. );
 
     assert(( transpose< 0, 1 >( u5u6 ) == u5u6_t ));
-//     if( transpose(u7) != u5u6_t )
-//         throw std::logic_error("FAIL: transpose test");
+
+    auto t5_t = make_tensor< Shape< 3,3 >>(
+        1., 4., 7.,
+        2., 5., 8.,
+        3., 6., 9. );
+
+    assert(( transpose< 0, 1 >( t5 ) == t5_t ));
     
-//     cout << "PASS: transpose test" << endl;
+    /**
+     * Determinant tests
+     */
+    auto d = det( t5 );
+    assert( d == 1*5*9 - 1*8*6 - 4*2*9 + 4*8*3 + 7*2*6 - 7*5*3 );
 
-//     /**
-//      * Scale tests
-//      */
-//     auto t8 = make_tensor< shape< 2, 3 >>(
-//         4. *  5., 4. *  7.,
-//         4. * 11., 4. * 13.,
-//         4. * 17., 4. * 19. );
-
-//     auto t9 = t8.scale( 1. / 4. );
-//     static_assert( is_same_v< shape< 2, 3 >, shape_of< decltype( t9 )>> );
-
-//     auto t8sby4 = make_tensor< shape< 2, 3 >>(
-//         5., 7.,
-//         11., 13.,
-//         17., 19. );
-
-//     if( t9 != t8sby4 )
-//         throw std::logic_error("FAIL: scale test");
-    
-//     cout << "PASS: scale test" << endl;
-
-//     /**
-//      * Determinant tests
-//      */
-//     double d = determinant( t3 );
 
 //     if( d != 0. )
 //         throw std::logic_error("FAIL: determinant test");
