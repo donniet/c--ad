@@ -551,6 +551,12 @@ constexpr auto product_helper( LeftT const& left, RightT const& right,
 }
 
 template< typename T, typename TensorT, size_t... Is >
+constexpr auto scale_helper( T scalar, TensorT const& ten, 
+    seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>(
+    ( get< Is >( ten ) * scalar )... ); }
+
+template< typename T, typename TensorT, size_t... Is >
 constexpr auto divide_scale_helper( T scalar, TensorT const& ten, 
     seq< Is... > )
 { return make_tensor< tensor_shape_t< TensorT >>(
@@ -704,6 +710,10 @@ constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > co
 template< shape A, typename... Ts, shape B, typename... Us >
 constexpr auto operator *( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
 { return product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
+
+template< typename T, shape S, typename... Ts >
+constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
+{ return scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
 
 template< typename T, shape S, typename... Ts >
 constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten )
