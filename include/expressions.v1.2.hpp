@@ -878,14 +878,14 @@ struct Derivative< I, Variable< I, T >>
     { return {}; }
 };
 
-template< size_t I, typename ExprT >
-requires( depends_on_v< I, ExprT > )
-struct Derivative< I, Expression< ExprT >>
-{
-    using type = Expression< derivative_t< I, ExprT >>;
-    static constexpr type construct( Expression< ExprT > const& expr )
-    { return type{ d< I >( expr.get() ) }; }
-};
+// template< size_t I, typename ExprT >
+// requires( depends_on_v< I, ExprT > )
+// struct Derivative< I, Expression< ExprT >>
+// {
+//     using type = Expression< derivative_t< I, ExprT >>;
+//     static constexpr type construct( Expression< ExprT > const& expr )
+//     { return type{ d< I >( expr.get() ) }; }
+// };
 
 template< size_t I, typename ExprT >
 requires( depends_on_v< I, ExprT > )
@@ -893,7 +893,7 @@ struct Derivative< I, Negation< ExprT >>
 {
     using type = Negation< derivative_t< I, ExprT >>;
     static constexpr type construct( Negation< ExprT > const& expr )
-    { return { d< I >( expr.get() ) }; }
+    { return { d< I >( expr.arg() ) }; }
 };
 
 template< size_t I, typename LeftT, typename RightT >

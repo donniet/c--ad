@@ -88,9 +88,12 @@ int main( int ac, char* av[] )
         a3, -a3,
         a3, a3 );
 
+    // det(m1) == 2 * a3 * a3
+    // det'(m1) == 4 * a3
     values[3] = 1_scalar;
     println( "det(1,-1,1,1) == {}", eval( det( m1 ), values ));
     assert( eval( det( m1 ), values ) == 2_scalar );
+    assert( eval( d< 3 >( det( m1 )), values ) == 4_scalar );
 
     // auto a = array_of( zero );
     // auto b = array_of( zero , 1 );
