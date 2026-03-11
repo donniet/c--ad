@@ -489,7 +489,7 @@ struct Tensor : tuple< T, Ts... >
     // static consteval shape_type shape() { return {}; }
     // TODO: get rid of the static_cast
     template< typename... Indices >
-    static consteval shape_type index( Indices... Is )
+    static constexpr shape_type index( Indices... Is )
     { return { static_cast< size_t >( Is )... }; }
 
     template< typename OtherT, size_t... Is >
@@ -531,6 +531,7 @@ requires( S::size() == sizeof...( Ts ))
 constexpr Tensor< S, Ts... > make_tensor( Ts... ts )
 { return { ts... }; }
 
+namespace detail {
 template< typename LeftT, typename RightT, size_t... Is >
 constexpr bool equals_helper( LeftT const& left, RightT const& right,
     seq< Is... > )
@@ -704,36 +705,38 @@ constexpr auto element_subtensor_helper( TensorT const& ten, seq< Ks... > )
         element_subtensor_element< I, Ks >( ten )... ); 
 }
 
+} // namespace detail
+
 /**
  * operators
  */
 template< shape S, typename... Ts, typename... Us >
 constexpr auto operator ==( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
-{ return equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 template< shape S, typename... Ts, typename... Us >
 constexpr auto operator !=( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
-{ return not equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+{ return not detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 template< shape S, typename... Ts, typename... Us >
 constexpr auto operator +( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
-{ return plus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::plus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 template< shape S, typename... Ts, typename... Us >
 constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
-{ return minus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::minus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 template< shape A, typename... Ts, shape B, typename... Us >
 constexpr auto operator *( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
-{ return product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
+{ return detail::product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
 
 template< typename T, shape S, typename... Ts >
 constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
-{ return scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
 
 template< typename T, shape S, typename... Ts >
 constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten )
-{ return divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
 
 
 /**
@@ -747,7 +750,7 @@ constexpr auto contract( TensorT const& ten )
     static constexpr size_t contracted_size = 
         contract_shape_t< I, J, tensor_shape_t< TensorT >>::size();
 
-    return contract_helper< I, J >( ten, make_seq< contracted_size >{} ); 
+    return detail::contract_helper< I, J >( ten, make_seq< contracted_size >{} ); 
 }
 
 /**
@@ -755,7 +758,7 @@ constexpr auto contract( TensorT const& ten )
  */
 template< size_t I, size_t J, typename TensorT >
 constexpr auto transpose( TensorT const& ten )
-{ return transpose_helper< I, J >( ten, 
+{ return detail::transpose_helper< I, J >( ten, 
     make_seq< tensor_shape_t< TensorT >::size() >{} ); }
 
 /**
@@ -766,14 +769,14 @@ template< typename Seq, typename TensorT >
 constexpr auto subtensor( TensorT const& ten )
 {
     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
-    return subtensor_helper< Seq >( ten, make_seq< sub_shape_type::size() >{} );
+    return detail::subtensor_helper< Seq >( ten, make_seq< sub_shape_type::size() >{} );
 }
 
 // template< typename TensorT >
 // constexpr auto subtensor( tensor_shape_t< TensorT > shp, TensorT const& ten )
 // {
 //     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
-//     return subtensor_helper( shp, ten, make_seq< sub_shape_type::size() >{} );
+//     return detail::subtensor_helper( shp, ten, make_seq< sub_shape_type::size() >{} );
 // }
 
 /**
@@ -783,7 +786,7 @@ template< size_t I, typename TensorT >
 constexpr auto element_subtensor( TensorT const& ten )
 {
     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
-    return element_subtensor_helper< I >( ten, 
+    return detail::element_subtensor_helper< I >( ten, 
         make_seq< sub_shape_type::size() >{} );
 }
 
@@ -794,6 +797,7 @@ requires( tensor_shape_t< TensorT >::dimensions() == 2 and
         shape_element_v< 1, tensor_shape_t< TensorT >> )
 constexpr auto det( TensorT const& ten );
 
+namespace detail {
 template< typename TensorT, size_t... Is >
 requires( isgreater( sizeof...( Is ), 1 ))
 constexpr auto det_helper( TensorT const& ten, seq< Is... > )
@@ -810,6 +814,17 @@ template< typename TensorT >
 constexpr auto det_helper( TensorT const& ten, seq< 0 > )
 { return get< 0 >( ten ); }
 
+template< typename TensorT, size_t... Is >
+constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
+{ 
+    using shape_type = tensor_shape_t< TensorT >;
+    return make_tensor< shape_type >((
+        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * // i think this works for element ids too...
+        det( element_subtensor< Is >( ten )))... );
+}
+
+} // namespace detail
+
 /**
  * determinant of a square tensor
  * 
@@ -821,17 +836,9 @@ requires( tensor_shape_t< TensorT >::dimensions() == 2 and
     shape_element_v< 0, tensor_shape_t< TensorT >> ==
         shape_element_v< 1, tensor_shape_t< TensorT >> )
 constexpr auto det( TensorT const& ten )
-{ return det_helper( ten, 
+{ return detail::det_helper( ten, 
     make_seq< shape_element_v< 0, tensor_shape_t< TensorT >> >{} ); }
 
-template< typename TensorT, size_t... Is >
-constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
-{ 
-    using shape_type = tensor_shape_t< TensorT >;
-    return make_tensor< shape_type >((
-        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * // i think this works for element ids too...
-        det( element_subtensor< Is >( ten )))... );
-}
 
 /**
  * cofactor matrix of a square matrix
@@ -847,7 +854,7 @@ requires( tensor_shape_t< TensorT >::dimensions() == 2 and
 constexpr auto cofactor( TensorT const& ten )
 { 
     using shape_type = tensor_shape_t< TensorT >;
-    return cofactor_helper( ten, make_seq< shape_type::size() >{} );
+    return detail::cofactor_helper( ten, make_seq< shape_type::size() >{} );
 }
 
 /**

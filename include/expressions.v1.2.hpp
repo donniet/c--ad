@@ -24,6 +24,8 @@ using std::tuple, std::make_tuple, std::tuple_element_t, std::get;
 using std::map;
 using std::any, std::any_cast;
 
+using namespace tensor;
+
 
 /// @brief base class of any expression
 ///
@@ -397,6 +399,16 @@ requires( not is_expression_v< T > )
 struct DependentVariables< T >
 { using type = VariableSet<>; };
 
+template< typename... Ts >
+struct DependentVariables< tuple< Ts... >>
+{ using type = merge_variable_set_t< 
+    typename DependentVariables< Ts >::type... >; };
+
+template< typename ShapeT, typename... Ts >
+struct DependentVariables< Tensor< ShapeT, Ts... >>
+{ using type = merge_variable_set_t< 
+    typename DependentVariables< Ts >::type... >; };
+
 } // namespace detail
 
 /// @brief resolve the dependent variables in an expression
@@ -426,7 +438,7 @@ static constexpr bool depends_on_v =
         dependent_variables_t< ExprT >>;
 
 template< typename... Ts >
-consteval dependent_variables_t< Ts... > depends( Ts&&... )
+consteval dependent_variables_t< Ts... > depends( Ts const&... )
 { return {}; }
 
 /// @brief evaluates an expression that does not have any depdendent variables
@@ -556,7 +568,7 @@ struct Negation: ExpressionTag
     constexpr T arg() const { return _arg; }
 
     constexpr result_type eval( variable_values& vars ) const
-    { return -eval( arg(), vars ); }
+    { return -expressions::eval( arg(), vars ); }
 
     constexpr Negation( T arg ): _arg{ arg } {} 
 
@@ -706,14 +718,38 @@ struct Element: tuple_element_t< I, ArrayT >
     { }
 };
 
+/// @brief represents the contraction of a tensor 
+/// @tparam TensorT is the type of the tensor
+/// @tparam I is the first index of contraction
+/// @tparam J is the second index of contraction
+///
+template< size_t I, size_t J, typename TensorT >
+struct Contraction: ExpressionTag
+{
+    using result_type = decltype( contract< I, J>( result_t< TensorT >{} ));
+    using dependent_vars_type = dependent_variables_t< TensorT >;
+
+    constexpr TensorT arg() const { return _arg; }
+
+    constexpr result_type eval( variable_values& vars ) const
+    { return contract< I, J >( eval( arg(), vars )); }
+
+    constexpr Contraction( TensorT arg ): _arg{ arg } { }
+
+    TensorT _arg;
+};
+
 /**
  * Array expression
  */
 template< typename... Ts >
 struct Array: tuple< Ts... >, ExpressionTag
 { 
+    static consteval size_t size() { return sizeof...( Ts ); }
+    using shape_type = Shape< size() >;
     using result_type = tuple< result_t< Ts >... >;
     using dependent_vars_type = dependent_variables_t< Ts... >;
+
 
     template< size_t... Is >
     constexpr result_type eval_helper( variable_values& vars, 
@@ -727,11 +763,14 @@ struct Array: tuple< Ts... >, ExpressionTag
     constexpr Array( Ts... ts ): tuple< Ts... >{ ts... } { } 
 };
 
-
 template< typename ShapeT, typename... Ts >
-struct ShapedArray : Array< Ts... >
+requires( ShapeT::size() == sizeof...( Ts ))
+struct ShapedArray : ExpressionTag
 {
+    using shape_type = ShapeT;
+    static consteval size_t size() { return sizeof...( Ts ); }
 
+    
 };
 
 
@@ -1104,6 +1143,29 @@ template< typename T, expression U >
 requires( not expression< T > )
 constexpr auto operator ==( T const& left, U const& right )
 { return Equals< Expression< T >, U >{ static_expr( left ), right }; }
+
+template< typename TupleT, typename TupleU, size_t... Is >
+constexpr auto tuple_equals_helper( TupleT const& left, TupleU const& right,
+    seq< Is... > )
+{ return (( get< Is >( left ) == get< Is >( right )) and ... ); }
+
+template< typename TensorT, typename TensorU, size_t... Is >
+constexpr auto tensor_equals_helper( TensorT const& left, TensorU const& right,
+    seq< Is... > )
+{ return (( tensor_get< Is >( left ) == get< Is >( right )) and ... ); }
+
+template< typename... Ts, typename... Us >
+requires( sizeof...( Ts ) == sizeof...( Us ) and 
+    (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator==( tuple< Ts... > const& left, 
+    tuple< Us... > const& right )
+{ return tuple_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename ShapeT, typename... Ts, typename... Us >
+requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator==( Tensor< ShapeT, Ts... > const& left,
+    Tensor< ShapeT, Us... > const& right )
+{ return tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 // logical operations
 template< expression T, expression U >
