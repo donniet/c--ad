@@ -109,11 +109,28 @@ struct Evaluator< T >
     { return expr.eval( vars ); }
 };
 
+template< shape S, typename... Ts >
+struct Evaluator< Tensor< S, Ts... >>
+{ 
+    using result_type = Tensor< S, typename Evaluator< Ts >::result_type... >;
+
+    template< size_t... Is >
+    static constexpr result_type evaluate_helper( Tensor< S, Ts... > const& value, 
+        variable_values& vars, seq< Is... > )
+    { return { Evaluator< tensor_element_t< Is, Tensor< S, Ts... >>>::evaluate( 
+        tensor_get< Is >( value ), vars )... }; }
+
+    // always return the value itselv
+    static constexpr result_type evaluate( Tensor< S, Ts... > const& value, 
+        variable_values& vars )
+    { return evaluate_helper( value, vars, make_seq< Tensor< S, Ts... >::size() >{} ); }
+};
+
 /// @brief evaluator for non-expression types
 /// @tparam T the type of the non-expression
 ///
 template< typename T >
-requires( not is_expression_v< T > )
+requires( not is_expression_v< T > and not is_tensor_v< T > )
 struct Evaluator< T >
 { 
     using result_type = T;
@@ -122,6 +139,7 @@ struct Evaluator< T >
     constexpr static T evaluate( T const& value, variable_values& )
     { return value; }; 
 };
+
 
 } // namespace detail
 
@@ -159,12 +177,14 @@ struct Variable : ExpressionTag
     using value_type = T;
     // using dependent_vars_type = VariableSet< Variable< I, T >>;
     using result_type = value_type;
-    static constexpr size_t index = I;
+    static constexpr size_t index() { return I; }
+    static constexpr bool is_integral = std::is_integral_v< T >;
+    static constexpr bool is_floating_point = std::is_floating_point_v< T >;
 
     constexpr std::string name() const
     { return _name; }
 
-    constexpr T eval( variable_values& vars ) const
+    static constexpr T eval( variable_values const& vars )
     { return any_cast< T >( vars[ I ] ); }
 
     std::string _name = "var";
@@ -176,31 +196,102 @@ struct Variable : ExpressionTag
 #endif
 };
 
+template< typename VarT >
+struct IsVariable
+{ static constexpr bool value = false; };
+
+template< size_t I, typename T >
+struct IsVariable< Variable< I, T >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+constexpr bool is_variable_v = IsVariable< T >::value;
+
+template< typename T >
+concept variable = is_variable_v< T >;
+
 
 /// @brief Set of variables used in an expression
 /// @tparam ...Vars are the variable types
 ///
-template< typename... Vars >
+template< variable... Vars >
 struct VariableSet;
 
 /// @brief a set containing at least one variable
 /// @tparam FirstT is the first variable type
 /// @tparam ...Rest are the remaining variable types
 ///
-template< typename FirstT, typename... Rest >
+template< variable FirstT, variable... Rest >
 struct VariableSet< FirstT, Rest... >
 {
     static constexpr size_t size() { return 1 + sizeof...( Rest ); }
     using first = FirstT;
     using rest = VariableSet< Rest... >;
+
+    using values_tuple_type = 
+        tuple< typename FirstT::value_type, typename Rest::value_type... >;
+
+    static constexpr bool all_are_integral = ( FirstT::is_integral and 
+        ( Rest::is_integral and ... ));
+    static constexpr bool all_are_floating_point = ( FirstT::is_floating_point and 
+        ( Rest::is_floating_point and ... ));
+
+    /// @brief packs the values of these variables into a tuple
+    /// @param vars are the variable values
+    /// @returns a tuple of the values of this variable set in index order
+    ///
+    static values_tuple_type pack( variable_values const& vars )
+    { return tuple_cat( make_tuple( FirstT::eval( vars )), 
+        VariableSet< Rest... >::pack( vars )); }
+
+    static void unpack( values_tuple_type const& tup, variable_values& vars )
+    { 
+        vars[ FirstT::index() ] = tuple_first( tup );
+        VariableSet< Rest... >::unpack( tuple_rest( tup ), vars );
+    }
+
+    template< typename ValueT >
+    static void initialize( ValueT initial, variable_values& vars )
+    {
+        vars[ FirstT::index() ] = static_cast< FirstT::value_type >( initial );
+        VariableSet< Rest... >::initialize( initial, vars );
+    }
+
+    template< typename ValueT = long double >
+    static variable_values values( ValueT initial = 0.l )
+    { 
+        variable_values vars;
+        initialize( initial, vars );
+        return vars;
+    }
+
 };
 
 /// @brief an empty set of variables
 ///
 template<>
 struct VariableSet<>
-{ static constexpr size_t size() { return 0; } };
+{ 
+    static constexpr size_t size() { return 0; } 
+    static tuple<> pack( variable_values const& vars ) { return {}; }
+    static void unpack( tuple<> const& tup, variable_values& vars ) { }
+    template< typename ValueT >
+    static void initialize( ValueT, variable_values& ) { }
+};
 
+namespace detail {
+template< size_t I, typename VarsT >
+struct GetVariable;
+
+template< typename First, typename... Rest >
+struct GetVariable< 0, VariableSet< First, Rest... >>
+{ using type = First; };
+
+template< size_t I, typename First, typename... Rest >
+requires( isgreater( I, 0 ))
+struct GetVariable< I, VariableSet< First, Rest... >>
+{ using type = GetVariable< I-1, VariableSet< Rest... >>::type; };
+} // namespace detail
 
 /// depdency details
 namespace detail {
@@ -242,7 +333,7 @@ using variable_type_in_tuple_t = VariableTypeInTuple< I, TupleT >::type;
 
 template< typename... Vars >
 struct LeastUpperVariableIndex
-{ static constexpr size_t value = least_upper_bound_v< Vars::index... >; };
+{ static constexpr size_t value = least_upper_bound_v< Vars::index()... >; };
 
 template< typename... Vars >
 static constexpr size_t least_upper_variable_index_v = 
@@ -317,12 +408,12 @@ template< typename VarT, typename DepT >
 static constexpr bool includes_variable_v = 
     IncludesVariable< VarT, DepT >::value;
 
-static_assert( includes_variable_v< Variable< 0, int >, VariableSet< Variable< 0, int >>> );
-static_assert( includes_variable_v< Variable< 0, int >, VariableSet< Variable< 0, int >, Variable< 1, int >>> );
+static_assert(     includes_variable_v< Variable< 0, int >, VariableSet< Variable< 0, int >>> );
+static_assert(     includes_variable_v< Variable< 0, int >, VariableSet< Variable< 0, int >, Variable< 1, int >>> );
 static_assert( not includes_variable_v< Variable< 0, int >, VariableSet< Variable< 1, int >>> );
 static_assert( not includes_variable_v< Variable< 0, int >, VariableSet< Variable< 1, int >, Variable< 2, int >>> );
-static_assert( includes_variable_v< Variable< 1, int >, VariableSet< Variable< 1, int >>> );
-static_assert( includes_variable_v< Variable< 1, int >, VariableSet< Variable< 0, int >, Variable< 1, int >>> );
+static_assert(     includes_variable_v< Variable< 1, int >, VariableSet< Variable< 1, int >>> );
+static_assert(     includes_variable_v< Variable< 1, int >, VariableSet< Variable< 0, int >, Variable< 1, int >>> );
 
 template< typename VarT, typename DepT >
 struct AddDependency;
@@ -340,11 +431,11 @@ struct AddDependency< VarT, VariableSet< Vars... >>
 template< typename VarT, typename DepT >
 using add_dependency_t = AddDependency< VarT, DepT >::type;
 
-static_assert( includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 0, int >, VariableSet< >>> );
+static_assert(     includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 0, int >, VariableSet< >>> );
 static_assert( not includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 1, int >, VariableSet< >>> );
-static_assert( includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 0, int >, VariableSet< Variable< 1, int >>>> );
-static_assert( includes_variable_v< Variable< 1, int >, add_dependency_t< Variable< 0, int >, VariableSet< Variable< 1, int >>>> );
-static_assert( includes_variable_v< Variable< 1, int >, add_dependency_t< Variable< 1, int >, VariableSet< Variable< 1, int >>>> );
+static_assert(     includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 0, int >, VariableSet< Variable< 1, int >>>> );
+static_assert(     includes_variable_v< Variable< 1, int >, add_dependency_t< Variable< 0, int >, VariableSet< Variable< 1, int >>>> );
+static_assert(     includes_variable_v< Variable< 1, int >, add_dependency_t< Variable< 1, int >, VariableSet< Variable< 1, int >>>> );
 static_assert( not includes_variable_v< Variable< 0, int >, add_dependency_t< Variable< 1, int >, VariableSet< Variable< 1, int >>>> );
 
 template< typename... Deps >
@@ -441,6 +532,31 @@ template< typename... Ts >
 consteval dependent_variables_t< Ts... > depends( Ts const&... )
 { return {}; }
 
+template< size_t I, typename ExprT >
+using get_dependent_t = detail::GetVariable< I, dependent_variables_t< ExprT >>::type;
+
+template< typename ExprT >
+constexpr size_t dependents_size_v = dependent_variables_t< ExprT >::size();
+
+// template< typename VarsT, typename InitialT, size_t... Is >
+// variable_values values_from_variable_set_helper( InitialT initial, 
+//     seq< Is... > )
+// {
+//     variable_values vars;
+//     (( vars[ Is ] = static_cast< result_t< detail::GetVariable< Is, VarsT >>>( initial )), ... );
+//     return vars;
+// }
+
+// template< typename VarsT, typename InitialT >
+// variable_values values_from_variable_set( InitialT initial )
+// { return values_from_variable_set_helper< VarsT >( initial, 
+//     make_seq< VarsT::size() >{} ); }
+
+
+template< typename ExprT >
+concept scalar_field = ( expression< ExprT > and std::is_floating_point_v< result_t< ExprT >> and
+    dependent_variables_t< ExprT >::all_are_floating_point );
+
 /// @brief evaluates an expression that does not have any depdendent variables
 /// @tparam T the expression type
 /// @param expr the expression to be evaluated
@@ -519,12 +635,8 @@ Expression< T > static_expr( T const& value )
 
 
 template< size_t I, typename T >
-// using variable = Expression< Variable< I, T >>;
-using variable = Variable< I, T >;
-
-template< size_t I, typename T >
-constexpr variable< I, T > make_variable( std::string name_format = "var{}" )
-{ return {{ name_format }}; }
+constexpr Variable< I, T > make_variable( std::string name_format = "var{}" )
+{ return { name_format }; }
 
 /**
  * Constant expression
@@ -865,6 +977,8 @@ template< size_t I, typename ExprT >
 requires( not depends_on_v< I, ExprT > )
 struct Derivative< I, ExprT >
 {
+    // we don't need the decltype( T{} / T{} ) here because we 
+    // won't use the chain rule
     using type = Constant< result_t< ExprT >, (result_t< ExprT >)0 >;
     static constexpr type construct( ExprT const& expr )
     { return {}; }
@@ -873,11 +987,14 @@ struct Derivative< I, ExprT >
 template< size_t I, typename T >
 struct Derivative< I, Variable< I, T >>
 {
-    using type = Constant< T, (T)1 >;
+    using value_type = decltype( T{} / T{} );
+    using type = Constant< value_type, static_cast< value_type >( 1 ) >;
     static constexpr type construct( Variable< I, T > const& expr )
     { return {}; }
 };
 
+// NOTE: Expression< T > should only be for static expressions 
+// 
 // template< size_t I, typename ExprT >
 // requires( depends_on_v< I, ExprT > )
 // struct Derivative< I, Expression< ExprT >>
@@ -1182,23 +1299,124 @@ requires( not expression< T > )
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< Expression< T >, U >{ static_expr( left ), right }; }
 
-/**
- * solver
- */
-template< typename ExprT >
-struct Solver;
+// gradient
+namespace detail {
 
-template< typename SolverT, typename ExprT >
-constexpr variable_values solve( ExprT const& expr, SolverT&& solver = {} )
+template< typename ExprT, size_t... Is >
+constexpr auto grad_helper( ExprT const& expr, seq< Is... > )
 {
-    // get the dependent variables for this expression
+    static constexpr size_t size = sizeof...( Is );
+    return make_tensor< Shape< size >>( 
+        d< get_dependent_t< Is, ExprT >::index() >( expr )... );
+}
 
-    // construct a container for the variable values
-    variable_values values;
+} // namespace detail
 
-    initialize_variables( values, expr, solver );
-    // 
+template< typename ExprT >
+constexpr auto grad( ExprT const& expr )
+{
+    using dependents_type = dependent_variables_t< ExprT >;
+    return detail::grad_helper( expr, make_seq< dependents_type::size() >{} );
+}
+
+template< typename ExprT >
+requires( isgreater( dependent_variables_t< ExprT >::size(), 0 ))
+constexpr auto div( ExprT const& expr )
+{ return sum( grad( expr )); }
+
+} // namespace expressions
+
+namespace std {
+
+template< expressions::expression ExprT >
+constexpr auto sqrt( ExprT const& expr )
+{ return expressions::sqrt( expr ); }
+
+} // namespace std 
+
+namespace expressions {
+
+/**
+ * Solvers
+ */
+
+/// @brief criteria to limit the solver iterations
+/// @tparam Limit is the maximum iterations before this criteria will be true
+///
+template< size_t Limit >
+struct MaximumIterations
+{
+    static constexpr size_t limit = Limit;
+    size_t iterations;    
+
+    template< typename SolverT, typename ResultT >
+    constexpr bool operator ()( SolverT&, ResultT const& )
+    { return ++iterations >= limit; }
+
+    constexpr void reset() { iterations = 0; }
+
+    MaximumIterations(): iterations{ 0 } { }
 };
+
+template< typename CriteriaT = MaximumIterations< 100 >>
+struct GradientDescentSolver
+{
+    constexpr long double rate() const { return _rate; }
+
+    template< typename ResultT, typename TupleT, typename GradT, size_t... Is >
+    constexpr TupleT descend( TupleT vals, ResultT err, 
+        GradT g, seq< Is... > ) const
+    { return make_tuple(( get< Is >( vals ) + rate() * err * tensor_get< Is >( g ))... ); }
+
+    template< typename ExprT >
+    // requires( std::is_floating_point_v< result_t< ExprT >> and 
+    //     dependent_variables_t< ExprT >::all_are_floating_point )
+    constexpr variable_values operator()( ExprT const& expr )
+    {  
+        using result_type = result_t< ExprT >;
+        using dependents = dependent_variables_t< ExprT >;
+
+        variable_values vars = dependents::values();
+
+        // reset our criteria
+        _is_complete.reset();
+        // calucate the gradient of our error                               .
+        // tricky to ensure that these are in the same order as the tuples...
+        auto g = grad( expr );
+
+        for( ;; )
+        {
+            // calculate the error by evaluating the expression
+            auto err = eval( expr, vars );
+
+            // are we done?
+            if( _is_complete( *this, err ))
+                return vars;
+
+            // adjust our variables by the -rate * err * grad_i
+            auto vals = descend( dependents::pack( vars ), err, eval( g, vars ), 
+                make_seq< dependents::size() >{} );
+
+            dependents::unpack( vals, vars );
+        }
+    }
+
+    template< typename... CriteriaArgs >
+    GradientDescentSolver( long double rate = 1e-2, CriteriaArgs&&... args ):
+        _rate{ rate }, _is_complete{ args... }
+    { }
+
+    long double _rate;
+    CriteriaT _is_complete;
+};
+
+using default_gradient_descent_solver = GradientDescentSolver<>;
+
+template< typename SolverT, typename ExprT, typename... Args >
+variable_values solve( ExprT const& expr, Args... args )
+{
+    return SolverT{ args... }( expr );
+}
 
 } // namespace expressions
 

@@ -22,7 +22,7 @@ int main( int ac, char* av[] )
 
     println( "{}", eval( f ));
 
-    variable< 0, long double > x{ "x_{}" };
+    Variable< 0, long double > x{ "x_{}" };
     println( "{}", x );
     println( "{}", x * one );
     println( "{}", x + one );
@@ -46,7 +46,7 @@ int main( int ac, char* av[] )
     println( "g() == {}", eval( dg ));
 
 
-    variable< 1, Length > l{ "l_{}" };
+    Variable< 1, Length > l{ "l_{}" };
     values[ 1 ] = 12_in;
 
     auto h = ( 1_sqft + l * l ) / 254_mm;
@@ -55,9 +55,9 @@ int main( int ac, char* av[] )
 
     auto dh = d< 1 >( h );
     println( "{}", dh );
-    println( "dh({}) == {:ft}", 12_in, eval( dh, values ));
+    println( "dh({}) == {}", 12_in, eval( dh, values ));
 
-    variable< 2, Velocity > v2( "v_{}" );
+    Variable< 2, Velocity > v2( "v_{}" );
 
     auto t1 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, 2_mm / 1_s );
     auto t2 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, v2 );
@@ -65,9 +65,9 @@ int main( int ac, char* av[] )
     auto s2 = make_tensor< Shape< 3 >>( 3_mm / 1_s, 5_mm / 1_s, v2 );
 
     static_assert( dependent_variables_t< 
-        tuple< Velocity, Velocity, variable< 2, Velocity >>>::size() == 1 );
+        tuple< Velocity, Velocity, Variable< 2, Velocity >>>::size() == 1 );
     static_assert( dependent_variables_t< Tensor< Shape< 3 >, 
-        Velocity, Velocity, variable< 2, Velocity >>>::size() == 1 );
+        Velocity, Velocity, Variable< 2, Velocity >>>::size() == 1 );
 
     static_assert( dependent_variables_t< decltype( s1 )>::size() == 0 );
     static_assert( dependent_variables_t< decltype( s2 )>::size() == 1 );
@@ -82,7 +82,7 @@ int main( int ac, char* av[] )
     values[2] = 2_ft / 1_s;
     assert( not eval( eq, values ));
 
-    auto a3 = variable< 3, Scalar >{ "a_{}" };
+    auto a3 = Variable< 3, Scalar >{ "a_{}" };
 
     auto m1 = make_tensor< Shape< 2, 2 >>( 
         a3, -a3,
@@ -94,6 +94,11 @@ int main( int ac, char* av[] )
     println( "det(1,-1,1,1) == {}", eval( det( m1 ), values ));
     assert( eval( det( m1 ), values ) == 2_scalar );
     assert( eval( d< 3 >( det( m1 )), values ) == 4_scalar );
+
+    auto sol = solve< default_gradient_descent_solver >( h );
+    println( "solved: {}", eval( l, sol ));
+
+    
 
     // auto a = array_of( zero );
     // auto b = array_of( zero , 1 );

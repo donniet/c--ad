@@ -528,6 +528,16 @@ template< unit LeftU, unit RightU >
 constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
 { return unit_product< LeftU, RightU >{ left.get_value() * right.get_value() }; }
 
+template< typename T, unit RightU >
+requires( not unit< T > )
+constexpr RightU operator *( T left, RightU right )
+{ return RightU{ left * right.get_value() }; }
+
+template< unit LeftU, typename T >
+requires( not unit< T > )
+constexpr LeftU operator *( LeftU left, T right )
+{ return LeftU{ left.get_value() * right }; }
+
 template< unit LeftU, unit RightU >
 constexpr unit_quotient< LeftU, RightU > operator /( LeftU left, RightU right )
 { return unit_quotient< LeftU, RightU >{ left.get_value() / right.get_value() }; }

@@ -331,6 +331,8 @@ static constexpr size_t sequence_at = sequence_at_helper< index, Seq >::value;
 /**
  * Tuple helpers
  */
+
+
 namespace detail {
 
 using std::index_sequence;
@@ -376,7 +378,19 @@ constexpr remove_nth_t< N, TupleType >
 remove_nth_helper( TupleType const& tup, index_sequence< Is... > )
 { return tuple_select( tup, std::index_sequence< ( Is < N ? Is : Is + 1 )... >{} ); }
 
+template< typename RetT, typename TupleT, size_t... Is >
+RetT tuple_rest_helper( TupleT const& tup, seq< Is... > )
+{ return { get< 1 + Is >( tup )... }; }
+
 } // namespace detail
+
+template< typename T, typename... Ts >
+T tuple_first( tuple< T, Ts... > const& tup )
+{ return get< 0 >( tup ); }
+
+template< typename T, typename... Ts >
+tuple< Ts... > tuple_rest( tuple< T, Ts... > const& tup )
+{ return detail::tuple_rest_helper< tuple< Ts... >>( tup, make_seq< sizeof...( Ts ) >{} ); }
 
 template< size_t N, typename... Ts >
 requires ( N < sizeof...( Ts ) )

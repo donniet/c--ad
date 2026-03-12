@@ -496,6 +496,10 @@ struct Tensor : tuple< T, Ts... >
     constexpr void equal_helper( OtherT const& other, seq< Is... > )
     { (( get< Is >( *this ) = get< Is >( other )), ... ); }
 
+    template< typename OtherT, size_t... Is >
+    constexpr tuple< T, Ts... > tuple_init_helper( OtherT const& other, seq< Is... > )
+    { return make_tuple( static_cast< tuple_element_t< Is, tuple< T, Ts... >>>( get< Is >( other ))... ); }
+
     template< typename... Us >
     constexpr Tensor& operator=( Tensor< shape_type, Us... > const& other )
     {
@@ -504,11 +508,20 @@ struct Tensor : tuple< T, Ts... >
         return *this;
     }
 
+    template< typename... Us >
+    requires( size() == sizeof...( Us ))
+    constexpr Tensor& operator=( tuple< Us... > const& other )
+    { 
+        equal_helper( other, make_seq< size() >{} );
+        return *this;
+    }
+
     constexpr Tensor( ) = default;
     constexpr Tensor( T t, Ts... ts ): tuple< T, Ts... >{ t, ts... } { }
     template< typename... Us >
-    constexpr Tensor( Tensor< shape_type, Us... > const& other )
-    { equal_helper( other, make_seq< size() >{} ); }
+    constexpr Tensor( Tensor< shape_type, Us... > const& other ):
+        tuple< T, Ts... >{ tuple_init_helper( other, make_seq< size() >{} ) }
+    { }
 };
 
 template< size_t I, typename TensorT >
@@ -526,10 +539,34 @@ struct tensor_shape
 template< typename TensorT >
 using tensor_shape_t = tensor_shape< TensorT >::type;
 
+template< size_t I, typename TensorT >
+struct TensorElement;
+
+template< size_t I, shape S, typename... Ts >
+struct TensorElement< I, Tensor< S, Ts... >>
+{ using type = tuple_element_t< I, tuple< Ts... >>; };
+
+template< size_t I, typename TensorT >
+using tensor_element_t = TensorElement< I, TensorT >::type;
+
 template< shape S, typename... Ts >
 requires( S::size() == sizeof...( Ts ))
 constexpr Tensor< S, Ts... > make_tensor( Ts... ts )
 { return { ts... }; }
+
+template< typename T >
+struct IsTensor
+{ static constexpr bool value = false; };
+
+template< shape S, typename... Ts >
+struct IsTensor< Tensor< S, Ts... >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+constexpr bool is_tensor_v = IsTensor< T >::value;
+
+template< typename T >
+concept tensor = is_tensor_v< T >;
 
 namespace detail {
 template< typename LeftT, typename RightT, size_t... Is >
@@ -705,6 +742,10 @@ constexpr auto element_subtensor_helper( TensorT const& ten, seq< Ks... > )
         element_subtensor_element< I, Ks >( ten )... ); 
 }
 
+template< typename TensorT, size_t... Ks >
+constexpr auto sum_helper( TensorT const& ten, seq< Ks... > )
+{ return ( tensor_get< Ks >( ten ) + ... ); }
+
 } // namespace detail
 
 /**
@@ -730,13 +771,56 @@ template< shape A, typename... Ts, shape B, typename... Us >
 constexpr auto operator *( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
 { return detail::product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
 
+/// @brief add the elements of the tensor together
+/// @tparam ...Ts are the types of the tensor elements
+/// @tparam A is the shape of the tensor
+/// @param ten is the tensor instance
+/// @return the sum of the elements of the tensor
+template< shape A, typename... Ts >
+constexpr auto sum( Tensor< A, Ts... > const& ten )
+{ return detail::sum_helper( ten, make_seq< sizeof...( Ts )>{} ); }
+
 template< typename T, shape S, typename... Ts >
 constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
 { return detail::scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
 
 template< typename T, shape S, typename... Ts >
-constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten )
+constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten ) 
 { return detail::divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
+namespace detail {
+
+template< size_t I, typename TensorT >
+struct TensorNorm;
+
+/// @brief L1 norm is the sum of the elements of a tensor
+/// @tparam TensorT is the type of the tensor
+template< typename TensorT >
+struct TensorNorm< 1, TensorT >
+{ static constexpr auto value( TensorT const& ten ) { return sum( ten ); } };
+
+/// @brief L2 norm is the sqrt( x_n^2 + ... ) of the tensor elements
+/// @tparam TensorT 
+template< typename TensorT >
+struct TensorNorm< 2, TensorT >
+{ 
+    static constexpr auto value( TensorT const& ten ) 
+    { return value_helper( ten, make_seq< TensorT::size() >{} ); }
+
+    template< size_t... Is >
+    static constexpr auto value_helper( TensorT const& ten, seq< Is... > )
+    { 
+        auto ten2 = make_tensor< tensor_shape_t< TensorT >>(
+            ( tensor_get< Is >( ten ) * tensor_get< Is >( ten ) )... );
+        return std::sqrt( sum( ten2 ));
+    }
+};
+
+} // namespace detail
+
+template< size_t I, shape S, typename... Ts >
+constexpr auto norm( Tensor< S, Ts... > const& ten )
+{ return detail::TensorNorm< I, Tensor< S, Ts... >>::value( ten ); }
 
 
 /**
