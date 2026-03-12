@@ -1,1220 +1,956 @@
 /**
- * Tensors for expressions
+ * A Tensor is a shaped array with arbirary types
  */
 
 #ifndef __TENSOR_HPP__
 #define __TENSOR_HPP__
 
 #include "utility.hpp"
-#include "expressions.hpp"
 
-#include <utility>
-#include <tuple>
-#ifndef NO_TENSOR_PRINTING
-#include <iostream>
-#endif
-#include <type_traits>
-
-// tensor namespace
 namespace tensor {
 
-using std::size_t;
-using std::get;
-using std::tuple;
-
-// setup our test namespace
-namespace test { using std::is_same_v; } 
+/**
+ * Shape of Array
+ */
+template< size_t... >
+struct Shape;
 
 /**
- * Subscripts to an element of a tensor
- * 
- * @tparam Is... are the subscripts
+ * an empty shape describes a single-valued object like a scalar
  */
-template< size_t... Is >
-struct index
-{ 
-    static constexpr size_t size = sizeof...( Is );
-    static constexpr bool is_even = (( Is + ... ) % 2 == 0 );
+template< >
+struct Shape< >
+{  
+    // empty shapes have size == 1
+    static constexpr size_t size() { return 1; }
+    // the number of dimensions in this shape
+    static constexpr size_t dimensions() { return 0; }
+
+    // instances of shapes are always equivalent 
+    constexpr bool operator ==( Shape const& other ) const
+    { return true; }
+    constexpr bool operator !=( Shape const& other ) const
+    { return false; }
+
+    // the element and first index of an instance of an empty shape are always
+    // zero since they describe a single-valued object
+    constexpr size_t element() const { return 0; }
+    constexpr operator size_t() const { return element(); }
+    constexpr size_t first() const { return element(); }
+
+    constexpr Shape insert( Shape here ) const
+    { return {}; }
+
+    // TODO: throw an error if passed something larger than 1
+    static consteval Shape from_element( size_t )
+    { return {}; }
 };
 
 /**
- * Shape of a Tensor 
+ * a non-empty shape of an array.  An instance of this shape acts as an index
+ * into an array:
  * 
- * @tparam Is... are the sizes of the respective dimensions
+ * int arr[] = { 0b00, 0b01, 0b10, 0b11 };
+ * assert( arr[ Shape< 2, 2 >{ 1, 0 }] == 0b10 );
+ * 
+ * @tparam First is the size of the first dimension
+ * @tparam Rest... are the remaining dimension sizes
  */
-template< size_t... Is >
-struct shape 
+template< size_t First, size_t... Rest >
+struct Shape< First, Rest... >: Shape< Rest... >
 { 
-    static constexpr size_t size = sizeof...( Is );
-    static constexpr size_t elements_size = ( Is * ... );
+    // the size of the first dimension is First
+    static constexpr size_t first_size() { return First; }
+    // the overall size is the product of each size dimension
+    static constexpr size_t size() { return First * ( Rest * ... * 1 ); }
+    // the number of dimensions in this shape
+    static constexpr size_t dimensions() { return 1 + sizeof...( Rest ); }
+    
+    template< size_t... Others >
+    constexpr Shape< First, Rest..., Others... > cat( Shape< Others... > other )
+    { return Shape< First, Rest..., Others... >::from_element( 
+        element() * other.size() + other.element() ); }
+
+    constexpr bool operator ==( Shape const& other ) const
+    { return Shape< Rest... >::operator ==( other ); }
+    constexpr bool operator !=( Shape const& other ) const
+    { return Shape< Rest... >::operator !=( other ); }
+
+    static constexpr Shape from_element( size_t elem )
+    { return Shape{ elem / Shape< Rest... >::size(), 
+        Shape< Rest... >::from_element( elem % Shape< Rest... >::size() )}; }
+
+    constexpr Shape< First+1, ( Rest+1 )... > 
+    insert( Shape< First+1, ( Rest+1 )... > here ) const
+    { return Shape< First+1, ( Rest+1 )... >{ first() < here ? first() : 1 + first(), 
+        Shape< Rest... >::insert( here )}; }
+
+    constexpr operator size_t() const 
+    { return element(); }
+
+    constexpr size_t element() const 
+    { return _element; }
+
+    constexpr size_t first() const 
+    { return element() / Shape< Rest... >::size(); }
+
+    // TODO: figure out how to get rid of the static_cast
+    template< typename... Indices >
+    constexpr Shape( size_t first, Indices... rest ):
+        Shape{ first, Shape< Rest... >{ static_cast< size_t >( rest )... }}
+    { }
+
+    explicit constexpr Shape( size_t first, Shape< Rest... > rest ): 
+        Shape< Rest... >{ rest }, 
+        _element{ rest.element() + first * Shape< Rest... >::size() }
+    { }
+
+    // index values
+    size_t _element;
 };
 
-// test shapes and indices
-namespace test {
-using shape123 = shape<1,2,3>;
-using shape1234 = shape<1,2,3,4>;
-using shape3 = shape<3>;
-using shape4 = shape<4>;
-using shape911 = shape<9,1,1>;
-using shape9 = shape<9>;
-using shape124 = shape<1,2,4>;
-using index012 = index<0,1,2>;
-using index123 = index<1,2,3>;
-} // namespace test
+template< size_t I, typename S >
+struct ShapeGet;
+
+template< size_t First, size_t... Rest >
+struct ShapeGet< 0, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return shp.first(); } 
+};
+
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct ShapeGet< I, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return ShapeGet< I-1, Shape< Rest... >>::value( shp ); } 
+};
+
+template< size_t I, typename S >
+constexpr size_t shape_get( S shp )
+{ return ShapeGet< I, S >::value( shp ); }
+
+static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2, 2 >{ 1, 1 } );
+static_assert( Shape< 2, 2 >{ 1, 1 }.element() == Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
+static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2 >{ 1 }.cat( Shape< 2 >{ 1 }));
+static_assert( Shape< 2, 2 >{ 1, 1 }.element() == 3 );
+static_assert( Shape< 2, 2 >::from_element( 3 ) == Shape< 2, 2 >{ 1, 1 });
+// static_assert( Shape< 2, 2 >{ 1, 1 }.of( make_tuple( 0, 1, 2, 3 )) == 3 );
+// static_assert( )
+
+static_assert( 0 == Shape< 1, 1 >{ 0, 0 }.element() );
+static_assert( 0 == Shape< 2, 2 >{ 0, 0 }.element() );
+static_assert( 1 == Shape< 2, 2 >{ 0, 1 }.element() );
+static_assert( 2 == Shape< 2, 2 >{ 1, 0 }.element() );
+static_assert( 3 == Shape< 2, 2 >{ 1, 1 }.element() );
+
+static_assert( 0 == Shape< 2, 3 >{ 0, 0 }.element() );
+static_assert( 1 == Shape< 2, 3 >{ 0, 1 }.element() );
+static_assert( 2 == Shape< 2, 3 >{ 0, 2 }.element() );
+static_assert( 3 == Shape< 2, 3 >{ 1, 0 }.element() );
+static_assert( 4 == Shape< 2, 3 >{ 1, 1 }.element() );
+static_assert( 5 == Shape< 2, 3 >{ 1, 2 }.element() );
+
+static_assert( 0 == Shape< 3, 2 >{ 0, 0 }.element() );
+static_assert( 1 == Shape< 3, 2 >{ 0, 1 }.element() );
+static_assert( 2 == Shape< 3, 2 >{ 1, 0 }.element() );
+static_assert( 3 == Shape< 3, 2 >{ 1, 1 }.element() );
+static_assert( 4 == Shape< 3, 2 >{ 2, 0 }.element() );
+static_assert( 5 == Shape< 3, 2 >{ 2, 1 }.element() );
+
+static_assert( 0 == Shape< 2, 2, 2 >{ 0, 0, 0 }.element() );
+static_assert( 1 == Shape< 2, 2, 2 >{ 0, 0, 1 }.element() );
+static_assert( 2 == Shape< 2, 2, 2 >{ 0, 1, 0 }.element() );
+static_assert( 3 == Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
+static_assert( 4 == Shape< 2, 2, 2 >{ 1, 0, 0 }.element() );
+static_assert( 5 == Shape< 2, 2, 2 >{ 1, 0, 1 }.element() );
+static_assert( 6 == Shape< 2, 2, 2 >{ 1, 1, 0 }.element() );
+static_assert( 7 == Shape< 2, 2, 2 >{ 1, 1, 1 }.element() );
+
+static_assert( 0 == Shape< 2, 2, 1 >{ 0, 0, 0 }.element() );
+static_assert( 3 == Shape< 2, 2, 1 >{ 1, 1, 0 }.element() );
+
+static_assert( Shape< 2, 2 >{ 1, 1 }.cat( Shape< 1 >{ 0 }) == Shape< 2, 2, 1 >{ 1, 1, 0 });
+
+static_assert( std::array< int, 4 >{ 0b00, 0b01, 0b10, 0b11 }[ Shape< 2, 2 >{ 1, 0 }] == 0b10 );
+
+static_assert( std::array< int, 16 >{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
+    [ Shape< 4, 4 >{ 1, 0 }] == 4 );
 
 
-// shape_cat details
-namespace detail {
 
-template< typename Shape1, typename Shape2 >
+template< typename T, typename U >
 struct ShapeCat;
 
-template< size_t... Is, size_t... Js >
-struct ShapeCat< shape< Is... >, shape< Js... >>
-{ using type = shape< Is..., Js... >; };
+template< size_t... Ts, size_t... Us >
+struct ShapeCat< Shape< Ts... >, Shape< Us... >>
+{ using type = Shape< Ts..., Us... >; };
 
-} // namepsace detail (shape_cat)
+template< typename T, typename U >
+using shape_cat_t = ShapeCat< T, U >::type;
 
-/**
- * Concatentate two tensor shapes.  Needed for outer product of two tensors
- * 
- * @tparam Shape1 first tensor shape 
- * @tparam Shape2 second tensor shape to concatenate to the first
- * @returns concatenated shape
- */
-template< typename Shape1, typename Shape2 >
-using shape_cat = detail::ShapeCat< Shape1, Shape2 >::type;
-
-// index_cat details
-namespace detail {
-
-template< typename Index1, typename Index2 >
-struct IndexCat;
-
-template< size_t... Is, size_t... Js >
-struct IndexCat< index< Is... >, index< Js... >>
-{ using type = index< Is..., Js... >; };
-
-} // namespace detail (index_cat)
-
-/**
- * Concatenate two tensor subscript indices
- * 
- * @tparam Index1 first subscript index
- * @tparam Index2 second subscript index to concatenate to the first
- * @returns the concatenated subscript object
- */
-template< typename Index1, typename Index2 >
-using index_cat = detail::IndexCat< Index1, Index2 >::type;
-
-// test shape cat
-namespace test {
-static_assert( is_same_v< shape<1,2,3>, shape_cat<shape<1,2>, shape<3>> > );
-static_assert( is_same_v< index<1,2,3>, index_cat<index<1,2>, index<3>> > );
-} // namespace test
-
-// insert_at details
-namespace details {
-
-template< typename X, size_t I, size_t N >
-struct InsertAt;
-
-template< size_t... Js, size_t N >
-struct InsertAt< shape< Js... >, 0, N >
-{ using type = shape< N, Js... >; };
-
-template< size_t J, size_t... Js, size_t I, size_t N >
-requires ( I > 0 and I <= 1+sizeof...( Js ))
-struct InsertAt< shape< J, Js... >, I, N >
-{ using type = shape_cat< shape< J >, typename InsertAt< shape< Js... >, I-1, N >::type >; };
-
-template< size_t... Js, size_t N >
-struct InsertAt< index< Js... >, 0, N >
-{ using type = index< N, Js... >; };
-
-template< size_t J, size_t... Js, size_t I, size_t N >
-requires ( I > 0 and I <= 1+sizeof...( Js ))
-struct InsertAt< index< J, Js... >, I, N >
-{ using type = index_cat< index< J >, typename InsertAt< index< Js... >, I-1, N >::type >; };
-
-} // namespace details (insert_at)
-
-/**
- * Insert an element in a shape or index object
- * 
- * @tparam X the shape or index object to have a new element inserted
- * @tparam I the position in X to insert a new element
- * @tparam N the value to insert into X
- */
-template< typename X, size_t I, size_t N >
-using insert_at = details::InsertAt< X, I, N >::type;
-
-namespace test {
-static_assert( is_same_v< shape<1,2,3>, insert_at< shape<1,3>, 1, 2 >> );
-static_assert( is_same_v< index<1,2,3>, insert_at< index<1,3>, 1, 2 >> );
-} // namespace test
-
-// arity_of details
-namespace detail {
-
-template< size_t I, typename Shape >
-struct ArityOf;
-
-template< size_t J, size_t... Js >
-struct ArityOf< 0, shape< J, Js... >>
-{ static constexpr size_t value = J; };
-
-template< size_t I, size_t J, size_t... Js >
-requires ( I < 1 + sizeof...(Js) )
-struct ArityOf< I, shape< J, Js... >>
-{ static constexpr size_t value = ArityOf< I-1, shape< Js... >>::value; };
-
-} // namespace details (arity_of)
-
-/**
- * Extracts the size of a dimension of the shape of a tensor
- * 
- * @tparam I the dimension to extract
- * @tparam Shape the shape object to extract from
- * @returns the size of Shape at index I
- */
-template< size_t I, typename Shape >
-static constexpr size_t arity_of = detail::ArityOf< I, Shape >::value;
-
-// dim_index_of details
-namespace detail {
-
-template< size_t I, typename Index >
-struct DimIndexOf;
-
-template< size_t J, size_t... Js >
-struct DimIndexOf< 0, index< J, Js... >>
-{ static constexpr size_t value = J; };
-
-template< size_t I, size_t J, size_t... Js >
-requires ( I < 1 + sizeof...(Js) )
-struct DimIndexOf< I, index< J, Js... >>
-{ static constexpr size_t value = DimIndexOf< I-1, index< Js... >>::value; };
-
-} // namespace details (dim_index_of)
-
-/**
- * Extract the value of a dimension of a subscript to a tensor
- * 
- * @tparam I index of subscript to extract
- * @tparam Index the subscript object to extract from
- * @returns the subscript of Index at I
- */
-template< size_t I, typename Index >
-static constexpr size_t dim_index_of = detail::DimIndexOf< I, Index >::value;
-
-namespace test {
-static_assert( 
-    arity_of<0,shape1234> == 1 and arity_of<1,shape1234> == 2 and 
-    arity_of<2,shape1234> == 3 and arity_of<3,shape1234> == 4 );
-static_assert( 
-    dim_index_of<0,index012> == 0 and dim_index_of<1,index012> == 1 and
-    dim_index_of<2,index012> == 2 );
-} // namespace test
-
-
-// element_from details
-namespace details {
-
-// TODO: swich Shape and Index order, right?
-template< typename Shape, typename Index >
-struct ElementFrom;
-
-template< size_t... Is, size_t... Js >
-struct ElementFrom< shape< 1, Is... >, index< 0, Js... >>
-{ static constexpr size_t value = 
-    ElementFrom< shape< Is... >, index< Js... >>::value; };
-
-template< size_t... Is, size_t... Js >
-struct ElementFrom< shape< 1, Is... >, index< Js... >>
-{ static constexpr size_t value = 
-    ElementFrom< shape< Is... >, index< Js... >>::value; };
-
-template< size_t I, size_t J >
-struct ElementFrom< shape<I>, index<J> >
-{ static constexpr size_t value = J; };
-
-// allow for an extra 0 index
-template< size_t I, size_t J >
-struct ElementFrom< shape<I>, index<J, 0>>
-{ static constexpr size_t value = J; };
-
-template< >
-struct ElementFrom< shape<>, index<> >
-{ static constexpr size_t value = 0; };
-
-template< size_t I, size_t... Is, size_t J, size_t... Js >
-struct ElementFrom< shape< I, Is... >, index< J, Js... >>
-{ static constexpr size_t value = 
-    J * ( Is * ... ) + ElementFrom< shape< Is... >, index< Js... >>::value; };
-
-} // namespace details (element_from)
-
-/**
- * Converts a set of subscripts in to a single size_t element index into the 
- * values tuple of a tensor (opposite of index_from)
- * 
- * @tparam Shape of the tensor
- * @tparam Index subscripts to be translated
- * @returns the element index of the subscripts Index given the tensor Shape
- */
-template< typename Shape, typename Index >
-static constexpr size_t element_from = 
-    details::ElementFrom< Shape, Index >::value;
-
-// index_from details
-namespace detail {
-
-template< typename Shape, size_t Element >
-struct IndexFrom;
-
-template< size_t I, size_t... Is, size_t Element >
-struct IndexFrom< shape< I, Is... >, Element >
-{ using type = index_cat< index< Element / ( Is * ... )>, 
-    typename IndexFrom< shape< Is... >, Element % ( Is * ... ) >::type >; };
-
-template< size_t I, size_t Element >
-struct IndexFrom< shape<I>, Element >
-{ using type = index< Element >; };
-
-} // namespace detail (index_from) 
-
-/**
- * Converts an element offset into the Tensor tuple back into a set of 
- * subscripts (opposite of element_from)
- * 
- * @tparam Shape of the tensor
- * @tparam Element index into the values tuple of the tensor
- * @returns an index<...> of subscripts corresponding to the same element of 
- *     the Tensor
- */
-template< typename Shape, size_t Element >
-using index_from = detail::IndexFrom< Shape, Element >::type;
-
-namespace test {
-static_assert( element_from< shape123, index012 > == 1*2*3 - 1 );
-static_assert( is_same_v< index_from< shape123, 1*2*3-1 >, index012 > );
-} // namespace test
-
-// unconctract details
-namespace detail {
-
-template< typename X, size_t I, size_t J, size_t N >
-struct Uncontract;
-
-// NOTE: DT: is there a better way to do this?!?
-template< size_t... Ks, size_t I, size_t J, size_t N >
-requires ( I < J and I < sizeof...( Ks ) + 2 and J < sizeof...( Ks ) + 2 )
-struct Uncontract< shape< Ks... >, I, J, N >
-{ using type = insert_at< insert_at< shape< Ks... >, I, N >, J, N >; };
-
-template< size_t... Ks, size_t I, size_t J, size_t N >
-requires ( I < J and I < sizeof...( Ks ) + 2 and J < sizeof...( Ks ) + 2 )
-struct Uncontract< index< Ks... >, I, J, N >
-{ using type = insert_at< insert_at< index< Ks... >, I, N >, J, N >; };
-
-} // namespace detail (uncontract)
-
-/**
- * Inserts a value of N into two positions of a shape<...> or index<...> which
- * represents the uncontracted shape (or index) of a tensor
- * 
- * @tparam X the shape<...> or index<...> object to be uncontracted
- * @tparam I first index to uncontract
- * @tparam J second index to uncontract
- * @tparam N the size (or subscript value) to insert at indices I and J
- */
-template< typename X, size_t I, size_t J, size_t N >
-using uncontract = detail::Uncontract< X, min_v< I, J >, max_v< I, J >, N >::type;
-
-namespace test {
-static_assert( is_same_v<uncontract<shape<9>,1,2,1>, shape<9,1,1>> );
-static_assert( is_same_v<uncontract<index<1>,1,2,0>, index<1,0,0>> );
-} // namespace test
-
-// valid_index details
-namespace detail {
-
-template< typename Index, typename Shape >
-struct ValidIndex;
-
-template< typename Index, typename Shape, typename Seq >
-struct ValidIndexHelper;
-
-template< typename Index, typename Shape, size_t... Ks >
-struct ValidIndexHelper< Index, Shape, seq< Ks... >>
-{ static constexpr bool value = 
-    ((( dim_index_of< Ks, Index >) < (arity_of< Ks, Shape >) ) and ... ); };
-
-template< size_t... Is, size_t... Js >
-struct ValidIndex< index< Is... >, shape< Js... >>
-{ static constexpr bool value = ( sizeof...( Is ) == sizeof...( Js ) and
-    ValidIndexHelper< index< Is... >, shape< Js... >, make_seq< sizeof...( Is ) >>::value ); };
-
-} // namespace detail
-
-/**
- * ValidIndex ensures that an index<...> is valid for a given shape<...>
- * 
- * @tparam Index the subscripts to be validated
- * @tparam Shape the tensor shape<...> to validate against
- * @returns true if the index dimensions are exclusively less than the shape
- *  dimensions
- */
-template< typename Index, typename Shape >
-static constexpr bool valid_index = detail::ValidIndex< Index, Shape >::value;
-
-// remove_dimension details
-namespace detail {
-
-template< size_t I, typename Shape >
-struct RemoveDimension;
-
-template< size_t I, typename Shape, typename Seq >
-struct RemoveDimensionHelper;
-
-template< size_t I, typename Shape, size_t... Ks >
-struct RemoveDimensionHelper< I, Shape, seq< Ks... >>
-{ using type = shape< arity_of<( Ks < I ? Ks : Ks+1 ), Shape >... >; };
-
-template< size_t I, size_t... Js >
-struct RemoveDimension< I, shape< Js... >>
-{ using type = RemoveDimensionHelper< I, shape< Js... >, make_seq< sizeof...( Js )-1 >>::type; };
-
-} // namespace detail (remove_dimension)
-
-/**
- * RemoveDimension removes dimension I from Shape
- * 
- * @tparam I dimension to be removed
- * @tparam Shape to remove dimension from
- * @returns Shape with dimension I removed 
- */
-template< size_t I, typename Shape >
-using remove_dimension = detail::RemoveDimension< I, Shape >::type;
-
-// tests of Remove Dimension
-namespace test {
-static_assert( is_same_v< shape< 0,1,2,4 >, remove_dimension< 3, shape< 0,1,2,3,4 >>> );
-} // namespace test
-
-// contracted_shape details
-namespace detail {
-
-template< size_t I, size_t J, typename Shape >
-struct ContractedShape
-{ using type = remove_dimension< I, remove_dimension< J, Shape >>; };
-
-template< size_t I, size_t J, size_t S1, size_t S2 >
-struct ContractedShape< I, J, shape< S1, S2 >>
-{ using type = shape< 1 >; };
-
-} // namespace details (contracted_shape)
-
-/**
- * ContractedShape computes the shape of a tensor contracted on indices I and J
- * 
- * @tparam I first index to remove
- * @tparam J second index to remove
- */
-template< size_t I, size_t J, typename Shape >
-using contracted_shape = detail::ContractedShape< I, J, Shape >::type;
-
-/**
- * types is a type holder for the type of each element of a tensor
- * 
- * @tparam Ts are the types of the tensor elements
- */
 template< typename... Ts >
-struct types { };
+consteval auto shape_from_tuple( tuple< size_t, Ts... > tup )
+{ return Shape< get< 0 >( tup ) >::cat( shape_from_tuple< Ts... >( remove_first( tup ))); }
 
-template< size_t Element, typename Types >
-struct TypeAtElement;
-
-template< size_t Element, typename T, typename... Ts >
-struct TypeAtElement< Element, types< T, Ts... >>
-{ using type = typename TypeAtElement< Element-1, types< Ts... >>::type; };
-
-template< typename T, typename... Ts >
-struct TypeAtElement< 0, types< T, Ts... >>
-{ using type = T; };
-
-template< size_t Element, typename Types >
-using type_at_element = typename TypeAtElement< Element, Types >::type;
-
-// types details
-namespace detail {
-template< typename T, typename Seq >
-struct UniformTypesHelper;
-
-template< typename T, size_t... Is >
-struct UniformTypesHelper< T, seq< Is... >>
-{ using type = types< noop_t< T, Is >... >; };
-
-template< typename T, size_t Size >
-struct UniformTypes 
-{ using type = UniformTypesHelper< T, make_seq< Size >>::type; };
-} // namespace detail (types)
-
-/**
- * evaluates to a types<...> tuple with the same type Size times
- * 
- * @tparam T the type of each element of our types<...>
- * @tparam Size the size of our values tuple
- * @returns a types<...> of size Size and every element type T
- */
-template< typename T, size_t Size >
-using uniform_types = detail::UniformTypes< T, Size >::type;
-
-// forward declaration
-template< typename Shape, typename Types >
-struct Tensor;
-
-/**
- * Helper type which stores tensor values of any type
- * 
- * @tparam Ts are the types of the tensor elements
- */
-template< typename... Ts >
-using values_of = tuple< Ts... >;
-
-/**
- * Helper function to create tuple of tensor elements
- * 
- * @tparam Ts are the tensor element types
- * @param ts are the tensor element values
- * @returns a tuple-like object of tensor elements
- */
-template< typename... Ts >
-values_of< Ts... > make_values_of( Ts... ts )
-{ return { ts... }; }
-
-// shape_of details
-namespace detail {
-template< typename Tensor>
-struct ShapeOf;
-
-template< typename Shape, typename Types >
-struct ShapeOf< Tensor< Shape, Types >>
-{ using type = Shape; };
-} // namespace detail (shape_of)
-
-/**
- * Extracts the shape<...> of the Tensor parameter
- * 
- * @tparam Tensor the type of the tensor
- * @returns the shape<...> of the tensor type
- */
-template< typename Tensor >
-using shape_of = detail::ShapeOf< Tensor >::type;
-
-/**
- * types_of extracts the Types of a tensor
- */
-namespace detail {
-
-template< typename Tensor>
-struct TypesOf;
-
-template< typename Shape, typename Types >
-struct TypesOf< Tensor< Shape, Types >>
-{ using type = Types; };
-
-} // namespace detail
-
-/**
- * extracts the types<...> of the elements of the tensor template parameter
- * 
- * @tparam Tensor the type of the tensor
- * @returns a pack of types of the elements of the tensor wrapped in types<...>
- */
-template< typename Tensor >
-using types_of = detail::TypesOf< Tensor >::type;
-
-/**
- * Primary mechanism to create a tensor.  This function should be used to create
- * a new tensor in most situations.  
- * 
- * @tparam Shape is a shape<Is...> of the tensor to be created
- * @tparam Types are the types of the elements of the tensor
- * 
- * EXAMPLE:
- * auto rot = make_tensor< shape< 2, 2 >>( 
- *      cos( theta ), -sin( theta ),
- *      sin( theta ),  cos( theta ));
- * 
- * NOTE: sizeof...(Types) must equal Shape::elements_size
- */
-template< typename Shape, typename... Types >
-Tensor< Shape, types< Types... >> make_tensor( Types... values )
-{ return { values_of( values... ) }; }
+consteval Shape< > shape_from_tuple( tuple< > tup )
+{ return {}; }
 
 template< typename T >
-constexpr T identity( T t ) { return t; }
-
-// tensor operation details
-namespace detail {
-
-template< typename TensorType, typename ArgTuple, typename Seq >
-struct InvokeHelper;
-
-template< typename T, typename ArgTuple, typename Seq >
-struct InvokeElementHelper;
-
-template< typename T, typename ArgTuple, size_t... Js >
-struct InvokeElementHelper< T, ArgTuple, seq< Js... >>
-{
-    auto operator()( T x, ArgTuple args, seq< Js... > )
-    { return x( get< Js >( args )... ); }
-};
-
-template< typename T, typename ArgTuple, typename Seq >
-auto invoke_element_helper( T x, ArgTuple args, Seq seq )
-{ return InvokeElementHelper< T, ArgTuple, Seq >{}( x, args, seq ); }
-
-template< typename Shape, typename Types, typename ArgTuple, size_t... Is >
-struct InvokeHelper< Tensor< Shape, Types >, ArgTuple, seq< Is... >>
-{ 
-    static constexpr size_t arguments_size = std::tuple_size_v< ArgTuple >;
-    auto operator()( Tensor< Shape, Types > v, ArgTuple args, seq< Is... > )
-    { 
-        return make_tensor< Shape >( invoke_element_helper( 
-            get< Is >( v.values ), args, make_seq< arguments_size >{} )... );
-    }
-};
-
-template< typename Shape, typename Types, typename ArgTuple, typename Seq >
-auto invoke_helper( Tensor< Shape, Types > v, ArgTuple args, Seq seq )
-{ return InvokeHelper< Tensor< Shape, Types >, ArgTuple, Seq >{}( v, args, seq ); }
-
-template< typename Shape, typename FirstTypes, typename SecondTypes, size_t... Is >
-auto plus_helper( Tensor< Shape, FirstTypes > const& first, 
-    Tensor< Shape, SecondTypes > const& second, seq< Is... > )
-{ return make_tensor< Shape >( sum_of( get< Is >( first.values ), get< Is >( second.values ))... ); }
-
-template< typename Shape, typename FirstTypes, typename SecondTypes, size_t... Is >
-auto minus_helper( Tensor< Shape, FirstTypes > const& first, 
-    Tensor< Shape, SecondTypes > const& second, seq< Is... > )
-{ return make_tensor< Shape >( difference_of( get< Is >( first.values ), get< Is >( second.values ))... ); }
-
-template< size_t I, size_t J, typename Shape, typename Types >
-auto contract( Tensor< Shape, Types > const& );
-
-template< typename ProductShape, size_t LeftSize, typename LeftTensor, typename RightTensor, size_t... Is >
-auto multiply_helper( LeftTensor const& left, RightTensor const& right, seq< Is... > )
-{ return make_tensor< ProductShape >( 
-        product_of( get< Is / LeftSize >( left.values ), get< Is % LeftSize >( right.values ))... ); }
-
-template< typename Shape, typename Types1, typename Types2, size_t... Is >
-auto equality_helper( Tensor< Shape, Types1 > const& first, 
-    Tensor< Shape, Types2 > const& second, seq< Is... > )
-{ return ( ... and equal( get< Is >( first.values ), get< Is >( second.values ))); }
-
-template< typename Shape, typename Types1, typename Types2, size_t... Is >
-auto inequality_helper( Tensor< Shape, Types1 > const& first, 
-    Tensor< Shape, Types2 > const& second, seq< Is... > )
-{ return ( ... or not_equal( get< Is >( first.values ), get< Is >( second.values ))); }
-
-template< typename T, typename Shape, typename Types, size_t... Is >
-auto scale_helper( T scalar, Tensor< Shape, Types > const& v, seq< Is... > )
-{ return make_tensor< Shape >( product_of( get< Is >( v.values ), scalar )... ); }
-
-template< typename T, typename Shape, typename Types, size_t... Is >
-auto divide_scale_helper( T scalar, Tensor< Shape, Types > const& v, seq< Is... > )
-{ return make_tensor< Shape >( quotient_of( get< Is >( v.values ), scalar )... ); }
-
-} // namespace detail (tensor operations)
-
-/**
- * Tensor class holds an arbitrarily typed tuple of values organized by a 
- * tuple of size_t's or it's shape.
- * 
- * @tparam Is are the size of each dimension of the tensor
- * @tparam Ts are the types of each of the elements of the tensor
- * 
- * This class allows tensor semantics in C++ code on arbirary element types. 
- * The tensor could be constructed of all numeric types in which case tensor 
- * arithmetic would be calculated directly, or the types could be lazily 
- * calculated allowing for tensor calculus and expressions
- *
- */
-template< size_t... Is, typename... Ts >
-requires (( Is * ... ) == sizeof...( Ts ))
-struct Tensor< shape< Is... >, types< Ts... >>
-{
-    using this_type = Tensor< shape< Is... >, types< Ts... >>;
-    using values_type = values_of< Ts... >;
-    using shape_type = shape< Is... >;
-    static constexpr size_t size = sizeof...( Ts ); // == ( Is * ... )
-    static constexpr size_t arity = sizeof...( Is ); // how many dimensions
-
-    template< typename IndexType >
-    auto at() const 
-    { return std::get< element_from< shape_type, IndexType >>( values ); }
-
-    template< typename... Us >
-    auto operator()( Us... ts )
-    { return detail::invoke_helper( *this, std::make_tuple( ts... ), make_seq< size >{}); }
-
-    template< typename Types > 
-    auto operator+( Tensor< shape_type, Types > const& other )
-    { return detail::plus_helper( *this, other, make_seq< size >{} ); }
-
-    template< typename Shape, typename Types >
-    auto operator-( Tensor< Shape, Types > const& other )
-    { return detail::minus_helper( *this, other, make_seq< size >{} ); }
-
-    // outer product
-    template< typename Shape, typename Types >
-    auto operator*( Tensor< Shape, Types > const& other ) const
-    { 
-        using other_type = Tensor< Shape, Types >;
-        using product_shape = shape_cat< shape_type, Shape >;
-
-        return detail::multiply_helper< product_shape, size >( *this, other, 
-            make_seq< size * other_type::size >{} ); 
-    }
-
-    template< typename Types2 >
-    auto operator==( Tensor< shape_type, Types2 > const& other ) const
-    { return detail::equality_helper( *this, other, make_seq< size >{} ); }
-
-    template< typename Types2 >
-    auto operator!=( Tensor< shape_type, Types2 > const& other ) const
-    { return detail::inequality_helper( *this, other, make_seq< size >{} ); }
-
-    template< typename T >
-    auto scale( T scalar ) const
-    { return detail::scale_helper( scalar, *this, make_seq< size >{} ); }
-
-    template< typename T >
-    auto divide_scale( T scalar ) const
-    { return detail::divide_scale_helper( scalar, *this, make_seq< size >{} ); }
-
-    Tensor() : values{} { }
-    Tensor( values_of< Ts... > values ) : values{ values } { }
-
-// private:
-    values_type values;
-
-};
-
-template< typename IndexType, typename TensorType >
-struct TensorElement;
-
-template< size_t... Is, size_t... Js, typename... Ts >
-struct TensorElement< index< Is... >, Tensor< shape< Js... >, types< Ts... >>>
-{ 
-    using type = type_at_element< element_from< shape< Js... >, index< Is... >>, types< Ts... >>; 
-    static constexpr type value( Tensor< shape< Js... >, types< Ts... >> v ) 
-    { return v.template at< index< Is... >>(); }
-};
-
-template< typename IndexType, typename TensorType >
-using tensor_element_t = TensorElement< IndexType, TensorType >::type;
-
-template< typename IndexType, typename TensorType >
-constexpr auto tensor_element( TensorType t ) 
-{ return t.template at< IndexType >(); }
-
-/**
- * UniformTensor wraps a tuple of (Ds*...) instances of T
- * 
- * @tparam T the type of every element of the tensor
- * @tparam Ds the shape<Ds...> of the tensor
- */
-template< typename T, size_t... Ds >
-using UniformTensor = Tensor< shape< Ds... >, uniform_types< T, ( Ds * ... ) >>;
-
-namespace detail {
-
-template< typename ValuesType, typename T, size_t... Is >
-void fill_uniform_values( ValuesType& values, T in, seq< Is... > )
-{ ( get< Is >( values ) = ... = in ); }
-
-} // namespace detail (UniformTensor)
-
-/**
- * Creates a tensor with shape<Ds...> whose elements are all the same type
- * 
- * @tparam Ds the shape<Ds...> of the tensor
- * @param val the value to initialize each element of the tensor
- * @returns a tensor with shape<Ds...> and uniform type with elements 
- *  initialized to val
- */
-template< size_t... Ds >
-auto make_uniform( auto val )
-{ 
-    auto u = UniformTensor< decltype(val), Ds... >{};
-    detail::fill_uniform_values( u.values, val, make_seq< ( Ds * ... ) >{} );
-    return u;
-}
-
-/**
- * Matrix alias for a 2D tensor
- */
-template< size_t Rows, size_t Cols, typename... Ts >
-requires( sizeof...( Ts ) == Rows * Cols )
-using Matrix = Tensor< shape< Rows, Cols >, types< Ts... >>;
-
-/**
- * Creates a Rows x Cols matrix with element types Ts...
- * 
- * @tparam Rows the number of rows in the matrix
- * @tparam Cols the number of columns in the matrix
- * @tparam Ts the types of the matrix elements
- * @param ts the values of the matrix elements
- * 
- * NOTE: make_matrix reads the elements in column major order and then 
- * transposes to row major order.  This helps readability in code, ensuring that
- * column values appear to the right and left of each other, and row values
- * appear above and below
- * 
- * constexpr size_t ROWS = 2;
- * constexpr size_t COLS = 3;
- * auto A = make_matrix< ROWS, COLS >(
- *     1., 2., 3.,
- *     4., 5., 6. );
- * ASSERT( at<0, 1>(A) == 2. and at<0, 2>(A) == 3. and
- *         at<1, 0>(A) == 4. and at<1, 2>(A) == 6.);
- * 
- */
-template< size_t Rows, size_t Cols, typename... Ts >
-requires( sizeof...( Ts ) == Rows * Cols )
-auto make_matrix( Ts... ts )
-{ return transpose( make_tensor< shape< Cols, Rows >>( ts... )); } 
-
-/**
- * Vector alias for a 1D row-vector
- * 
- * @tparam N the size of the vector
- * @tparam Ts the types of the vector elements
- */
-template< size_t N, typename... Ts >
-requires( sizeof...( Ts ) == N )
-using Vector = Tensor< shape< N >, types< Ts... >>;
-
-/**
- * Creates a row vector of size N and types Ts...
- * 
- * @tparam N the size of the vector
- * @tparam Ts the types of the vector elements
- * @param ts the values of the vector elements
- * @returns a shape<N> tensor with types Ts.. and values ts...
- */
-template< size_t N, typename... Ts >
-auto make_vector( Ts... ts )
-{ return make_tensor< shape< N >>( ts... ); }
-
-/**
- * Contraction represents a contracton on a tensor
- */
-template< size_t I, size_t J, typename TensorType >
-constexpr auto contract( TensorType const& tensor );
-
-// contraction details
-namespace detail {
-template< size_t I, size_t J, typename Tensor>
-struct Contraction;
-
-// a contracted element is a sum of values from the contracted tensor
-// the indices of the elements to sum will be passed into this template
-template< typename Seq, typename ElementsType >
-struct SumElements;
-
-template< size_t... Is, typename ElementsType >
-struct SumElements< seq< Is... >, ElementsType >
-{
-    static constexpr auto value( ElementsType const& values )
-    { return ( get< Is >( values ) + ... ); }
-};
-
-template< typename Seq, typename ElementsType >
-auto sum_elements( ElementsType const& values )
-{ return SumElements< Seq, ElementsType >::value( values ); }
-
-template< size_t ContractedElement, typename Shape, size_t I, size_t J, typename InputShape, typename DimSeq >
-struct ElementSelector;
-
-template< size_t ContractedElement, typename Shape, size_t I, size_t J, typename InputShape, size_t... Ls >
-struct ElementSelector< ContractedElement, Shape, I, J, InputShape, seq< Ls... >>
-{
-    // get the subscripts of the contracted element
-    using contracted_index = index_from< Shape, ContractedElement >;
-    // insert Dim into positions I and J of the contracted index
-    template< size_t L >
-    using uncontracted_index = uncontract< contracted_index, I, J, L >;
-
-    using elements_seq = seq< element_from< InputShape, uncontracted_index< Ls >>... >;
-
-    template< typename Values >
-    static constexpr auto value( Values const& values )
-    { return sum_elements< elements_seq >( values ); }
-};
-
-template< typename OutputShape, template< size_t > class Element, 
-    typename Values, size_t... Is >
-constexpr auto do_contraction( Values const& values, seq< Is... > elements )
-{ return make_tensor< OutputShape >( Element< Is >::value( values )... ); }
-
-template< size_t I, size_t J, size_t... Ks, typename... Ts >
-requires ( I < J and I < sizeof...( Ks ) and J < sizeof...( Ks ) and 
-    arity_of< I, shape< Ks... >> == arity_of< J, shape< Ks... >> )
-struct Contraction< I, J, Tensor< shape< Ks... >, types< Ts... >>>
-{
-    using shape_type = shape< Ks... >;
-    using types_type = types< Ts... >;
-    using tensor_type = Tensor< shape_type, types_type >;
-    static constexpr tuple< size_t, size_t > indices = { I, J };
-    static constexpr size_t arity = arity_of< I, shape_type >;
-    static constexpr size_t size = sizeof...( Ts );
-    static constexpr size_t shape_size = sizeof...( Ks );
-
-    using output_shape = contracted_shape< I, J, shape_type >;
-    static constexpr size_t output_size = output_shape::elements_size;
-    using elements_seq = make_seq< output_size >;
-    using arity_seq = make_seq< arity >;
-
-    template< size_t N >
-    using element = ElementSelector< N, output_shape, I, J, shape_type, arity_seq >;
-    
-    static constexpr auto invoke( tensor_type const& v )
-    { return do_contraction< output_shape, element >( v.values, elements_seq{} ); }
-};
-} // namespace detail (contraction)
-
-/**
- * Contracts the tensor along dimensions I and J which must have an equal number
- * of terms.
- * 
- * @tparam I index of the first subscript to contract
- * @tparam J index of the second subscript to contract
- * @tparam Is the size of the corresponding dimension of the tensor shape<...>
- * @tparam Ts the types of the elements of the tensor
- * @param tensor to contract
- * @returns tensor contracted along the Ith and Jth subscript
- */
-template< size_t I, size_t J, size_t... Is, typename... Ts >
-requires ( I != J and I < sizeof...( Is ) and J < sizeof...( Is ) and 
-    arity_of< I, shape< Is... >> == arity_of< J, shape< Is... >> )
-constexpr auto contract( Tensor< shape< Is... >, types< Ts... >> const& tensor )
-{ 
-    using tensor_type = Tensor< shape< Is... >, types< Ts... >>;
-    using contraction = detail::Contraction< I, J, tensor_type >;
-    return contraction::invoke( tensor );
-}
-
-#ifndef NDEBUG
-// contraction tests
-namespace test {
-static_assert( is_same_v< shape<3,4>, detail::Contraction<1,2, UniformTensor<bool, 3,2,2,4>>::output_shape > );
-} // namespace test
-#endif
-
-// forward declaration
-template< typename AboutIndex, typename Shape, typename Types >
-auto sub_tensor( Tensor< Shape, Types > const& v );
-
-// sub_tensor details
-namespace detail {
-
-template< typename Shape >
-struct SubTensorShape;
+struct IsShape : std::integral_constant< bool, false > { };
 
 template< size_t... Is >
-requires (( Is > 1 ) and ... ) // cannot subtensor to 0 dimensioned tensors
-struct SubTensorShape< shape< Is... >>
-{ using type = shape<( Is-1 )...>; };
+struct IsShape< Shape< Is... >> : std::integral_constant< bool, true > { };
 
-template< typename Shape >
-using sub_tensor_shape = SubTensorShape< Shape >::type;
+template< typename T >
+static constexpr bool is_shape_v = IsShape< T >::value;
 
-} // namespace detail
+/**
+ * the concept of a shape
+ */
+template< typename T >
+concept shape = is_shape_v< T >;
 
-#ifndef NDEBUG
-// tests of sub_tensor_shape
-namespace test {
-static_assert( is_same_v< shape<2>, detail::sub_tensor_shape< shape<3> >> );
-static_assert( is_same_v< shape<2,2>, detail::sub_tensor_shape< shape<3,3> >> );
-static_assert( is_same_v< shape<2,3,4>, detail::sub_tensor_shape< shape<3,4,5> >> );
-static_assert( detail::sub_tensor_shape< shape<3,3> >::elements_size == 4 );
-} // namespace test
-#endif
+template< size_t I, shape S >
+struct IsElementEven;
 
-// sub_tensor details (continued)
-namespace detail {
+template<>
+struct IsElementEven< 0, Shape<>>
+{ static constexpr bool value = true; };
 
-template< size_t I, typename SuperShape, typename About >
-struct SuperTensorElement;
-
-template< size_t I, typename SuperShape, typename About, typename Seq >
-struct SuperTensorElementHelper;
-
-template< size_t I, typename SuperShape, typename About, size_t... Ds >
-struct SuperTensorElementHelper< I, SuperShape, About, seq< Ds... >>
+template< size_t I, size_t First, size_t... Rest >
+struct IsElementEven< I, Shape< First, Rest... >>
 {
-    using super_shape = SuperShape;
-    using sub_shape = sub_tensor_shape< super_shape >;
-    using sub_index = index_from< sub_shape, I >;
-    using about_index = About;
-    
-    // skip the about_index
-    static constexpr size_t value = element_from< super_shape, index<
-        (( DimIndexOf< Ds, sub_index >::value < DimIndexOf< Ds, about_index >::value ) ? 
-        DimIndexOf< Ds, sub_index >::value : 1 + DimIndexOf< Ds, sub_index >::value )... >>;
+    static constexpr size_t first = I / Shape< Rest... >::size();
+    static constexpr size_t rest = I % Shape< Rest... >::size();
+
+    static constexpr bool is_first_even = ( first % 2 == 0 );
+    static constexpr bool is_rest_even = IsElementEven< rest, Shape< Rest... >>::value;
+    static constexpr bool value = ( is_first_even and is_rest_even ) or
+        (not is_first_even and not is_rest_even );
 };
 
-// calculate the tensor element index based on a sub-element index
-template< size_t I, size_t... Ds, size_t... As >
-requires ( sizeof...( Ds ) == sizeof...( As ) )
-struct SuperTensorElement< I, shape< Ds... >, index< As... >>
-{ static constexpr size_t value = SuperTensorElementHelper< I, shape< Ds... >, 
-    index< As... >, make_seq< sizeof...( Ds )>>::value; };
-
-template< size_t SubElement, typename SuperShape, typename About >
-static constexpr size_t super_tensor_element = 
-    SuperTensorElement< SubElement, SuperShape, About >::value;
-
-template< typename AboutIndex, typename Shape, typename Types, size_t... Is >
-auto sub_tensor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
-{ return make_tensor< sub_tensor_shape< Shape >>(
-    get< super_tensor_element< Is, Shape, AboutIndex >>( v.values )... ); }
-
-} // namespace detail (sub_tensor)
+template< size_t I, shape S >
+static constexpr bool is_element_even_v = IsElementEven< I, S >::value;
 
 /**
- * sub_tensor removes the rows/cols of the given tensor about the given index
- * 
- * @tparam AboutIndex is an index<...> tuple of the subscript to be removed 
- * @tparam Shape is the shape<...> of the input tensor
- * @tparam Types is the types<...> of the input tensor elements
- * @param v is the tensor 
- * @returns a new tensor formed from v by removing any element whose subscript
- *  matches AboutIndex on any dimension
- * 
- * EXAMPLE:
- * auto rot_z = make_tensor< shape< 3, 3 >>(
- *      cos( theta ), -sin( theta ), 0.,
- *      sin( theta ),  cos( theta ), 0.,
- *           0.,            0.,      1. );
- * 
- * auto rot2D = sub_tensor< index< 2, 2 >>( v );
- * static_assert( is_same_v< shape_of< decltype( rot2D )>, shape< 2, 2 >> );
+ * creates a super shape object by inserting 1 into each dimension
  */
-template< typename AboutIndex, typename Shape, typename Types >
-auto sub_tensor( Tensor< Shape, Types > const& v )
-{ return detail::sub_tensor_helper< AboutIndex >( v, 
-    make_seq< detail::sub_tensor_shape< Shape >::elements_size >{} ); }
+template< shape S, typename Seq >
+struct ShapeInsertAt;
 
-// forward declaration of transpose
-template< size_t Rows, size_t Cols, typename Types >
-auto transpose( Tensor< shape< Rows, Cols >, Types > const& v );
+template< >
+struct ShapeInsertAt< Shape< >, seq< >>
+{ static consteval Shape< > insert( Shape< > ) { return {}; } };
 
-// transpose details
-namespace detail {
-
-/**
- * constructs the transpose using the 1-d tuple indices of the values of the
- * input matrix.  
- * 
- * @tparam Rows is the number of rows of the input matrix
- * @tparam Cols is the number of columns in the input matrix
- * @tparam Types is the types<...> pack of types in the input matrix
- * @tparam Is are the [0...Rows*Cols) sequence of 1-d indices of each element
- * 
- * We treat Is as indices into the (Cols,Rows) output matrix.  The row of the 
- * output matrix is therefore ( Is % Rows ) * Cols and the column is Is / Rows
- */
-template< size_t Rows, size_t Cols, typename Types, size_t... Is >
-auto transpose_helper( Tensor< shape< Rows, Cols >, Types > const& v, seq< Is... > )
-{ return make_tensor< shape< Cols, Rows >>( get< ( Is % Rows ) * Cols + Is / Rows >( v.values )... ); }
-
-} // namespace detail (transpose)
-
-/**
- * Calculates the transpose of a square NxN tensor 
- * 
- * @tparam N the size of one side of the square tensor
- * @tparam Types is a types<...> holder of a pack of types of the elements of
- *  the tensor to be transposed
- * @param v the tensor to be transposed
- * @returns the transpose of the square NxN tensor v
- */
-template< size_t Rows, size_t Cols, typename Types >
-auto transpose( Tensor< shape< Rows, Cols >, Types > const& v )
-{ return detail::transpose_helper< Rows, Cols >( v, make_seq< Rows * Cols >{} ); }
-
-// forward declaration of determinant
-template< size_t N, typename Types >
-auto determinant( Tensor< shape< N, N >, Types > const& v );
-
-// determinant details
-namespace detail {
-
-// recursively calculate the determinant by expanding along row 0
-template< size_t N, typename Types, size_t... Ns >
-auto det_helper( Tensor< shape< N, N >, Types > const& v, seq< Ns... > )
+template< size_t First, size_t... Rest, size_t I, size_t... Is >
+struct ShapeInsertAt< Shape< First, Rest... >, seq< I, Is... >>
 {
-    // determinant is the alternating sum of th product of the 
-    return difference_of(  
-        product_of( v.template at< index< 0, Ns >>(),
-            determinant( sub_tensor< index< 0, Ns >>( v )))... );
-}
+    using type = Shape< 1+First, (1+Rest)... >;
+    static constexpr type insert( Shape< First, Rest... > from )
+    { return type{ from.first() < I ? from.first() : 1 + from.first(),  
+        ShapeInsertAt< Shape< Rest... >, seq< Is... >>::insert( from ) }; }
+};  
 
-// the determinant of a 1x1 matrix is the value of the only element
-template< typename Types >
-auto det_helper( Tensor< shape< 1, 1 >, Types > const& v, seq< 0 > )
-{ return get< 0 >( v.values ); }
+template< shape S, size_t I >
+struct ShapeInsertAtElement;
 
-} // namespace detail
+template< >
+struct ShapeInsertAtElement< Shape< >, 0 >
+{ static consteval Shape< > insert( Shape< > ) { return {}; } };
 
-
-/**
- * Calculates the determinant of a square NxN tensor
- * 
- * @tparam N the size of one side of the square tensor
- * @tparam Types is a types<...> holder of a parameter pack of the N*N types of
- *  the tensor elements
- * @param v the tensor
- * @returns the determinant of the square tensor
- */
-template< size_t N, typename Types >
-auto determinant( Tensor< shape< N, N >, Types > const& v )
-{ return detail::det_helper( v, make_seq< N >{} ); }
-
-// forward declaration of minor
-template< size_t N, typename Types >
-auto minor( Tensor< shape< N, N >, Types > const& v );
-
-// minor details
-namespace detail {
-template< typename Shape, typename Types, size_t... Is >
-auto minor_helper( Tensor< Shape, Types > const& v, seq< Is... > )
+template< size_t First, size_t... Rest, size_t I  >
+struct ShapeInsertAtElement< Shape< First, Rest... >, I >
 {
-    /**
-     * the minor of an element of a square matrix is the determinant of the sub 
-     * matrix formed by removing the row and column of the given element
-     */
-    return make_tensor< Shape >( 
-        determinant(                                        // det(sub(i,j))
-            sub_tensor< index_from< Shape, Is >>( v ))... );
-}
-} // namespace detail
+    using type = Shape< 1+First, (1+Rest)... >;
+    using rest_type = Shape<( 1+Rest )... >;
+    static constexpr size_t first = I / rest_type::size();
+    static constexpr size_t rem = I % rest_type::size();
+
+    static constexpr type insert( Shape< First, Rest... > from )
+    { return type{ from.first() < first ? from.first() : 1 + from.first(),  
+        ShapeInsertAtElement< Shape< Rest... >, rem >::insert( from ) }; }
+};  
+
+template< typename Seq, shape S >
+consteval auto shape_insert_at( S shp )
+{ return ShapeInsertAt< S, Seq >::insert( shp ); }
+
+template< size_t First, size_t... Rest >
+consteval auto shape_insert_at( Shape< 1+First, (1+Rest)... > here, 
+    Shape< First, Rest... > shp )
+{ return shp.insert( here ); }
+
+template< size_t I, shape S >
+consteval auto shape_insert_at_element( S shp )
+{ return ShapeInsertAtElement< S, I >::insert( shp ); }
 
 /**
- * Calculates the minor matrix of a square NxN tensor
- * 
- * @tparam N the size of one side of a square tensor
- * @tparam Types the types<...> holder of a parameter pack of the types of the 
- *  square tensor
- * @param v the square tensor to calculate the minor matrix
- * @returns the minor matrix of the square tensor v
+ * shape elements
  */
-template< size_t N, typename Types >
-auto minor( Tensor< shape< N, N >, Types > const& v )
-{ return detail::minor_helper( v, make_seq< shape< N, N >::elements_size >{} ); }
+template< size_t I, shape S >
+struct ShapeElement;
 
-// forward declaration of cofactor
-template< size_t N, typename Types >
-auto cofactor( Tensor< shape< N, N >, Types > const& v );
+template< size_t First, size_t... Rest >
+struct ShapeElement< 0, Shape< First, Rest... >>:
+    std::integral_constant< size_t, First > { };
 
-// cofactor details
-namespace detail {
+template< size_t I, size_t First, size_t... Rest >
+struct ShapeElement< I, Shape< First, Rest... >>:
+    std::integral_constant< size_t, 
+        ShapeElement< I-1, Shape< Rest... >>::value > 
+{ };
 
-template< typename Expr >
-auto negate_expr( Expr expr )
-{ return std::negate< Expr >{}( expr ); }
-
-// DT: I don't think I can get away with not including the expressions.hpp in
-// the tensor library.  I can't think of a way to infer the type of a negate_t
-// expression using only std::negate or ::operator-(auto). 
-// My first attempt tried to use make_tensor with std::negate in a ?: ternary 
-// expression.  That doesn't work because ?: requires the types of the true and
-// false outputs to be the same.  We need to explictly define the type of the
-// returned tensor to be a negation, and so we need to include negate_t and
-// so we need to #include "expressions.hpp"
-template< typename Shape, typename Types, size_t... Is >
-auto cofactor_helper( Tensor< Shape, Types > minor, seq< Is... > )
-{
-    using expressions::negation_t;
-    /**
-     * the cofactor of an element of a square matrix is the alternating
-     * determinant of the sub matrix formed by removing the row and column
-     * of the given element, in other words, the alternating minor
-     */
-    using cofactor_tensor_types = types< std::conditional_t< 
-        index_from< Shape, Is >::is_even,
-        type_at_element< Is, Types >,
-        negation_t< type_at_element< Is, Types >>>... >;
-    using cofactor_type = Tensor< Shape, cofactor_tensor_types >;
-
-    // TODO: if the Ith value is an expression
-    return cofactor_type{ make_values_of( 
-        (type_at_element< Is, cofactor_tensor_types >{ 
-            get< Is >( minor.values )})... )};
-    // return cofactor_type{};
-}
-} // namespace detail
+template< size_t I, shape S >
+static constexpr size_t shape_element_v = ShapeElement< I, S >::value;
 
 /**
- * Calculates the cofactor matrix of a square NxN tensor
- * 
- * @tparam N the size of one side of a square tensor
- * @tparam Types the types<...> holder of a parameter pack of the types of the 
- *  square tensor
- * @param v the square tensor to calculate the cofactor matrix
- * @returns the cofactor matrix of the square tensor v
+ * contraction of a shape
  */
-template< size_t N, typename Types >
-auto cofactor( Tensor< shape< N, N >, Types > const& v )
-{ return detail::cofactor_helper( minor( v ), make_seq< shape< N, N >::elements_size >{} ); }
+template< size_t I, shape S >
+struct RemoveShapeElement;
 
-/**
- * Calculates the inverse of an NxN square tensor such that V * inv{V} == I
- * where I is the identity matrix.  The inverse of a square matrix is the 
- * transpose of the cofactor matrix divided by the determinant.
- * 
- * @tparam N the size of one side of the square tensor
- * @tparam Types is the types<...> holder of a pack of types of size N*N of the 
- *  types of the elements of the square tensor
- * @param v the square NxN tensor
- * @returns the inverse matrix of v
- */
-template< size_t N, typename Types >
-auto inverse( Tensor< shape< N, N >, Types > const& v )
-{ return transpose( cofactor( v ).divide_scale( determinant( v ))); }
-
-#ifndef NO_TENSOR_PRINTING
-/**
- * print helpers
- */
-using std::ostream;
-
-template< typename Shape, typename Types >
-ostream& operator<<( ostream& os, Tensor< Shape, Types > const& v );
-
-// printing details
-namespace detail {
-template< typename Shape, typename Types, size_t... Is >
-ostream& print_helper( ostream& os, Tensor< Shape, Types > const& v, seq< Is... > )
+template< size_t First, size_t... Rest >
+struct RemoveShapeElement< 0, Shape< First, Rest... >>
 { 
-    os << "{ ";
-    (( os << get< Is >( v.values ) << " " ), ... );
-    os << "}";
-    return os;
+    using type = Shape< Rest... >; 
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return shp; }
+};
+
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct RemoveShapeElement< I, Shape< First, Rest... >>
+{ 
+    using type = shape_cat_t< Shape< First >, 
+        typename RemoveShapeElement< I - 1, Shape< Rest... >>::type >; 
+
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return Shape< First >{ shp.first() }.cat(
+            RemoveShapeElement< I-1, Shape< Rest... >>::value( shp )); }
+};
+
+template< size_t I, shape S >
+constexpr auto remove_shape_element( S shp )
+{ return RemoveShapeElement< I, S >::value( shp ); }
+
+template< size_t I, size_t J, shape S >
+requires( isless( I, J ) and shape_element_v< I, S > == shape_element_v< J, S > )
+struct ContractShape
+{ using type = RemoveShapeElement< I, 
+    typename RemoveShapeElement< J, S >::type >::type; };
+
+template< size_t I, size_t J, shape S >
+using contract_shape_t = ContractShape< I, J, S >::type;
+
+static_assert( is_same_v< Shape< 1, 2, 4 >, contract_shape_t< 2, 3, Shape< 1, 2, 3, 3, 4 >>> );
+
+template< size_t K, size_t I, shape S >
+struct InsertShapeElement;
+
+template< size_t K, size_t... Is >
+struct InsertShapeElement< K, 0, Shape< Is... >>
+{ 
+    using type = Shape< K, Is... >; 
+
+    static constexpr type value( size_t k, Shape< Is... > shp )
+    { return type{ k, shp }; }
+};
+
+template< size_t K, size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct InsertShapeElement< K, I, Shape< First, Rest... >>
+{ 
+    using type = shape_cat_t< Shape< First >, 
+        typename InsertShapeElement< K, I-1, Shape< Rest... >>::type >; 
+
+    static constexpr type value( size_t k, Shape< First, Rest... > shp )
+    { return Shape< First >{ shp.first() }.cat( 
+        InsertShapeElement< K, I-1, Shape< Rest... >>::value( k, shp )); }
+};
+
+template< size_t K, size_t I, shape S >
+constexpr InsertShapeElement< K, I, S >::type 
+insert_shape_element( size_t k, S shp )
+{ return InsertShapeElement< K, I, S >::value( k, shp ); }
+
+template< shape S >
+struct SubTensorShape;
+
+template< size_t... Sizes >
+requires(( isgreater( Sizes, 1 ) and ... ))
+struct SubTensorShape< Shape< Sizes... >>
+{ using type = Shape< (Sizes - 1)... >; };
+
+template< shape S >
+using sub_tensor_shape_t = SubTensorShape< S >::type;
+
+
+static_assert( Shape< 2 >{ 1 }.element() == insert_shape_element< 2, 0 >( 1, Shape< >{} ).element() );
+static_assert( Shape< 2, 2 >{ 1, 0 }.element() == insert_shape_element< 2, 0 >( 1, Shape< 2 >{ 0 } ).element() );
+static_assert( Shape< 2, 2 >{ 1, 1 }.element() == insert_shape_element< 2, 0 >( 1, Shape< 2 >{ 1 } ).element() );
+static_assert( Shape< 2, 3 >{ 1, 2 }.element() == insert_shape_element< 2, 0 >( 1, Shape< 3 >{ 2 } ).element() );
+static_assert( Shape< 2, 3 >{ 1, 2 }.element() == insert_shape_element< 3, 1 >( 2, Shape< 2 >{ 1 } ).element() );
+
+static_assert( Shape< 2, 2 >{ 0, 1 } == insert_shape_element< 2, 0 >( 0, Shape< 2 >{ 1 }) );
+static_assert( Shape< 3, 2 >{ 2, 1 } == insert_shape_element< 3, 0 >( 2, Shape< 2 >{ 1 }) );
+static_assert( Shape< 2, 3 >{ 1, 2 }.element() == insert_shape_element< 3, 1 >( 2, Shape< 2 >{ 1 }).element() );
+static_assert( Shape< 3, 3 >{ 2, 2 } == insert_shape_element< 3, 0 >( 2, Shape< 3 >{ 2 }) );
+
+template< size_t K, size_t I, size_t J, shape S >
+requires( isless( I, J ))
+struct UncontractShape
+{ 
+    using type = InsertShapeElement< K, J, 
+        typename InsertShapeElement< K, I, S >::type >::type; 
+
+    static constexpr type value( size_t k, S shp )
+    { return insert_shape_element< K, J >( k, 
+        insert_shape_element< K, I >( k, shp )); }
+};
+
+template< size_t K, size_t I, size_t J, shape S >
+using uncontract_shape_t = UncontractShape< K, I, J, S >::type;
+
+static_assert( is_same_v< Shape< 3, 3 >, uncontract_shape_t< 3, 0, 1, Shape<>>> );
+static_assert( is_same_v< Shape< 1, 2, 3, 3, 4 >, uncontract_shape_t< 3, 2, 3, Shape< 1, 2, 4 >>> );
+
+template< size_t K, size_t I, size_t J, shape S >
+constexpr uncontract_shape_t< K, I, J, S >
+uncontract_index( size_t k, S shp )
+{ return UncontractShape< K, I, J, S >::value( k, shp ); }
+
+
+static_assert( uncontract_index< 1, 0, 1 >( 0, Shape< >{} ).element() == Shape< 1, 1 >{ 0, 0 }.element() );
+static_assert( uncontract_index< 2, 0, 1 >( 0, Shape< >{} ).element() == Shape< 2, 2 >{ 0, 0 }.element() );
+static_assert( uncontract_index< 2, 0, 1 >( 0, Shape< 1 >{ 0 } ).element() == Shape< 2, 2, 1 >{ 0, 0, 0 }.element() );
+static_assert( uncontract_index< 2, 0, 1 >( 1, Shape< 1 >{ 0 } ).element() == Shape< 2, 2, 1 >{ 1, 1, 0 }.element() );
+
+static_assert( uncontract_index< 2, 0, 1 >( 1, Shape< >{} ).element() == Shape< 2, 2 >{ 1, 1 }.element() );
+static_assert( uncontract_index< 3, 0, 1 >( 1, Shape< >{} ).element() == 1 + 3*1 );
+static_assert( uncontract_index< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 2 }).element() == 2 + 4*( 2 + 3*( 2 + 3*( 1 + 1 * 0 ))) );
+// static_assert( Shape< 1, 2, 3, 3, 4 >{ 0, 1, 2, 2, 3 } == uncontract< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 3 }) );
+
+template< size_t I, size_t J, shape S >
+struct TransposeShape
+{ 
+    static constexpr size_t ith = shape_element_v< I, S >;
+    static constexpr size_t jth = shape_element_v< J, S >;
+
+    using base_type = RemoveShapeElement< I, 
+        typename RemoveShapeElement< J, S >::type >::type;
+    using type = InsertShapeElement< ith, J, 
+        typename InsertShapeElement< jth, I, base_type >::type >::type;
+
+    static constexpr type value( S shp )
+    {
+        size_t i = shape_get< I >( shp );
+        size_t j = shape_get< J >( shp );
+
+        auto base = remove_shape_element< I >( 
+            remove_shape_element< J >( shp ));
+
+        return insert_shape_element< ith, J >( i,
+            insert_shape_element< jth, I >( j, base ));
+    }
+};
+
+template< size_t I, size_t J, shape S >
+using transpose_shape_t = TransposeShape< I, J, S >::type;
+
+template< size_t I, size_t J, shape S >
+constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
+{ return TransposeShape< I, J, S >::value( shp ); }
+
+// template< shape S, typename Seq >
+// struct ElementToIndexSequenceHelper;
+
+// template< shape S, size_t.. Is >
+// struct ElementToIndexSequenceHelper< S, seq< Is... >>
+// { using type = seq< shape_get< Is >( S )... >; };
+
+// template< shape S >
+// struct ElementToIndexSequence
+// { using type = ElementToIndexSequenceHelper< S, make_seq< S::dimensions() >>::type };
+
+// template< shape S >
+// 
+
+/**
+ * A tensor is a shaped array
+ */
+template< shape S, typename T, typename... Ts >
+requires( S::size() == 1 + sizeof...( Ts ))
+struct Tensor : tuple< T, Ts... >
+{
+    using shape_type = S;
+    static consteval size_t size() { return 1 + sizeof...( Ts ); }
+    // static consteval shape_type shape() { return {}; }
+    // TODO: get rid of the static_cast
+    template< typename... Indices >
+    static constexpr shape_type index( Indices... Is )
+    { return { static_cast< size_t >( Is )... }; }
+
+    template< typename OtherT, size_t... Is >
+    constexpr void equal_helper( OtherT const& other, seq< Is... > )
+    { (( get< Is >( *this ) = get< Is >( other )), ... ); }
+
+    template< typename OtherT, size_t... Is >
+    constexpr tuple< T, Ts... > tuple_init_helper( OtherT const& other, seq< Is... > )
+    { return make_tuple( static_cast< tuple_element_t< Is, tuple< T, Ts... >>>( get< Is >( other ))... ); }
+
+    template< typename... Us >
+    constexpr Tensor& operator=( Tensor< shape_type, Us... > const& other )
+    {
+        if( &other != this )  
+            equal_helper( other, make_seq< size() >{} );
+        return *this;
+    }
+
+    template< typename... Us >
+    requires( size() == sizeof...( Us ))
+    constexpr Tensor& operator=( tuple< Us... > const& other )
+    { 
+        equal_helper( other, make_seq< size() >{} );
+        return *this;
+    }
+
+    constexpr Tensor( ) = default;
+    constexpr Tensor( T t, Ts... ts ): tuple< T, Ts... >{ t, ts... } { }
+    template< typename... Us >
+    constexpr Tensor( Tensor< shape_type, Us... > const& other ):
+        tuple< T, Ts... >{ tuple_init_helper( other, make_seq< size() >{} ) }
+    { }
+};
+
+template< size_t I, typename TensorT >
+constexpr auto tensor_get( TensorT const& ten )
+{ return get< I >( ten ); }
+
+template< typename T, typename TensorT >
+constexpr T tensor_at( size_t element, TensorT const& ten )
+{ return any_cast< T >( tuple_access( element, ten )); }
+
+template< typename TensorT >
+struct tensor_shape
+{ using type = TensorT::shape_type; };
+
+template< typename TensorT >
+using tensor_shape_t = tensor_shape< TensorT >::type;
+
+template< size_t I, typename TensorT >
+struct TensorElement;
+
+template< size_t I, shape S, typename... Ts >
+struct TensorElement< I, Tensor< S, Ts... >>
+{ using type = tuple_element_t< I, tuple< Ts... >>; };
+
+template< size_t I, typename TensorT >
+using tensor_element_t = TensorElement< I, TensorT >::type;
+
+template< shape S, typename... Ts >
+requires( S::size() == sizeof...( Ts ))
+constexpr Tensor< S, Ts... > make_tensor( Ts... ts )
+{ return { ts... }; }
+
+template< typename T >
+struct IsTensor
+{ static constexpr bool value = false; };
+
+template< shape S, typename... Ts >
+struct IsTensor< Tensor< S, Ts... >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+constexpr bool is_tensor_v = IsTensor< T >::value;
+
+template< typename T >
+concept tensor = is_tensor_v< T >;
+
+namespace detail {
+template< typename LeftT, typename RightT, size_t... Is >
+constexpr bool equals_helper( LeftT const& left, RightT const& right,
+    seq< Is... > )
+{ return ((get< Is >( left ) == get< Is >( right )) and ... ); }
+
+template< typename LeftT, typename RightT, size_t... Is >
+constexpr auto plus_helper( LeftT const& left, RightT const& right, 
+    seq< Is... > )
+{ return make_tensor< typename LeftT::shape_type >(
+    ( get< Is >( left ) + get< Is >( right ))... ); }
+
+template< typename LeftT, typename RightT, size_t... Is >
+constexpr auto minus_helper( LeftT const& left, RightT const& right, 
+    seq< Is... > )
+{ return make_tensor< LeftT::shape_type >(
+    ( get< Is >( left ) - get< Is >( right ))... ); }
+
+template< typename LeftT, typename RightT, size_t... Is >
+constexpr auto product_helper( LeftT const& left, RightT const& right,
+    seq< Is... > )
+{
+    using shape_type = shape_cat_t< typename LeftT::shape_type, 
+        typename RightT::shape_type >;
+    return make_tensor< shape_type >(( get< Is / right.size() >( left ) * 
+        get< Is % right.size() >( right ))... );
 }
+
+template< typename T, typename TensorT, size_t... Is >
+constexpr auto scale_helper( T scalar, TensorT const& ten, 
+    seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>(
+    ( get< Is >( ten ) * scalar )... ); }
+
+template< typename T, typename TensorT, size_t... Is >
+constexpr auto divide_scale_helper( T scalar, TensorT const& ten, 
+    seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>(
+    ( get< Is >( ten ) / scalar )... ); }
+
+/**
+ * returns a tensor composed of op(E) where E is the corresponding element from 
+ * ten
+ */
+template< typename Op, typename TensorT, size_t... Is >
+constexpr auto op_helper( Op& op, TensorT const& ten, seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>( op( get< Is >( ten ))... ); }
+
+// forward decl
+template< size_t K, size_t I, size_t J, shape S, typename Seq >
+struct ContractedElementSequenceHelper;
+
+/**
+ * resolves to an index_sequence of elements from a tensor with shape S which 
+ * when summed together equal the Kth element of the same tensor contracted on 
+ * indices I and J
+ * 
+ * @tparam K the element of the contracted tensor
+ * @tparam I the first index to be contracted on
+ * @tparam J the second index to be contracted on
+ * @tparam S is the shape of the tensor to be contracted
+ * @tparam Is... are 0, 1, ... N where N == shape_element_v< I, S >
+ */
+template< size_t K, size_t I, size_t J, shape S, size_t... Is >
+struct ContractedElementSequenceHelper< K, I, J, S, seq< Is... >>
+{
+    // calculate the contracted shape
+    using contracted_shape = contract_shape_t< I, J, S >;
+    static constexpr size_t contraction_size = shape_element_v< I, S >;
+
+    // our elements will be the uncontracted index on Is
+    using type = seq< uncontract_index< contraction_size, I, J >( Is, 
+        contracted_shape::from_element( K ) )... >;
+};
+
+/**
+ * defines an index sequence of elements to be summed for the Kth element
+ * of a tensor with shape S contracted along the Ith and Jth indices
+ */
+template< size_t K, size_t I, size_t J, shape S >
+using contracted_element_seq = ContractedElementSequenceHelper< K, I, J, S, 
+    make_seq< shape_element_v< I, S >>>::type;
+
+/**
+ * sums the Is... elements of ten
+ * 
+ * @tparam TensorT is the type of the tensor
+ * @tparam Is are the elements to be summed
+ * @param ten is the tensor storing the values
+ * @returns the sum of the Is elements of the input tensor
+ */
+template< typename TensorT, size_t... Is >
+constexpr auto sum_elements_helper( TensorT const& ten, seq< Is... > )
+{ return ( get< Is >( ten ) + ... ); }
+
+/**
+ * returns the Kth element of ten contracted along I and J
+ */
+template< size_t K, size_t I, size_t J, typename TensorT >
+constexpr auto contracted_element( TensorT const& ten )
+{ return sum_elements_helper( ten, 
+    contracted_element_seq< K, I, J, typename TensorT::shape_type >{} ); }
+
+template< size_t I, size_t J, typename TensorT, size_t... Is >
+constexpr auto contract_helper( TensorT const& ten, seq< Is... > )
+{
+    static constexpr size_t i0 = min_v< I, J >;
+    static constexpr size_t i1 = max_v< I, J >;
+    using shape_type = contract_shape_t< i0, i1, typename TensorT::shape_type >;
+    return make_tensor< shape_type >( contracted_element< Is, i0, i1 >( ten )... );
+}
+
+template< size_t K, size_t I, size_t J, typename TensorT >
+constexpr auto transposed_element( TensorT const& ten )
+{
+    using shape_type = tensor_shape_t< TensorT >;
+    using transposed_shape_type = transpose_shape_t< I, J, tensor_shape_t< TensorT >>;
+
+    static constexpr auto k = transpose_shape< I, J >( transposed_shape_type::from_element( K ));
+    return get< k >( ten );
+}
+
+template< size_t I, size_t J, typename TensorT, size_t... Ks >
+constexpr auto transpose_helper( TensorT const& ten, seq< Ks... > )
+{
+    using shape_type = transpose_shape_t< I, J, tensor_shape_t< TensorT >>;
+    return make_tensor< shape_type >( transposed_element< Ks, I, J >( ten )... );
+}
+
+template< size_t K, typename Seq, typename TensorT >
+constexpr auto subtensor_element( TensorT const& ten )
+{
+    using shape_type = tensor_shape_t< TensorT >;
+    using sub_shape_type = sub_tensor_shape_t< shape_type >;
+
+    static constexpr const auto sub = sub_shape_type::from_element( K );
+    static constexpr size_t L = shape_insert_at< Seq >( sub );
+    return get< L >( ten );
+}
+
+template< size_t I, size_t K, typename TensorT >
+constexpr auto element_subtensor_element( TensorT const& ten )
+{
+    using shape_type = tensor_shape_t< TensorT >;
+    using sub_shape_type = sub_tensor_shape_t< shape_type >;
+
+    static constexpr const auto sub = sub_shape_type::from_element( K );
+    static constinit const size_t L = shape_insert_at_element< I >( sub );
+    return get< L >( ten );
+}
+
+template< typename Seq, typename TensorT, size_t... Ks >
+constexpr auto subtensor_helper( TensorT const& ten, seq< Ks... > )
+{ 
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return make_tensor< sub_shape_type >( subtensor_element< Ks, Seq >( ten )... ); 
+}
+
+// template< typename TensorT, size_t... Ks >
+// constexpr auto subtensor_helper( tensor_shape_t< TensorT > shp, 
+//     TensorT const& ten, seq< Ks... > )
+// { 
+//     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+//     return make_tensor< sub_shape_type >( subtensor_element< Ks >( shp, ten )... ); 
+// }
+
+template< size_t I, typename TensorT, size_t... Ks >
+constexpr auto element_subtensor_helper( TensorT const& ten, seq< Ks... > )
+{ 
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return make_tensor< sub_shape_type >( 
+        element_subtensor_element< I, Ks >( ten )... ); 
+}
+
+template< typename TensorT, size_t... Ks >
+constexpr auto sum_helper( TensorT const& ten, seq< Ks... > )
+{ return ( tensor_get< Ks >( ten ) + ... ); }
+
 } // namespace detail
 
-template< size_t... Ds, typename Types >
-ostream& operator<<( ostream& os, Tensor< shape< Ds... >, Types > const& v )
-{ return detail::print_helper( os, v, make_seq< shape< Ds... >::elements_size >{} ); }
+/**
+ * operators
+ */
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator ==( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
-#endif
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator !=( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return not detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator +( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return detail::plus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< shape S, typename... Ts, typename... Us >
+constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return detail::minus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< shape A, typename... Ts, shape B, typename... Us >
+constexpr auto operator *( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
+{ return detail::product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
+
+/// @brief add the elements of the tensor together
+/// @tparam ...Ts are the types of the tensor elements
+/// @tparam A is the shape of the tensor
+/// @param ten is the tensor instance
+/// @return the sum of the elements of the tensor
+template< shape A, typename... Ts >
+constexpr auto sum( Tensor< A, Ts... > const& ten )
+{ return detail::sum_helper( ten, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename T, shape S, typename... Ts >
+constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
+{ return detail::scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename T, shape S, typename... Ts >
+constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten ) 
+{ return detail::divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
+namespace detail {
+
+template< size_t I, typename TensorT >
+struct TensorNorm;
+
+/// @brief L1 norm is the sum of the elements of a tensor
+/// @tparam TensorT is the type of the tensor
+template< typename TensorT >
+struct TensorNorm< 1, TensorT >
+{ static constexpr auto value( TensorT const& ten ) { return sum( ten ); } };
+
+/// @brief L2 norm is the sqrt( x_n^2 + ... ) of the tensor elements
+/// @tparam TensorT 
+template< typename TensorT >
+struct TensorNorm< 2, TensorT >
+{ 
+    static constexpr auto value( TensorT const& ten ) 
+    { return value_helper( ten, make_seq< TensorT::size() >{} ); }
+
+    template< size_t... Is >
+    static constexpr auto value_helper( TensorT const& ten, seq< Is... > )
+    { 
+        auto ten2 = make_tensor< tensor_shape_t< TensorT >>(
+            ( tensor_get< Is >( ten ) * tensor_get< Is >( ten ) )... );
+        return std::sqrt( sum( ten2 ));
+    }
+};
+
+} // namespace detail
+
+template< size_t I, shape S, typename... Ts >
+constexpr auto norm( Tensor< S, Ts... > const& ten )
+{ return detail::TensorNorm< I, Tensor< S, Ts... >>::value( ten ); }
+
+
+/**
+ * contracts a tensor along equinumerous indices
+ */
+template< size_t I, size_t J, typename TensorT >
+requires( shape_element_v< I, tensor_shape_t< TensorT >> == 
+    shape_element_v< J, tensor_shape_t< TensorT >> )
+constexpr auto contract( TensorT const& ten )
+{ 
+    static constexpr size_t contracted_size = 
+        contract_shape_t< I, J, tensor_shape_t< TensorT >>::size();
+
+    return detail::contract_helper< I, J >( ten, make_seq< contracted_size >{} ); 
+}
+
+/**
+ * transpose a tensor along two indices
+ */
+template< size_t I, size_t J, typename TensorT >
+constexpr auto transpose( TensorT const& ten )
+{ return detail::transpose_helper< I, J >( ten, 
+    make_seq< tensor_shape_t< TensorT >::size() >{} ); }
+
+/**
+ * returns a sub-tensor of the original by removing the dimensions containing  
+ * Index
+ */
+template< typename Seq, typename TensorT >
+constexpr auto subtensor( TensorT const& ten )
+{
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return detail::subtensor_helper< Seq >( ten, make_seq< sub_shape_type::size() >{} );
+}
+
+// template< typename TensorT >
+// constexpr auto subtensor( tensor_shape_t< TensorT > shp, TensorT const& ten )
+// {
+//     using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+//     return detail::subtensor_helper( shp, ten, make_seq< sub_shape_type::size() >{} );
+// }
+
+/**
+ * returns the subtensor of element I in tensor ten
+ */
+template< size_t I, typename TensorT >
+constexpr auto element_subtensor( TensorT const& ten )
+{
+    using sub_shape_type = sub_tensor_shape_t< tensor_shape_t< TensorT >>;
+    return detail::element_subtensor_helper< I >( ten, 
+        make_seq< sub_shape_type::size() >{} );
+}
+
+// forward decl
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto det( TensorT const& ten );
+
+namespace detail {
+template< typename TensorT, size_t... Is >
+requires( isgreater( sizeof...( Is ), 1 ))
+constexpr auto det_helper( TensorT const& ten, seq< Is... > )
+{ 
+    // we know this is a 2D tensor with equal sizes, sizeof...( Is )
+    using shape = tensor_shape_t< TensorT >;
+    return ((
+        ( Is % 2 == 0 ? 1 : -1 ) * // odd or even permutation
+        get< shape{ 0, Is } >( ten ) * // 
+        det( subtensor< seq< 0, Is >>( ten ))) + ... );
+}
+
+template< typename TensorT >
+constexpr auto det_helper( TensorT const& ten, seq< 0 > )
+{ return get< 0 >( ten ); }
+
+template< typename TensorT, size_t... Is >
+constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
+{ 
+    using shape_type = tensor_shape_t< TensorT >;
+    return make_tensor< shape_type >((
+        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * // i think this works for element ids too...
+        det( element_subtensor< Is >( ten )))... );
+}
+
+} // namespace detail
+
+/**
+ * determinant of a square tensor
+ * 
+ * @tparam TensorT the type of the tensor
+ * @param ten the tensor itself
+ */
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto det( TensorT const& ten )
+{ return detail::det_helper( ten, 
+    make_seq< shape_element_v< 0, tensor_shape_t< TensorT >> >{} ); }
+
+
+/**
+ * cofactor matrix of a square matrix
+ * 
+ * @tparam TensorT is the type of the tensor
+ * @param ten is the tensor itself
+ * @returns a tensor of the same shape containing the cofactors of ten
+ */
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto cofactor( TensorT const& ten )
+{ 
+    using shape_type = tensor_shape_t< TensorT >;
+    return detail::cofactor_helper( ten, make_seq< shape_type::size() >{} );
+}
+
+/**
+ * inverse of a square matrix
+ */
+template< typename TensorT >
+requires( tensor_shape_t< TensorT >::dimensions() == 2 and
+    shape_element_v< 0, tensor_shape_t< TensorT >> ==
+        shape_element_v< 1, tensor_shape_t< TensorT >> )
+constexpr auto inverse( TensorT const& ten )
+{ return divide_scale( det( ten ), transpose< 0, 1 >( cofactor( ten ))); }
+
 
 } // namespace tensor
 
