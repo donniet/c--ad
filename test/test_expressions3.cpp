@@ -24,11 +24,6 @@ int main( int ac, char* av[] )
 
     auto [ x, l, v, a ] = vars.all();
 
-    vars.express( []( auto x, auto l, auto v, auto a )
-    {
-        
-    });
-
     auto d_x = differential( x );
     auto d_l = differential( l );
     auto d_v = differential( v );
@@ -59,7 +54,7 @@ int main( int ac, char* av[] )
 
     l = 12_in;
 
-    auto h = ( 1_sqft + l * l ) / 254_mm;
+    auto h = ( 1_sqft - l * l ) / 254_mm;
     println( "h({}) == {}", l, h );
     println( "h({}) == {:ft}", 12_in, eval( h ));
 
@@ -91,6 +86,13 @@ int main( int ac, char* av[] )
     println( "det(1,-1,1,1) == {}", eval( det( m1 ) ));
     assert( eval( det( m1 ) ) == 2_scalar );
     assert( eval( d_a( det( m1 )) ) == 4_scalar );
+
+    auto grad = gradient( a );
+
+    auto solver = gradient_descent( l );
+    solver( h );
+    println( "solved: h({}) == {}", eval( l ), eval( h ));
+
 
     // auto sol = solve< default_gradient_descent_solver >( h );
     // println( "solved: {}", eval( l, sol ));

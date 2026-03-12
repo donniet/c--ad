@@ -692,6 +692,8 @@ constexpr auto operator and( T const& left, U const& right )
 template< size_t I, typename T >
 struct Differential
 {
+    using variable_type = Variable< I, T >;
+
     // derivative of a static value is 0
     template< typename U >
     auto operator()( StaticValue< U > const& expr )
@@ -752,15 +754,17 @@ differential( Variable< I, T > const& )
 { return {}; }
 
 template< typename... Diffs >
-struct Gradient
+struct Gradient: 
+    Tensor< Shape< sizeof...( Diffs )>, Diffs... >
 {
     template< typename T >
     auto operator()( T const& expr )
     { return make_tensor< Shape< sizeof...( Diffs ) >>( Diffs{}( expr )... ); }
 };
 
-template< typename... Diffs >
-Gradient< Diffs... > gradient( Diffs const&... )
+template< variable... Vars >
+Gradient< Differential< Vars::index, typename Vars::value_type >... > 
+gradient( Vars const&... )
 { return {}; }
 
 
@@ -797,6 +801,8 @@ struct MaximumIterations
 
     MaximumIterations(): iterations{ 0 } { }
 };
+
+
 
 // template< typename CriterifaT = MaximumIterations< 100 >>
 // struct GradientDescentSolver
@@ -852,11 +858,59 @@ struct MaximumIterations
 
 // using default_gradient_descent_solver = GradientDescentSolver<>;
 
-// template< typename SolverT, typename ExprT, typename... Args >
-// variable_values solve( ExprT const& expr, Args... args )
-// {
-//     return SolverT{ args... }( expr );
-// }
+
+template< variable... Vars >
+struct GradientDescent
+{
+    static constexpr size_t variables_size = sizeof...( Vars );
+
+    template< size_t I >
+    auto& get_variable()
+    { return get< I >( _vars ); }
+
+    template< size_t... Is >
+    void initialize_variables( seq< Is... > ) { }
+
+    template< typename ErrorT, typename GradT, size_t... Is >
+    void descend( ErrorT err, GradT grad, seq< Is... > )
+    {
+        (( get_variable< Is >() = eval( get_variable< Is >() ) + 
+            1e-2 * err * tensor_get< Is >( grad )), ... );
+    }
+
+    template< size_t... Is >
+    auto get_gradient( seq< Is... > )
+    { return gradient( get_variable< Is >()... ); }
+
+    template< typename ExprT >
+    void operator ()( ExprT const& expr )
+    {
+        using result_type = result_t< ExprT >;
+        auto grad = get_gradient( make_seq< variables_size >{} );
+
+        // initialize variables...
+        initialize_variables( make_seq< variables_size >{} );
+
+        // calculate the gradient
+        auto g = grad( expr );
+
+        for( size_t step = 0; step < 1000; ++step )
+        {
+            auto err_n = eval( expr );
+            auto g_n = eval( g );
+
+            descend( err_n, g_n, make_seq< variables_size >{} );
+        }
+    };
+
+    GradientDescent( Vars... vars ): _vars{ vars... } { }
+
+    tuple< Vars... > _vars;
+};
+
+template< variable... Vars >
+GradientDescent< Vars... > gradient_descent( Vars... vars )
+{ return { vars... }; }
 
 } // namespace expressions
 
