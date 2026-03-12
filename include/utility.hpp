@@ -49,6 +49,26 @@ constexpr string& trim( string& s )
 /**
  * math utilities
  */
+namespace std {
+template< int Exp, typename T >
+constexpr T pow( T arg );
+
+template< int Exp, typename T >
+requires( Exp == 0 )
+constexpr T pow( T arg )
+{ return 1.; }
+
+template< int Exp, typename T >
+requires( Exp > 0 )
+constexpr T pow( T arg )
+{ return ( Exp % 2 ? arg : 1. ) * pow< Exp/2 >( arg * arg ); }
+
+template< int Exp, typename T >
+requires( Exp < 0 )
+constexpr T pow( T arg )
+{ return 1. / pow< -Exp >( arg ); }
+} // namespace std;
+
 constexpr size_t perm( size_t n )
 {
     size_t p = 1;

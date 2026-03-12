@@ -12,6 +12,7 @@
 #include <string>
 #include <typeinfo>
 #include <set>
+#include <optional>
 
 #ifndef NO_EXPRESSION_PRINTING
 #include <format>
@@ -25,6 +26,7 @@ using std::size_t;
 using std::tuple, std::make_tuple, std::tuple_element_t, std::get;
 using std::map, std::set;
 using std::any, std::any_cast;
+using std::optional;
 
 
 using namespace tensor;
@@ -76,6 +78,7 @@ struct Variable: ExpressionTag
     }
     Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
+    constexpr Variable() = default;
 
     T* _ptr;
     string _name;
@@ -363,6 +366,7 @@ struct Negation: ExpressionTag
     { return -expressions::eval( arg() ); }
 
     constexpr Negation( T arg ): _arg{ arg } { } 
+    constexpr Negation() = default;
 
     T _arg;
 };
@@ -383,6 +387,7 @@ struct Sum: ExpressionTag
 
     constexpr Sum( T left, U right ): 
         _left{ left }, _right{ right } { } 
+    constexpr Sum() = default;
     
     T _left;
     U _right;
@@ -404,6 +409,7 @@ struct Difference: ExpressionTag
 
     constexpr Difference( T left, U right ): 
         _left{ left }, _right{ right } { } 
+    constexpr Difference() = default;
 
     T _left;
     U _right;
@@ -425,6 +431,7 @@ struct Product: ExpressionTag
 
     constexpr Product( T left, U right ): 
         _left{ left }, _right{ right } { } 
+    constexpr Product() = default;
 
     T _left;
     U _right;
@@ -447,6 +454,7 @@ struct Quotient: ExpressionTag
     constexpr Quotient( T numerator, U denominator ):
         _numerator{ numerator }, 
         _denominator{ denominator } { } 
+    constexpr Quotient() = default;
 
     T _numerator;
     U _denominator;
@@ -466,6 +474,7 @@ struct SquareRoot: ExpressionTag
     { return std::sqrt( expressions::eval( arg() )); }
 
     constexpr SquareRoot( T arg ): _arg{ arg } { } 
+    constexpr SquareRoot() = default;
 
     T _arg;
 };
@@ -484,6 +493,7 @@ struct Power: ExpressionTag
     { return std::pow< Exp >( expressions::eval( arg() )); }
 
     constexpr Power( T arg ): _arg{ arg } {} 
+    constexpr Power() = default;
 
     T _arg;
 };
@@ -515,6 +525,7 @@ struct Equals : ExpressionTag
 
     constexpr Equals( T left, U right ): 
         _left{ left }, _right{ right } { } 
+    constexpr Equals() = default;
     
     T _left;
     U _right;
@@ -536,6 +547,7 @@ struct Conjunction: ExpressionTag
 
     constexpr Conjunction( T left, U right ): 
         _left{ left }, _right{ right } { } 
+    constexpr Conjunction() = default;
     
     T _left;
     U _right;
@@ -736,14 +748,14 @@ struct Differential
 
     template< typename U >
     auto operator()( SquareRoot< U > const& expr )
-    { return Constant< decltype( U{} / U{} ), 
-        static_cast< decltype( U{} / U{} ) >( 0.5 ) >{} / 
+    { return Constant< decltype( result_t< U >{} / result_t< U >{} ), 
+        static_cast< decltype( result_t< U >{} / result_t< U >{} ) >( 0.5 ) >{} / 
             expr * (*this)( expr.arg() ); }
 
     template< int Exp, typename U >
     auto operator()( Power< Exp, U > const& expr )
-    { return Constant< decltype( U{} / U{} ), 
-        static_cast< decltype( U{} / U{} ) >( Exp ) >{} * 
+    { return Constant< decltype( result_t< U >{} / result_t< U >{} ), 
+        static_cast< decltype( result_t< U >{} / result_t< U >{} ) >( Exp ) >{} * 
             Power< Exp-1, U >{ expr.arg() } * (*this)( expr.arg() ); }
     
 };
@@ -767,6 +779,20 @@ Gradient< Differential< Vars::index, typename Vars::value_type >... >
 gradient( Vars const&... )
 { return {}; }
 
+template< typename... Diffs >
+struct Jacobian
+{
+    template< size_t I >
+    auto get_diff() { get< I >( diffs ); }
+
+    template< typename T >
+    auto operator ()( T const& expr )
+    { 
+    }
+
+    tuple< Diffs... > diffs;
+};
+
 
 } // namespace expressions
 
@@ -784,89 +810,59 @@ namespace expressions {
  * Solvers
  */
 
-/// @brief criteria to limit the solver iterations
-/// @tparam Limit is the maximum iterations before this criteria will be true
-///
-template< size_t Limit >
-struct MaximumIterations
-{
-    static constexpr size_t limit = Limit;
-    size_t iterations;    
-
-    template< typename SolverT, typename ResultT >
-    constexpr bool operator ()( SolverT&, ResultT const& )
-    { return ++iterations >= limit; }
-
-    constexpr void reset() { iterations = 0; }
-
-    MaximumIterations(): iterations{ 0 } { }
+struct MaximumIterations: optional< size_t >
+{ 
+    constexpr MaximumIterations( value_type const& value ): 
+        optional< size_t >{ value } { }
+    constexpr MaximumIterations() = default;
 };
 
+struct LearningRate: optional< long double >
+{
+    constexpr LearningRate( value_type const& value ): 
+        optional< long double >{ value } { }
+    constexpr LearningRate() = default;
+};
 
+struct MinimumError: optional< long double >
+{
+    constexpr MinimumError( value_type const& value ): 
+        optional< long double >{ value } { }
+    constexpr MinimumError() = default;
+};
 
-// template< typename CriterifaT = MaximumIterations< 100 >>
-// struct GradientDescentSolver
-// {
-//     constexpr long double rate() const { return _rate; }
+constexpr MaximumIterations maximum_iterations = { 0 };
+constexpr LearningRate learning_rate = { 0.l };
+constexpr MinimumError minimum_error = { 0.l };
 
-//     template< typename ResultT, typename TupleT, typename GradT, size_t... Is >
-//     constexpr TupleT descend( TupleT vals, ResultT err, 
-//         GradT g, seq< Is... > ) const
-//     { return make_tuple(( get< Is >( vals ) + rate() * err * tensor_get< Is >( g ))... ); }
+template< typename... Parameters >
+struct Solver: tuple< Parameters... >
+{
+    template< typename T >
+    auto& operator []( T )
+    { return get< std::remove_const_t< T >>( *this ); }
 
-//     template< typename ExprT >
-//     // requires( std::is_floating_point_v< result_t< ExprT >> and 
-//     //     dependent_variables_t< ExprT >::all_are_floating_point )
-//     constexpr variable_values operator()( ExprT const& expr )
-//     {  
-//         using result_type = result_t< ExprT >;
-//         using dependents = dependent_variables_t< ExprT >;
-
-//         variable_values vars = dependents::values();
-
-//         // reset our criteria
-//         _is_complete.reset();
-//         // calucate the gradient of our error                               .
-//         // tricky to ensure that these are in the same order as the tuples...
-//         auto g = grad( expr );
-
-//         for( ;; )
-//         {
-//             // calculate the error by evaluating the expression
-//             auto err = eval( expr, vars );
-
-//             // are we done?
-//             if( _is_complete( *this, err ))
-//                 return vars;
-
-//             // adjust our variables by the -rate * err * grad_i
-//             auto vals = descend( dependents::pack( vars ), err, eval( g, vars ), 
-//                 make_seq< dependents::size() >{} );
-
-//             dependents::unpack( vals, vars );
-//         }
-//     }
-
-//     template< typename... CriteriaArgs >
-//     GradientDescentSolver( long double rate = 1e-2, CriteriaArgs&&... args ):
-//         _rate{ rate }, _is_complete{ args... }
-//     { }
-
-//     long double _rate;
-//     CriteriaT _is_complete;
-// };
-
-// using default_gradient_descent_solver = GradientDescentSolver<>;
-
+    template< typename T >
+    auto param( T, T::value_type def )
+    { 
+        if( auto p = get< std::remove_const_t< T >>( *this ); p )
+            return *p;
+        return def;
+    }
+};
 
 template< variable... Vars >
-struct GradientDescent
+struct GradientDescent: 
+    Solver< MaximumIterations, LearningRate, MinimumError >
 {
     static constexpr size_t variables_size = sizeof...( Vars );
+    static constexpr size_t default_max_iterations = 100;
+    static constexpr long double default_learning_rate = 1e-3;
+    static constexpr long double default_minimum_error = 0;
 
     template< size_t I >
     auto& get_variable()
-    { return get< I >( _vars ); }
+    { return std::get< I >( _vars ); }
 
     template< size_t... Is >
     void initialize_variables( seq< Is... > ) { }
@@ -874,8 +870,10 @@ struct GradientDescent
     template< typename ErrorT, typename GradT, size_t... Is >
     void descend( ErrorT err, GradT grad, seq< Is... > )
     {
-        (( get_variable< Is >() = eval( get_variable< Is >() ) + 
-            1e-2 * err * tensor_get< Is >( grad )), ... );
+        auto rate = param( learning_rate, default_learning_rate );
+
+        (( get_variable< Is >() = eval( get_variable< Is >() ) - 
+            rate * err * tensor_get< Is >( grad )), ... );
     }
 
     template< size_t... Is >
@@ -888,15 +886,21 @@ struct GradientDescent
         using result_type = result_t< ExprT >;
         auto grad = get_gradient( make_seq< variables_size >{} );
 
+        auto iterations = param( maximum_iterations, default_max_iterations );
+        auto thresh = param( minimum_error, default_minimum_error );
+
         // initialize variables...
         initialize_variables( make_seq< variables_size >{} );
 
         // calculate the gradient
         auto g = grad( expr );
 
-        for( size_t step = 0; step < 1000; ++step )
+        for( size_t step = 0; step < iterations; ++step )
         {
             auto err_n = eval( expr );
+            if( static_cast< long double >( err_n ) < thresh )
+                break;
+
             auto g_n = eval( g );
 
             descend( err_n, g_n, make_seq< variables_size >{} );

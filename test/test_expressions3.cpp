@@ -18,13 +18,15 @@ int main( int ac, char* av[] )
 
     auto vars = declare_variables(
         var< long double >( "x" ), 
+        var< long double >( "y" ),
         var< Length      >( "l" ),
         var< Velocity    >( "v" ),
         var< Scalar      >( "a" ));
 
-    auto [ x, l, v, a ] = vars.all();
+    auto [ x, y, l, v, a ] = vars.all();
 
     auto d_x = differential( x );
+    auto d_y = differential( y );
     auto d_l = differential( l );
     auto d_v = differential( v );
     auto d_a = differential( a );
@@ -89,21 +91,16 @@ int main( int ac, char* av[] )
 
     auto grad = gradient( a );
 
-    auto solver = gradient_descent( l );
-    solver( h );
-    println( "solved: h({}) == {}", eval( l ), eval( h ));
+    auto para = ( pow< 2 >( x - 2 ) + pow< 2 >( y - 3 ) + 3 );
+
+    auto solver = gradient_descent( x, y );
+    solver[ maximum_iterations ] = 1000;
+    solver[ learning_rate ] = 1e-3;
+
+    solver( para );
+    println( "solved: para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
 
 
-    // auto sol = solve< default_gradient_descent_solver >( h );
-    // println( "solved: {}", eval( l, sol ));
-
-    
-
-    // auto a = array_of( zero );
-    // auto b = array_of( zero , 1 );
-
-    // println( "{}", eval( element_of< 1 >(b) ));
-    // // println( "{}")
 
 
     return EXIT_SUCCESS;
