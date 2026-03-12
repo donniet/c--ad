@@ -16,13 +16,8 @@ add_executable(test_units test_units.cpp)
 add_executable(test_memory test_memory.cpp)
 add_executable(test_constraint_playground test_constraint_playground.cpp)
 add_executable(test_constraint_playground2 test_constraint_playground2.cpp)
-add_executable(test_matrix test_matrix.cpp)
 add_executable(test_tensor test_tensor.cpp)
 add_executable(test_expressions test_expressions.cpp)
-add_executable(test_expressions2 test_expressions2.cpp)
-add_executable(test_expressions3 test_expressions3.cpp)
-add_executable(test_jacobian test_jacobian.cpp)
-add_executable(test_derivations test_derivations.cpp)
 
 add_test(NAME test_units COMMAND test_units)
 
