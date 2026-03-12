@@ -16,13 +16,24 @@ int main( int ac, char* av[] )
     auto zero = constant_zero;
     auto one = constant_one;
 
+    auto vars = Variables< 
+        long double, 
+        Length,
+        Velocity,
+        Scalar >{};
+
+    auto [ x, l, v, a ] = names_of( vars, "x", "l", "v", "a" );
+
+    auto d_x = differential( x );
+    auto d_l = differential( l );
+    auto d_v = differential( v );
+    auto d_a = differential( a );
+
     println( "{}", zero );
 
     auto f = ( 5 + zero + one );
 
     println( "{}", eval( f ));
-
-    Variable< 0, long double > x{ "x_{}" };
     println( "{}", x );
     println( "{}", x * one );
     println( "{}", x + one );
@@ -31,72 +42,53 @@ int main( int ac, char* av[] )
     println( "{}", ( x == one ) );
     println( "{}", ( x == one and x == zero ) );
     
-
-    variable_values values;
-    values[ 0 ] = 8.l;
+    x = 8.l;
 
     auto g = ( 5 + 3*x - f );
-    println( "depends on g: {}", depends( g ).size() );
-    println( "{}", eval( g, values ));
+    println( "{}", eval( g ));
     println( std::runtime_format( "g == {}" ), g );
 
-    auto dg = d< 0 >( g );
+    auto dg = d_x( g );
     println( "{}", dg );
-    println( "depends on dg: {}", depends( dg ).size() );
     println( "g() == {}", eval( dg ));
 
-
-    Variable< 1, Length > l{ "l_{}" };
-    values[ 1 ] = 12_in;
+    l = 12_in;
 
     auto h = ( 1_sqft + l * l ) / 254_mm;
     println( "h({}) == {}", l, h );
-    println( "h({}) == {:ft}", 12_in, eval( h, values ));
+    println( "h({}) == {:ft}", 12_in, eval( h ));
 
-    auto dh = d< 1 >( h );
+    auto dh = d_l( h );
     println( "{}", dh );
-    println( "dh({}) == {}", 12_in, eval( dh, values ));
-
-    Variable< 2, Velocity > v2( "v_{}" );
+    println( "dh({}) == {}", 12_in, eval( dh ));
 
     auto t1 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, 2_mm / 1_s );
-    auto t2 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, v2 );
+    auto t2 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, v );
     auto s1 = make_tensor< Shape< 3 >>( 3_mm / 1_s, 5_mm / 1_s, 2_mm / 1_s );
-    auto s2 = make_tensor< Shape< 3 >>( 3_mm / 1_s, 5_mm / 1_s, v2 );
-
-    static_assert( dependent_variables_t< 
-        tuple< Velocity, Velocity, Variable< 2, Velocity >>>::size() == 1 );
-    static_assert( dependent_variables_t< Tensor< Shape< 3 >, 
-        Velocity, Velocity, Variable< 2, Velocity >>>::size() == 1 );
-
-    static_assert( dependent_variables_t< decltype( s1 )>::size() == 0 );
-    static_assert( dependent_variables_t< decltype( s2 )>::size() == 1 );
-    static_assert( depends( t1 ).size() == 0 );
-    static_assert( depends( t2 ).size() == 1 );
-    static_assert( depends( s1 ).size() == 0 );
-    static_assert( depends( s2 ).size() == 1 );
+    auto s2 = make_tensor< Shape< 3 >>( 3_mm / 1_s, 5_mm / 1_s, v );
 
     auto eq = ( t1 == t2 );
-    values[2] = 2_mm / 1_s;
-    assert( eval( eq, values ));
-    values[2] = 2_ft / 1_s;
-    assert( not eval( eq, values ));
 
-    auto a3 = Variable< 3, Scalar >{ "a_{}" };
+    v = 2_mm / 1_s;
+
+    assert( eval( eq ));
+
+    v = 2_ft / 1_s;
+
+    assert( not eval( eq ));
 
     auto m1 = make_tensor< Shape< 2, 2 >>( 
-        a3, -a3,
-        a3, a3 );
+        a, -a,
+        a, a );
 
-    // det(m1) == 2 * a3 * a3
-    // det'(m1) == 4 * a3
-    values[3] = 1_scalar;
-    println( "det(1,-1,1,1) == {}", eval( det( m1 ), values ));
-    assert( eval( det( m1 ), values ) == 2_scalar );
-    assert( eval( d< 3 >( det( m1 )), values ) == 4_scalar );
+    a = 1_scalar;
 
-    auto sol = solve< default_gradient_descent_solver >( h );
-    println( "solved: {}", eval( l, sol ));
+    println( "det(1,-1,1,1) == {}", eval( det( m1 ) ));
+    assert( eval( det( m1 ) ) == 2_scalar );
+    assert( eval( d_a( det( m1 )) ) == 4_scalar );
+
+    // auto sol = solve< default_gradient_descent_solver >( h );
+    // println( "solved: {}", eval( l, sol ));
 
     
 
