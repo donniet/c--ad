@@ -26,6 +26,7 @@ using std::tuple, std::make_tuple, std::tuple_element_t, std::get;
 using std::map, std::set;
 using std::any, std::any_cast;
 
+
 using namespace tensor;
 
 
@@ -69,15 +70,46 @@ struct Variable: ExpressionTag
         *_ptr = static_cast< T >( other ); 
         return *this;
     }
-
-    Variable( Variable const& other, string const& name = "var" + std::to_string( I ) ):
-        _ptr{ other._ptr }, _name{ name } {}
-    Variable( T* ptr, string name = "var" + std::to_string( I )): 
+    Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
 
+    
     T* _ptr;
     string _name;
 };
+
+
+template< size_t... Is >
+array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
+{ return { ( string( "var ") + std::to_string( Is ))... }; }
+
+template< typename T >
+struct VariableDeclaration
+{ 
+    using value_type = T;
+
+    string const& name() const
+    { return _name; }
+
+    string _name = ""; 
+};
+
+template< typename T >
+VariableDeclaration< T > var( string name = "" )
+{ return { name }; }
+
+template< typename T >
+struct IsVariableDeclaration: std::integral_constant< bool, false > {};
+
+template< typename T >
+struct IsVariableDeclaration< VariableDeclaration< T >>: 
+    std::integral_constant< bool, true > {};
+
+template< typename T >
+constexpr bool is_variable_declaration_v = IsVariableDeclaration< T >::value;
+
+template< typename T >
+concept variable_declaration = is_variable_declaration_v< T >;
 
 template< typename TupleT, typename Seq >
 struct VariablesTupleHelper;
@@ -93,38 +125,57 @@ struct VariablesTuple
 template< typename... Ts >
 using variables_tuple_t = VariablesTuple< Ts... >::type;
 
-template< typename TupleT, size_t... Is >
-auto tuple_of_pointers_helper( TupleT& tup, seq< Is... > )
-{ return make_tuple( &get< Is >( tup )... ); }
+template< typename TupleT, typename NamesT, size_t... Is >
+tuple< Variable< Is, tuple_element_t< Is, TupleT >>... >  
+variables_tuple_helper( TupleT& vals, NamesT const& names, seq< Is... > )
+{ return {{ &get< Is >( vals ), 
+    get< Is >( names ) == "" ? "var" + to_string( Is ) : get< Is >( names ) }... }; }
 
 template< typename... Ts >
-tuple< Ts*... > tuple_of_pointers( tuple< Ts... >& tup )
-{ return tuple_of_pointers_helper( tup, make_seq< sizeof...( Ts )>{} ); }
+variables_tuple_t< Ts... > variables_tuple( tuple< Ts... >& tup, 
+    array< string, sizeof...( Ts )> const& names )
+{ return variables_tuple_helper( tup, names, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename... Ts >
+array< string, sizeof...( Ts ) > default_variable_names( string base = "var" )
+{
+    array< string, sizeof...( Ts )> ret;
+    for( size_t i = 0; i < sizeof...( Ts ); ++i )
+        ret[ i ] = "var" + to_string( i );
+    return ret;
+}
 
 /// @brief container and factory for Variables. 
 ///
 template< typename... Ts >
-struct Variables: variables_tuple_t< Ts... >
+struct VariableList: variables_tuple_t< Ts... >
 {
     using values_tuple_type = tuple< Ts... >;
     using variables_tuple_type = variables_tuple_t< Ts... >;
+    static constexpr size_t size = sizeof...( Ts );
+
+    variables_tuple_t< Ts... > all()
+    { return *this; }
   
-    Variables(): variables_tuple_type{ tuple_of_pointers( _values ) } { }
+    template< typename... Names >
+    requires( sizeof...( Names ) == sizeof...( Ts ) )
+    VariableList( Names const&... names ): 
+        variables_tuple_type{ variables_tuple( _values, 
+            array< string, size >{ names... }) } 
+    { }
+
+    VariableList():
+        variables_tuple_type{ variables_tuple( _values, 
+            default_variable_names< Ts... >() ) }
+    { }
 
     values_tuple_type _values;
 };
 
-template< typename VariablesT, typename NamesTupleT, size_t... Is >
-typename VariablesT::variables_tuple_type 
-names_of_helper( VariablesT& vars, NamesTupleT const& names, seq< Is... > )
-{ return { { get< Is >( vars ), get< Is >( names ) }... }; }
-
-
-template< typename VariablesT, typename... Names >
-requires( tuple_size_v< typename VariablesT::variables_tuple_type > == sizeof...( Names ))
-typename VariablesT::variables_tuple_type 
-names_of( VariablesT& vars, Names const&... names )
-{ return names_of_helper( vars, make_tuple( names... ), make_seq< sizeof...( Names )>{} ); }
+template< variable_declaration... Decls >
+VariableList< typename Decls::value_type... >
+declare_variables( Decls... decls )
+{ return { decls.name()... }; }
 
 
 namespace detail {

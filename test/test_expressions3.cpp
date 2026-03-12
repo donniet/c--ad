@@ -16,13 +16,13 @@ int main( int ac, char* av[] )
     auto zero = constant_zero;
     auto one = constant_one;
 
-    auto vars = Variables< 
-        long double, 
-        Length,
-        Velocity,
-        Scalar >{};
+    auto vars = declare_variables(
+        var< long double >( "x" ), 
+        var< Length      >( "l" ),
+        var< Velocity    >( "v" ),
+        var< Scalar      >( "a" ));
 
-    auto [ x, l, v, a ] = names_of( vars, "x", "l", "v", "a" );
+    auto [ x, l, v, a ] = vars.all();
 
     auto d_x = differential( x );
     auto d_l = differential( l );
