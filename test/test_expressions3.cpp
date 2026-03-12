@@ -24,6 +24,11 @@ int main( int ac, char* av[] )
 
     auto [ x, l, v, a ] = vars.all();
 
+    vars.express( []( auto x, auto l, auto v, auto a )
+    {
+        
+    });
+
     auto d_x = differential( x );
     auto d_l = differential( l );
     auto d_v = differential( v );

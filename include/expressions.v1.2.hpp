@@ -49,6 +49,10 @@ static constexpr bool is_expression_v = is_expression< T >::value;
 template< typename T >
 concept expression = is_expression_v< T >;
 
+/// @brief a placeholder in an expression whose value can change
+/// @tparam I is the index in the declared variables to this variable
+/// @tparam T is the type of this variable
+///
 template< size_t I, typename T >
 struct Variable: ExpressionTag
 { 
@@ -73,16 +77,17 @@ struct Variable: ExpressionTag
     Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
 
-    
     T* _ptr;
     string _name;
 };
-
 
 template< size_t... Is >
 array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
 { return { ( string( "var ") + std::to_string( Is ))... }; }
 
+/// @brief the declaration of a variable in a delcare_variables function
+/// @tparam T the type of the variable
+///
 template< typename T >
 struct VariableDeclaration
 { 
@@ -94,6 +99,10 @@ struct VariableDeclaration
     string _name = ""; 
 };
 
+/// @brief primary way to declare a variable inside a declare_variables expression
+/// @tparam T the type of this variable
+/// @param name the name of this variable
+/// @return a declaration of a variable
 template< typename T >
 VariableDeclaration< T > var( string name = "" )
 { return { name }; }
@@ -156,6 +165,10 @@ struct VariableList: variables_tuple_t< Ts... >
 
     variables_tuple_t< Ts... > all()
     { return *this; }
+
+    template< typename Body >
+    auto express( Body&& method )
+    { return call_method_with_variables( method, make_seq< size >{} ); }
   
     template< typename... Names >
     requires( sizeof...( Names ) == sizeof...( Ts ) )
@@ -169,9 +182,18 @@ struct VariableList: variables_tuple_t< Ts... >
             default_variable_names< Ts... >() ) }
     { }
 
+private:
+    template< typename Body, size_t... Is >
+    auto call_method_with_variables( Body& method, seq< Is... > )
+    { return method( get< Is >( *this )... ); }
+
     values_tuple_type _values;
 };
 
+/// @brief method to declare a set of variables to be used in expressions
+/// @tparam ...Decls 
+/// @param ...decls 
+/// @return 
 template< variable_declaration... Decls >
 VariableList< typename Decls::value_type... >
 declare_variables( Decls... decls )
