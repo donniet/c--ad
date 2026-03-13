@@ -109,8 +109,10 @@ int main( int ac, char* av[] )
 
     auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
     auto solver2 = gradient_descent( w, z );
+    solver2[ maximum_iterations ] = 1000;
+    solver2[ learning_rate ] = 1e-2;
     solver2( para2 );
-    println( "solver: para2({}, {}) == {}", eval( w ), eval( z ), eval( para2 ));
+    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
 
 
