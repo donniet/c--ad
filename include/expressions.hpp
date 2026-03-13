@@ -28,13 +28,15 @@ using std::map, std::set;
 using std::any, std::any_cast;
 using std::optional;
 
-
 using namespace tensor;
-
 
 /// @brief base class of any expression
 ///
-struct ExpressionTag {};
+struct ExpressionTag 
+{
+    // using result_type = ...
+    // result_type eval() const ...
+};
 
 /// @brief trait to identify a type as an expression type
 /// @tparam T is the type to be checked
@@ -202,8 +204,8 @@ VariableList< typename Decls::value_type... >
 declare_variables( Decls... decls )
 { return { decls.name()... }; }
 
-
 namespace detail {
+
 /// @brief evaluates a type T
 /// @tparam T the type to be evaluated
 ///
@@ -253,7 +255,6 @@ struct Evaluator< T >
     { return value; }; 
 };
 
-
 } // namespace detail
 
 /// @brief trait for the result_type of an expression
@@ -272,8 +273,10 @@ template< typename T >
 constexpr result_t< T > eval( T const& expr )
 { return detail::Evaluator< T >::evaluate( expr ); }
 
-
-template< typename VarT >
+/// @brief trait to identify variables
+/// @tparam T the type to be tested
+///
+template< typename T >
 struct IsVariable
 { static constexpr bool value = false; };
 
@@ -325,9 +328,10 @@ requires( not is_expression_v< T > )
 StaticValue< T > static_expr( T const& value )
 { return StaticValue< T >{ value }; }
 
-/**
- * Constant expression
- */
+/// @brief a compile-time constant
+/// @tparam T the type of the constant
+/// @tparam Value of the constant
+///
 template< typename T, T Value >
 struct Constant : ExpressionTag
 {
@@ -346,15 +350,15 @@ struct Constant : ExpressionTag
 template< typename T, T Value >
 using constant = Constant< T, Value >;
 
-static constexpr constant< long double, 0.l > constant_zero = constant< long double, 0.l >{{}};
-static constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l >{{}};
-static constexpr constant< bool, true > constant_true = constant< bool, true >{{}};
-static constexpr constant< bool, false > constant_false = constant< bool, false >{{}};
+// NOTE: not sure about the constants
+constexpr constant< long double, 0.l > constant_zero = constant< long double, 0.l >{};
+constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l >{};
+constexpr constant< bool, true > constant_true = constant< bool, true >{};
+constexpr constant< bool, false > constant_false = constant< bool, false >{};
 
-
-/**
- * a negation
- */
+/// @brief negation expression
+/// @tparam T the negated type
+///
 template< typename T >
 struct Negation: ExpressionTag
 { 
@@ -371,9 +375,9 @@ struct Negation: ExpressionTag
     T _arg;
 };
 
-/**
- * a sum
- */
+/// @brief sum expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
 struct Sum: ExpressionTag
 { 
@@ -393,9 +397,9 @@ struct Sum: ExpressionTag
     U _right;
 };
 
-/**
- * a difference
- */
+/// @brief difference expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
 struct Difference: ExpressionTag
 { 
@@ -415,9 +419,9 @@ struct Difference: ExpressionTag
     U _right;
 };
 
-/**
- * a product
- */
+/// @brief product expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
 struct Product: ExpressionTag
 { 
@@ -437,9 +441,9 @@ struct Product: ExpressionTag
     U _right;
 };
 
-/**
- * a quotient
- */
+/// @brief quotient expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
 struct Quotient: ExpressionTag
 { 
@@ -460,9 +464,8 @@ struct Quotient: ExpressionTag
     U _denominator;
 };
 
-/**
- * square root
- */
+/// @brief square root expression
+/// @tparam T 
 template< typename T >
 struct SquareRoot: ExpressionTag
 {
@@ -479,9 +482,9 @@ struct SquareRoot: ExpressionTag
     T _arg;
 };
 
-/**
- * power
- */
+/// @brief integral power expression
+/// @tparam T 
+/// @tparam Exp 
 template< int Exp, typename T >
 struct Power: ExpressionTag
 {
@@ -498,9 +501,144 @@ struct Power: ExpressionTag
     T _arg;
 };
 
-/**
- * Element expression
- */
+/// @brief sine expression
+/// @tparam T 
+template< typename T >
+struct Sine: ExpressionTag
+{
+    using result_type = decltype( std::sin( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::sin( expressions::eval( arg() )); }
+
+    constexpr Sine( T arg ): _arg{ arg } { } 
+    constexpr Sine() = default;
+
+    T _arg;
+};
+
+/// @brief cosine expression
+/// @tparam T 
+template< typename T >
+struct Cosine: ExpressionTag
+{
+    using result_type = decltype( std::cos( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::cos( expressions::eval( arg() )); }
+
+    constexpr Cosine( T arg ): _arg{ arg } { } 
+    constexpr Cosine() = default;
+
+    T _arg;
+};
+
+/// @brief tangent expression
+/// @tparam T 
+template< typename T >
+struct Tangent: ExpressionTag
+{
+    using result_type = decltype( std::tan( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::tan( expressions::eval( arg() )); }
+
+    constexpr Tangent( T arg ): _arg{ arg } { } 
+    constexpr Tangent() = default;
+
+    T _arg;
+};
+
+/// @brief arcsine expression
+/// @tparam T 
+template< typename T >
+struct Arcsine: ExpressionTag
+{
+    using result_type = decltype( std::asin( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::asin( expressions::eval( arg() )); }
+
+    constexpr Arcsine( T arg ): _arg{ arg } { } 
+    constexpr Arcsine() = default;
+
+    T _arg;
+};
+
+/// @brief arccosine expression
+/// @tparam T 
+template< typename T >
+struct Arccosine: ExpressionTag
+{
+    using result_type = decltype( std::acos( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::acos( expressions::eval( arg() )); }
+
+    constexpr Arccosine( T arg ): _arg{ arg } { } 
+    constexpr Arccosine() = default;
+
+    T _arg;
+};
+
+/// @brief sine expression
+/// @tparam T 
+template< typename T >
+struct Arctangent: ExpressionTag
+{
+    using result_type = decltype( std::atan( result_t< T >{} ));
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return std::atan( expressions::eval( arg() )); }
+
+    constexpr Arctangent( T arg ): _arg{ arg } { } 
+    constexpr Arctangent() = default;
+
+    T _arg;
+};
+
+/// @brief arctangent of a slope expression
+/// @tparam T rise type
+/// @tparam U run type
+template< typename T, typename U >
+struct Arctangent2: ExpressionTag
+{ 
+    // we use the result_type of a fraction here to factor units properly
+    // this assumes that std::atan2 doesn't change the unit. hopefully it stays
+    // true that trig functions operate only on scalars and this won't be an 
+    // issue.  
+    using result_type = decltype( result_t< T >{} / result_t< U >{} );
+
+    constexpr T numerator_arg() const { return _numerator; }
+    constexpr U denominator_arg() const { return _denominator; }
+
+    // TODO: write an eval for std::atan2 that handles units properly
+    constexpr result_type eval( ) const;
+
+    constexpr Arctangent2( T numerator, U denominator ):
+        _numerator{ numerator }, 
+        _denominator{ denominator } { } 
+    constexpr Arctangent2() = default;
+
+    T _numerator;
+    U _denominator;
+};
+
+/// @brief extract the element from a tuple-like array
+/// @tparam ArrayT 
+/// @tparam I 
 template< size_t I, typename ArrayT >
 struct Element: tuple_element_t< I, ArrayT >
 {  
@@ -509,11 +647,11 @@ struct Element: tuple_element_t< I, ArrayT >
     { }
 };
 
-/**
- * equality testing
- */
+/// @brief equality expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
-struct Equals : ExpressionTag
+struct Equals: ExpressionTag
 { 
     using result_type = bool;
 
@@ -531,9 +669,9 @@ struct Equals : ExpressionTag
     U _right;
 };
 
-/**
- * logical operations
- */
+/// @brief logical and expression
+/// @tparam T 
+/// @tparam U 
 template< typename T, typename U >
 struct Conjunction: ExpressionTag
 {
@@ -557,20 +695,6 @@ struct Conjunction: ExpressionTag
 /**
  * OPERATORS
  */
-
-// arrays
-// template< typename... Ts >
-// constexpr auto array_of( Ts const&... ts )
-// { return Expression< Array< stripped_t< Ts >... >>{{ strip( ts )... }}; }
-
-// // accessor
-// template< size_t I, typename T >
-// constexpr auto element_of( Expression< T > const& arg )
-// { return Expression< ElementOf< I, T >>{ arg.get() }; }
-
-// template< size_t I, typename T >
-// constexpr auto element_of( T const& arg )
-// { return Expression< ElementOf< I, T >>{ arg }; }
 
 // negation
 template< expression T >
@@ -636,6 +760,35 @@ template< typename T, expression U >
 requires( not expression< T > )
 constexpr auto operator /( T const& left, U const& right )
 { return Quotient< StaticValue< T >, U >{ static_expr( left ), right }; }
+
+// trig functions
+template< expression T >
+constexpr auto sin( T const& arg )
+{ return Sine< T >{ arg }; }
+
+template< expression T >
+constexpr auto cos( T const& arg )
+{ return Cosine< T >{ arg }; }
+
+template< expression T >
+constexpr auto tan( T const& arg )
+{ return Tangent< T >{ arg }; }
+
+template< expression T >
+constexpr auto asin( T const& arg )
+{ return Arcsine< T >{ arg }; }
+
+template< expression T >
+constexpr auto acos( T const& arg )
+{ return Arccosine< T >{ arg }; }
+
+template< expression T >
+constexpr auto atan( T const& arg )
+{ return Arctangent< T >{ arg }; }
+
+template< expression T, expression U >
+constexpr auto atan2( T const& num, U const& den )
+{ return Arctangent2< T, U >{ num, den }; }
 
 // sqrt
 template< expression T >
@@ -756,7 +909,39 @@ struct Differential
     auto operator()( Power< Exp, U > const& expr )
     { return Constant< decltype( result_t< U >{} / result_t< U >{} ), 
         static_cast< decltype( result_t< U >{} / result_t< U >{} ) >( Exp ) >{} * 
-            Power< Exp-1, U >{ expr.arg() } * (*this)( expr.arg() ); }
+            pow< Exp-1 >( expr.arg() ) * (*this)( expr.arg() ); }
+
+    template< typename U >
+    auto operator()( Sine< U > const& expr )
+    { return cos( expr.arg() ) * (*this)( expr.arg() ); }
+
+    template< typename U >
+    auto operator()( Cosine< U > const& expr )
+    { return -sin( expr.arg() ) * (*this)( expr.arg() ); }
+
+    template< typename U >
+    auto operator()( Tangent< U > const& expr )
+    { return (*this)( expr.arg() ) / pow< 2 >( cos( expr.arg() )); }
+
+    template< typename U >
+    auto operator()( Arcsine< U > const& expr )
+    { return (*this)( expr.arg() ) / sqrt( constant_one - pow< 2 >( expr.arg() )); }
+
+    template< typename U >
+    auto operator()( Arccosine< U > const& expr )
+    { return -(*this)( expr.arg() ) / sqrt( constant_one - pow< 2 >( expr.arg() )); }
+
+    template< typename U >
+    auto operator()( Arctangent< U > const& expr )
+    { return (*this)( expr.arg() ) / ( constant_one - pow< 2 >( expr.arg() )); }
+
+    // TODO: double check the math here
+    // TODO: also could we have multiple options for these derivative expressions
+    //       if one evaluates to infinity and we can tell at compile time?
+    template< typename U, typename V >
+    auto operator()( Arctangent2< U, V > const& expr )
+    { return (*this)( expr.numerator_arg() / expr.denominator_arg() ) / 
+        ( constant_one - pow< 2 >( expr.numerator_arg() / expr.denominator_arg() )); }
     
 };
 
