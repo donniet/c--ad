@@ -1052,14 +1052,25 @@ struct GradientDescent:
     template< size_t... Is >
     void initialize_variables( seq< Is... > ) { }
 
+    template< size_t I, typename ErrorT, typename GradElementT >
+    auto descend_element( ErrorT err, GradElementT grad_n )
+    {
+        auto x = get_variable< I >();
+        auto r = param( learning_rate, default_learning_rate );
+        // TODO: check this math
+        // gradient unit will be err unit / var unit
+        // err * grad ~= err * err / var unit
+        // rate unit must therefore be var unit * var unit / err unit / err unit
+        // the learning rate must be in the same units
+        using rate_type = result_t< decltype( x * x / err / err ) >;
+        auto rate = static_cast< rate_type >( r );
+
+        return eval( x ) - rate * err * grad_n;
+    }
+
     template< typename ErrorT, typename GradT, size_t... Is >
     void descend( ErrorT err, GradT grad, seq< Is... > )
-    {
-        auto rate = param( learning_rate, default_learning_rate );
-
-        (( get_variable< Is >() = eval( get_variable< Is >() ) - 
-            rate * err * tensor_get< Is >( grad )), ... );
-    }
+    { (( get_variable< Is >() = descend_element< Is >( err, tensor_get< Is >( grad ))), ... ); }
 
     template< size_t... Is >
     auto get_gradient( seq< Is... > )

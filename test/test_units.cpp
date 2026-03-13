@@ -58,6 +58,7 @@ int main( int ac, char* av[] )
     
     assert( degrees( 480 ) == 480_deg );
     assert( degrees( 480 ) == degrees( 120 ) );
+    assert( 480_deg == 120_deg );
     assert( degrees( -480 ) == degrees( 240 ) );
 
     // testing lengths
@@ -99,8 +100,9 @@ int main( int ac, char* av[] )
     assert( zero_km != 5_km );
     assert( 5_km / 5_km == one );
 
-    auto hectar = 0.01_scalar * 1_km * 1_km;
-    assert( hectar == 0.1_km * 0.1_km and hectar == pow<2>( 0.1_km ));
+    auto hectar = 1_percent * 1_km * 1_km;
+    assert( hectar == 0.1_km * 0.1_km and 
+            hectar == pow<2>( 0.1_km ));
     // assert( hectar == pow<2>( 0.1_km ) );
     assert( 1 == pow<0>( 0.1_km ));
 

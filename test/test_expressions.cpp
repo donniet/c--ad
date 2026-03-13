@@ -1,5 +1,6 @@
-#include "expressions.hpp"
+
 #include "units.hpp"
+#include "expressions.hpp"
 
 #include <print>
 #include <format>
@@ -21,15 +22,19 @@ int main( int ac, char* av[] )
         var< long double >( "y" ),
         var< Length      >( "l" ),
         var< Velocity    >( "v" ),
-        var< Scalar      >( "a" ));
+        var< Scalar      >( "a" ),
+        var< Length      >( "z" ),
+        var< Length      >( "w" ));
 
-    auto [ x, y, l, v, a ] = vars.all();
+    auto [ x, y, l, v, a, z, w ] = vars.all();
 
     auto d_x = differential( x );
     auto d_y = differential( y );
     auto d_l = differential( l );
     auto d_v = differential( v );
     auto d_a = differential( a );
+    auto d_z = differential( z );
+    auto d_w = differential( w );
 
     println( "{}", zero );
 
@@ -91,6 +96,7 @@ int main( int ac, char* av[] )
 
     auto grad = gradient( a );
 
+    // paraboloid 
     auto para = ( pow< 2 >( x - 2 ) + pow< 2 >( y - 3 ) + 3 );
 
     auto solver = gradient_descent( x, y );
@@ -100,6 +106,11 @@ int main( int ac, char* av[] )
     solver( para );
     println( "solved: para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
 
+
+    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+    auto solver2 = gradient_descent( w, z );
+    solver2( para2 );
+    println( "solver: para2({}, {}) == {}", eval( w ), eval( z ), eval( para2 ));
 
 
 

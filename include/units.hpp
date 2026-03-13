@@ -70,17 +70,17 @@ constexpr long double celsius_per_fahrenheit = 5.l / 9.l;
 constexpr long double fahrenheit_at_zero_celsius = 32.l;
 
 // start with 7 units including scalars
-constexpr size_t total_units = 7;
+constexpr size_t total_units = 8;
 using ull_t = unsigned long long;
 
 // powers of higher units will be severely limited due to Godel numbering
 constexpr std::array< ull_t, total_units > primes = 
-/*0  1  2  3  4   5   6         7   8   9  10  11  12  13  14  15  16 */
-{ 1, 2, 3, 5, 7, 11, 13 }; //, 17, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+/*0  1  2  3  4   5   6   7         8   9  10  11  12  13  14  15  16 */
+{ 1, 2, 3, 5, 7, 11, 13, 17 }; //, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
 constexpr std::array< string, total_units > base_unit_names =
-{ "", "m", "s", "kg", "A", "K", "cd" };
+{ "", "m", "s", "kg", "A", "K", "cd", "bit" };
 constexpr std::array< string, total_units > base_unit_long_names =
-{ "", "meters", "seconds", "kilograms", "amperes", "kelvin", "candelas" };
+{ "", "meters", "seconds", "kilograms", "amperes", "kelvin", "candelas", "bits" };
 
 template< size_t I >
 struct prime_unit;
@@ -108,6 +108,7 @@ constexpr unit_id_type mass_unit_id =               { primes[3], 1 };
 constexpr unit_id_type current_unit_id =            { primes[4], 1 };
 constexpr unit_id_type temperature_unit_id =        { primes[5], 1 };
 constexpr unit_id_type luminous_intensity_unit_id = { primes[6], 1 };
+constexpr unit_id_type information_unit_id =        { primes[7], 1 };
 
 constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
 { return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
@@ -383,6 +384,8 @@ struct UnitPower
 template< int Exp, unit U >
 using unit_power_t = UnitPower< Exp, U >::type;
 
+static_assert( is_same_v< unit_power_t< 2, base_unit< unit_id_type{ 2, 1 }, long double >>, base_unit< unit_id_type{ 4, 1 }, long double >> );
+
 /**
  * represents a continuous dimensionless value
  */
@@ -529,18 +532,28 @@ constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
 { return unit_product< LeftU, RightU >{ left.get_value() * right.get_value() }; }
 
 template< typename T, unit RightU >
-requires( not unit< T > )
+requires( not unit< T > and is_arithmetic_v< T >  )
 constexpr RightU operator *( T left, RightU right )
 { return RightU{ left * right.get_value() }; }
 
 template< unit LeftU, typename T >
-requires( not unit< T > )
+requires( not unit< T > and is_arithmetic_v< T >  )
 constexpr LeftU operator *( LeftU left, T right )
 { return LeftU{ left.get_value() * right }; }
 
 template< unit LeftU, unit RightU >
 constexpr unit_quotient< LeftU, RightU > operator /( LeftU left, RightU right )
 { return unit_quotient< LeftU, RightU >{ left.get_value() / right.get_value() }; }
+
+template< unit LeftU, typename T >
+requires( not unit< T > and is_arithmetic_v< T >  )
+constexpr LeftU operator /( LeftU left, T right )
+{ return LeftU{ left.get_value() / right }; }
+
+template< typename T, unit RightU >
+requires( not unit< T > and is_arithmetic_v< T > )
+constexpr unit_inverse< RightU > operator /( T left, RightU right )
+{ return unit_inverse< RightU >{ left / right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
@@ -1784,6 +1797,10 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
     }
 }
 
+using Information = base_unit< information_unit_id, long double >;
+
+
+
 } // namespace units
 
 // formating of units
@@ -1792,13 +1809,11 @@ namespace std {
 template< units::unit U >
 requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
 constexpr units::unit_square_root_t< U > sqrt( U u )
-{ return units::unit_square_root_t< U >{ std::sqrt( u.get_value()) }; }
+{ return units::unit_square_root_t< U >{ sqrt( u.get_value()) }; }
 
 /**
  * pow function with templated exponent
  */
-
-
 template< int Exp, units::unit U >
 constexpr units::unit_power_t< Exp, U > pow( U u )
 { return units::unit_power_t< Exp, U >{ pow< Exp >( u.get_value() ) }; }
@@ -1812,6 +1827,8 @@ struct multiplies< units::base_unit< Id, T >>
         U const& right ) const
     { return left * right; }
 };
+
+// TODO: more std overloads
 
 template< units::unit_id_type uid, units::arithmetic T >
 struct formatter< units::base_unit< uid, T >, char >:

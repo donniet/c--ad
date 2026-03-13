@@ -50,23 +50,40 @@ constexpr string& trim( string& s )
  * math utilities
  */
 namespace std {
-template< int Exp, typename T >
-constexpr T pow( T arg );
+template< int Exp >
+constexpr auto pow( float arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( double arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( long double arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( short arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( int arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( long arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( long long arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( unsigned short arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( unsigned int arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( unsigned long arg )
+{ return std::pow( arg, Exp ); }
+template< int Exp >
+constexpr auto pow( unsigned long long arg )
+{ return std::pow( arg, Exp ); }
 
-template< int Exp, typename T >
-requires( Exp == 0 )
-constexpr T pow( T arg )
-{ return 1.; }
-
-template< int Exp, typename T >
-requires( Exp > 0 )
-constexpr T pow( T arg )
-{ return ( Exp % 2 ? arg : 1. ) * pow< Exp/2 >( arg * arg ); }
-
-template< int Exp, typename T >
-requires( Exp < 0 )
-constexpr T pow( T arg )
-{ return 1. / pow< -Exp >( arg ); }
 } // namespace std;
 
 constexpr size_t perm( size_t n )
