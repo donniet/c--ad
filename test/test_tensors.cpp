@@ -1,4 +1,4 @@
-#include "tensor.v1.2.hpp"
+#include "tensors.hpp"
 
 #include <print>
 #include <stdexcept>
@@ -8,7 +8,7 @@ int main( int ac, char* av[] )
 {
     // using std::cout, std::cerr, std::endl;
     using std::println;
-    using namespace tensor;
+    using namespace tensors;
     using std::is_same_v;
 
     /**

@@ -978,6 +978,10 @@ struct Jacobian
     tuple< Diffs... > diffs;
 };
 
+/// @brief type-erased expression container
+/// @tparam result_type 
+template< typename result_type >
+struct Expression;
 
 } // namespace expressions
 
@@ -1002,6 +1006,7 @@ struct MaximumIterations: optional< size_t >
     constexpr MaximumIterations() = default;
 };
 
+// TODO: this requires a unit!
 struct LearningRate: optional< long double >
 {
     constexpr LearningRate( value_type const& value ): 
@@ -1009,6 +1014,7 @@ struct LearningRate: optional< long double >
     constexpr LearningRate() = default;
 };
 
+// TODO: this requires a unit!
 struct MinimumError: optional< long double >
 {
     constexpr MinimumError( value_type const& value ): 
@@ -1050,7 +1056,8 @@ struct GradientDescent:
     { return std::get< I >( _vars ); }
 
     template< size_t... Is >
-    void initialize_variables( seq< Is... > ) { }
+    void initialize_variables( seq< Is... > ) 
+    { /* TODO: not sure what to do here yet */ }
 
     template< size_t I, typename ErrorT, typename GradElementT >
     auto descend_element( ErrorT err, GradElementT grad_n )
@@ -1062,6 +1069,7 @@ struct GradientDescent:
         // err * grad ~= err * err / var unit
         // rate unit must therefore be var unit * var unit / err unit / err unit
         // the learning rate must be in the same units
+
         using rate_type = result_t< decltype( x * x / err / err ) >;
         auto rate = static_cast< rate_type >( r );
 

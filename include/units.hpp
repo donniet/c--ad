@@ -117,10 +117,10 @@ constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
 consteval unit_id_type operator/ ( unit_id_type left, unit_id_type right )
 { return left * unit_id_type{ right.second, right.first }; }
 
-static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 } );
-static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 } );
-static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 } ) == unit_id_type{ 2, 3 } );
-static_assert( ( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 } ) == unit_id_type{ 4, 3 } );
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 });
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 });
+static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 }) == unit_id_type{ 2, 3 });
+static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 }) == unit_id_type{ 4, 3 });
 
 // factor the unit id into it's prime factors
 constexpr std::array< int, total_units > factor( unit_id_type uid )
@@ -301,16 +301,6 @@ struct base_unit< scalar_unit_id, T >
 template< typename T >
 struct unit_traits;
 
-// template< typename T >
-// requires is_arithmetic_v< T >
-// struct unit_traits< T >
-// {
-//     static constexpr unit_id_type unit_id = scalar_unit_id;
-//     using scalar_type = T;
-//     static constexpr bool is_discrete = std::is_integral_v< scalar_type >;
-//     static constexpr bool is_continuous = not is_discrete;
-// };
-
 template< unit_id_type Id, arithmetic T >
 struct unit_traits< base_unit< Id, T >>
 {
@@ -321,8 +311,7 @@ struct unit_traits< base_unit< Id, T >>
 };
 
 template< typename T >
-struct is_unit
-; //{ static constexpr bool value = is_arithmetic_v< T >; };
+struct is_unit; 
 
 template< unit_id_type Id, arithmetic T >
 struct is_unit< base_unit< Id, T >>
@@ -386,19 +375,13 @@ using unit_power_t = UnitPower< Exp, U >::type;
 
 static_assert( is_same_v< unit_power_t< 2, base_unit< unit_id_type{ 2, 1 }, long double >>, base_unit< unit_id_type{ 4, 1 }, long double >> );
 
-/**
- * represents a continuous dimensionless value
- */
+/// @brief a continuous, unitless value
 using Scalar = base_unit< scalar_unit_id, long double >;
 
-/**
- * represents an unsigned discrete dimensionless value
- */
+/// @brief a discrete, unitless value
 using Cardinal = base_unit< scalar_unit_id, unsigned long long >;
 
-/**
- * represents a true or a false value
- */
+/// @brief a true or false value
 using Boolean = base_unit< scalar_unit_id, bool >;
 
 template< unit U, typename Seq >
@@ -479,9 +462,7 @@ constexpr auto mod< float >( float k, float n )
 { return mod< long double >( k, n ); }
 
 constexpr Scalar radians( long double x )
-{ 
-    return mod( x, two_pi ); 
-}
+{ return mod( x, two_pi ); }
 
 template< typename T >
 constexpr Scalar degrees( T x )
@@ -510,9 +491,7 @@ constexpr Scalar degrees< unsigned long long >( unsigned long long x )
 constexpr Scalar operator ""_deg( unsigned long long x )
 { return degrees< long long >( x ); }
 constexpr Scalar operator ""_rad( long double x )
-{ 
-    return radians( x ); 
-}
+{ return radians( x ); }
 constexpr Scalar operator ""_rad( unsigned long long x )
 { return radians( x ); }
 

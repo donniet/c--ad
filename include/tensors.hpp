@@ -7,7 +7,7 @@
 
 #include "utility.hpp"
 
-namespace tensor {
+namespace tensors {
 
 /**
  * Shape of Array
@@ -952,6 +952,6 @@ constexpr auto inverse( TensorT const& ten )
 { return divide_scale( det( ten ), transpose< 0, 1 >( cofactor( ten ))); }
 
 
-} // namespace tensor
+} // namespace tensors
 
 #endif
