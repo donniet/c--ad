@@ -12,9 +12,7 @@
 
 namespace tensors {
 
-/// @brief shape of a tensor
-/// @tparam ... 
-///
+// forward decl
 template< size_t... >
 struct Shape;
 
@@ -148,12 +146,12 @@ constexpr size_t shape_get( S shp )
 { return ShapeGet< I, S >::value( shp ); }
 
 static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2, 2 >{ 1, 1 } );
-static_assert( Shape< 2, 2 >{ 1, 1 }.element() == Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
+static_assert( Shape< 2, 2 >{ 1, 1 }.element() == 
+    Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
 static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2 >{ 1 }.cat( Shape< 2 >{ 1 }));
 static_assert( Shape< 2, 2 >{ 1, 1 }.element() == 3 );
 static_assert( Shape< 2, 2 >::from_element( 3 ) == Shape< 2, 2 >{ 1, 1 });
 // static_assert( Shape< 2, 2 >{ 1, 1 }.of( make_tuple( 0, 1, 2, 3 )) == 3 );
-// static_assert( )
 
 static_assert( 0 == Shape< 1, 1 >{ 0, 0 }.element() );
 static_assert( 0 == Shape< 2, 2 >{ 0, 0 }.element() );
@@ -187,12 +185,14 @@ static_assert( 7 == Shape< 2, 2, 2 >{ 1, 1, 1 }.element() );
 static_assert( 0 == Shape< 2, 2, 1 >{ 0, 0, 0 }.element() );
 static_assert( 3 == Shape< 2, 2, 1 >{ 1, 1, 0 }.element() );
 
-static_assert( Shape< 2, 2 >{ 1, 1 }.cat( Shape< 1 >{ 0 }) == Shape< 2, 2, 1 >{ 1, 1, 0 });
-
-static_assert( std::array< int, 4 >{ 0b00, 0b01, 0b10, 0b11 }[ Shape< 2, 2 >{ 1, 0 }] == 0b10 );
-
-static_assert( std::array< int, 16 >{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
-    [ Shape< 4, 4 >{ 1, 0 }] == 4 );
+static_assert( Shape< 2, 2 >{ 1, 1 }.cat( 
+    Shape< 1 >{ 0 }) == Shape< 2, 2, 1 >{ 1, 1, 0 });
+static_assert( 
+    std::array< int, 4 >{ 0b00, 0b01, 0b10, 0b11 }[ Shape< 2, 2 >{ 1, 0 }] == 
+        0b10 );
+static_assert( 
+    std::array< int, 16 >{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
+        [ Shape< 4, 4 >{ 1, 0 }] == 4 );
 
 // forward decl
 template< typename T, typename U >
@@ -630,13 +630,25 @@ template< size_t I, size_t J, shape S >
 constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
 { return TransposeShape< I, J, S >::value( shp ); }
 
+// forward decl
+template< shape S, typename... Ts >
+struct Tensor;
+
+/// @brief a null tensor
+template< >
+struct Tensor< Shape<> >
+{
+    using shape_type = Shape<>;
+    static constexpr size_t size() { return 0; }
+};
+
 /// @brief a shaped array of arbitrary arithmetic types
 /// @tparam T the type of the first element of the tensor
 /// @tparam ...Ts the remaining types
 /// @tparam S the shape of the tensor
 template< shape S, typename T, typename... Ts >
 requires( S::size() == 1 + sizeof...( Ts ))
-struct Tensor : tuple< T, Ts... >
+struct Tensor< S, T, Ts... > : tuple< T, Ts... >
 {
     using shape_type = S;
     static consteval size_t size() { return 1 + sizeof...( Ts ); }
@@ -759,7 +771,7 @@ concept tensor = is_tensor_v< T >;
 /// @brief the concept of a vector is a tensor with a single dimension
 /// @tparam T the type to test
 template< typename T >
-concept vector = ( is_tensor_v< T > and tensor_shape< T >::dimensions() == 1 );
+concept vector = ( is_tensor_v< T > and tensor_shape_t< T >::dimensions() <= 1 );
 
 /// @brief trait to identify if the given tensor has shape S
 /// @tparam T the type of the tensor to test
@@ -1338,6 +1350,7 @@ constexpr auto inverse( TensorT const& ten )
 /**
  * Tensor Type Operations
  */
+
 
 
 template< shape A, shape B >
