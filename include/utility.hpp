@@ -17,7 +17,7 @@ using std::size_t;
 using std::integral_constant;
 using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t, 
     std::make_tuple;
-using std::is_same_v;
+using std::is_same_v, std::is_convertible_v;
 using std::string, std::to_string;
 using std::isspace;
 using std::isless, std::isgreater;

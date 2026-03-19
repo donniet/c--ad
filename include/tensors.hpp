@@ -647,7 +647,8 @@ struct Tensor< Shape<> >
 /// @tparam ...Ts the remaining types
 /// @tparam S the shape of the tensor
 template< shape S, typename T, typename... Ts >
-requires( S::size() == 1 + sizeof...( Ts ))
+requires( S::size() == 1 + sizeof...( Ts ) and 
+    (( not is_same_v< T, Ts > ) or ... or false ))
 struct Tensor< S, T, Ts... > : tuple< T, Ts... >
 {
     using shape_type = S;
@@ -687,6 +688,48 @@ struct Tensor< S, T, Ts... > : tuple< T, Ts... >
     template< typename... Us >
     constexpr Tensor( Tensor< shape_type, Us... > const& other ):
         tuple< T, Ts... >{ tuple_init_helper( other, make_seq< size() >{} ) }
+    { }
+};
+
+/// @brief a shaped array of uniform arithmetic types
+/// @tparam T is the type of the elements of the tensor
+/// @tparam ...Ts the remaining types which must be the same as T
+/// @tparam S the shape of the tensor
+template< shape S, typename T, typename... Ts >
+requires( S::size() == 1 + sizeof...( Ts ) and ( is_same_v< T, Ts > and ... ))
+struct Tensor< S, T, Ts... > : std::array< T, 1 + sizeof...( Ts )>
+{
+    using shape_type = S;
+    using value_type = T;
+    static consteval size_t size() { return 1 + sizeof...( Ts ); }
+    // static consteval shape_type shape() { return {}; }
+    // TODO: get rid of the static_cast
+    template< typename... Indices >
+    static constexpr shape_type index( Indices... Is )
+    { return { static_cast< size_t >( Is )... }; }
+
+    value_type& operator []( size_t i )
+    { return std::array< value_type, size() >::operator []( i ); }
+
+    value_type const& operator []( size_t i ) const
+    { return std::array< value_type, size() >::operator []( i ); }
+
+    template< typename OtherT, size_t... Is >
+    constexpr std::array< value_type, size() >
+    array_init_helper( OtherT const& other, seq< Is... > )
+    { return { get< Is >( other )... }; }
+
+    constexpr Tensor( ) = default;
+    constexpr Tensor( value_type t, Ts... ts ): 
+        std::array< value_type, size() >{ t, ts... } 
+    { }
+
+    template< typename U, typename... Us >
+    requires( is_convertible_v< value_type, U > and 
+        ( is_convertible_v< value_type, Us > and ... ))
+    constexpr Tensor( Tensor< shape_type, U, Us... > const& other ):
+        std::array< value_type, size() >{ 
+            array_init_helper( other, make_seq< size() >{} )}
     { }
 };
 
@@ -1067,9 +1110,9 @@ constexpr auto sum_helper( TensorT const& ten, seq< Ks... > )
 
 } // namespace detail
 
-/**
- * Tensor Operators
- */
+/////////////////////////
+/// TENSOR OPERATIONS ///
+/////////////////////////
 
 /// @brief equality of two tensors
 /// @tparam S is the shape of the operands (must be the same)
@@ -1157,6 +1200,27 @@ constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
 template< typename T, shape S, typename... Ts >
 constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten ) 
 { return detail::divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+
+// dot product details
+namespace detail {
+
+template< typename LeftT, typename RightT, size_t... Is >
+constexpr auto dot_helper( LeftT const& left, RightT const& right, 
+    seq< Is... > )
+{ return (( tensor_get< Is >( left ) * tensor_get< Is >( right )) + ... ); }
+
+} // namespace detail 
+
+/// @brief dot product of two tensors with the same shape
+/// @tparam S the shape of the tensors
+/// @tparam ...Ts the types of the left tensor elements
+/// @tparam ...Us the tyeps of the right tensor elements
+/// @param left the left argument
+/// @param right the right argument
+/// @returns the sum of element-wise products of the tensor arguments
+template< shape S, typename... Ts, typename... Us >
+constexpr auto dot( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
+{ return detail::dot_helper( left, right, make_seq< sizeof...( Us ) >{} ); }
 
 // tensor norm details
 namespace detail {
