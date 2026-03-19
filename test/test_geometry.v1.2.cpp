@@ -573,14 +573,18 @@ constexpr auto boundary( Collection< Objects... > collection )
 { return collection_boundary_helper( collection, make_seq< sizeof...( Objects )>{} ); }
 
 
-template< unit U = units::Length >
-using Segment = Extrusion< Point, U >;
+template< unit U >
+Extrusion< Point, U > segment( U length )
+{ return { {}, length }; }
 
-template< unit U = units::Length >
-using Rectangle = Extrusion< Segment< U >, U >;
+template< unit U >
+Extrusion< Extrusion< Point, U >, U > rectangle( U length, U width )
+{ return {{ {}, length }, width }; }
 
-template< unit U = units::Length >
-using Box = Extrusion< Rectangle< U >, U >;
+template< unit U >
+Extrusion< Extrusion< Extrusion< Point, U >, U >, U >
+box( U length, U width, U height )
+{ return {{{ {}, length }, width }, height }; }
 
 template< typename ObjT >
 struct Padded 
@@ -609,7 +613,7 @@ struct STLFile
 {
     struct Vertex
     {
-        double& operator []( size_t n )
+        Length& operator []( size_t n )
         {
             switch( n ) {
             case 0: return x;
@@ -620,9 +624,17 @@ struct STLFile
             }
         }
 
-        double x;
-        double y;
-        double z;
+        Vertex( Length x, Length y, Length z ):
+            x{ x }, y{ y }, z{ z }
+        { }
+
+        Vertex( Vertex const& v ):
+            x{ v.x }, y{ v.y }, z{ v.z }
+        { }
+
+        Length x;
+        Length y;
+        Length z;
     };
 
     struct Facet
@@ -637,7 +649,7 @@ struct STLFile
         reverse_iterator rend() { return vertices.rend(); }
 
 
-        Vertex& add_vertex( double x = 0, double y = 0, double z = 0 )
+        Vertex& add_vertex( Length x = 0_m, Length y = 0_m, Length z = 0_m )
         { return vertices.emplace_back( x, y, z ); }
         Vertex& add_vertex( Vertex const& v )
         { return vertices.emplace_back( v ); }
@@ -645,7 +657,7 @@ struct STLFile
         Vertex& operator []( size_t n )
         { return vertices[ n ]; }
 
-        Facet( double nx = 0, double ny = 0, double nz = 0 ):
+        Facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
             normal{ nx, ny, nz } { }
 
         Vertex normal;
@@ -663,7 +675,7 @@ struct STLFile
         reverse_iterator rbegin() { return facets.rbegin(); }
         reverse_iterator rend() { return facets.rend(); }
 
-        Facet& add_facet( double nx = 0, double ny = 0, double nz = 0 )
+        Facet& add_facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m )
         { return facets.emplace_back( nx, ny, nz ); }
 
         Solid( string const& name ): name{ name } { }
@@ -694,15 +706,32 @@ struct STL
             os << "solid " << solid.name << "\n";
             for( auto const& facet : solid.facets )
             {
-                os << "facet normal " << 
-                    facet.normal.x << " " << facet.normal.y << " " << facet.normal.z << "\n"
-                   << "\touter loop\n";
-                for( auto const& vertex : facet.vertices )
-                    os << "\t\tvertex " << 
-                        vertex.x << " " << vertex.y << " " << vertex.z << "\n";
+                // malformed facet
+                if( facet.vertices.size() < 3 )
+                    continue;
 
-                os << "\tendloop\n"
-                   << "endfacet\n";
+                for( size_t i = 1; i < facet.vertices.size() - 1; ++i )
+                {
+                    os << "facet normal " << 
+                        meters( facet.normal.x ) << " " << 
+                        meters( facet.normal.y ) << " " << 
+                        meters( facet.normal.z ) << "\n"
+                       << "\touter loop\n"
+                       << "\t\tvertex " << 
+                        meters( facet.vertices[ 0 ].x ) << " " << 
+                        meters( facet.vertices[ 0 ].y ) << " " << 
+                        meters( facet.vertices[ 0 ].z ) << "\n";
+
+                    
+                    for( size_t j = 0; j < 2; ++j )
+                        os << "\t\tvertex " << 
+                            meters( facet.vertices[ i + j ].x ) << " " << 
+                            meters( facet.vertices[ i + j ].y ) << " " << 
+                            meters( facet.vertices[ i + j ].z ) << "\n";
+
+                    os << "\tendloop\n"
+                    << "endfacet\n";
+                }
             }
             os << "endsolid " << solid.name << "\n";
         }
@@ -738,10 +767,11 @@ constexpr auto output( STLFile::Facet& out, Extrusion< ObjT, U > const& object )
 
     size_t verts = out.size();
     output( out, object.object() );
-    verts = out.size() - verts;
     // add the y dimension
-    for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-        out.add_vertex( *j )[ dim ] = meters( object.amount() );
+    size_t i = out.size();
+    verts = out.size() - verts;
+    for( size_t j = 0; j < verts; ++j )
+        out.add_vertex( out[--i] )[ dim ] = object.amount();
 }
 
 template< typename ObjT, unit U >
@@ -753,7 +783,7 @@ constexpr auto output( STLFile::Facet& out, Projected< ObjT, U > const& object )
     output( out, object.object());
     verts = out.size() - verts;
     for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-        (*j)[ dim ] = meters( object.amount() );
+        (*j)[ dim ] = object.amount();
 }
 
 // extrusion of a segment
@@ -768,7 +798,7 @@ constexpr auto output( STLFile::Solid& out, Projected< ObjT, U > const& object )
 { return output( out.add_facet(), object ); }
 
 template< typename CollectionT, size_t... Is >
-constexpr auto output_collection_helper( STLFile& out, CollectionT const& col, 
+constexpr auto output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
     seq< Is... > )
 { return ( output( out, get< Is >( col )), ... ); }
 
@@ -779,7 +809,7 @@ constexpr auto output_collection_helper( STLFile& out, CollectionT const& col,
 
 template< typename... Objects >
 constexpr auto output( STLFile& out, Collection< Objects... > const& col )
-{ return output_collection_helper( out, col, 
+{ return output_collection_helper( out.add_solid( "collection"), col, 
     make_seq< sizeof...( Objects )>{} ); } 
 
 template< typename ObjT, unit U >
@@ -790,22 +820,22 @@ template< typename ObjT, unit U >
 constexpr auto output( STLFile& out, Projected< ObjT, U > const& obj )
 { return output( out.add_solid( "projection" ), obj ); } 
 
-template< typename ObjT >
-constexpr auto output( STLFile::Solid& out, Oriented< ObjT > const& object )
-{ 
-    auto v = object.orientation();
-    auto facet = out.add_facet( get_tensor< 0 >( v ), get_tensor< 1 >( v ), 
-        get_tensor< 2 >( v ));
-    output( facet, object.object() );
-}
+// template< typename ObjT >
+// constexpr auto output( STLFile::Solid& out, Oriented< ObjT > const& object )
+// { 
+//     auto v = object.orientation();
+//     auto facet = out.add_facet( get_tensor< 0 >( v ), get_tensor< 1 >( v ), 
+//         get_tensor< 2 >( v ));
+//     output( facet, object.object() );
+// }
 
-template< >
-constexpr auto output( STLFile::Facet& out, 
-    Projected< Projected< Projected< Point, Length >, Length >, Length > const& p )
-{ 
-    out.add_vertex( meters( p.object().object().amount() ), 
-        meters( p.object().amount() ), meters( p.amount() ) );
-}
+// template< >
+// constexpr auto output( STLFile::Facet& out, 
+//     Projected< Projected< Projected< Point, Length >, Length >, Length > const& p )
+// { 
+//     out.add_vertex( p.object().object().amount(), 
+//         p.object().amount(), p.amount() );
+// }
 
 // extrusion of a point 
 // template< unit U >
@@ -820,8 +850,6 @@ constexpr auto output( STLFile::Facet& out,
 
 auto mortise_and_tenon()
 {
-    Box stile;
-    Box rail;
 
     // auto tenon_layout = Grid< 3, 3 >{};
     // auto mortise_layout = Grid< 3, 3 >{};
@@ -834,7 +862,7 @@ auto mortise_and_tenon()
     // auto mortise = pad( component< grid_cell< 1, 1 >>( 
     //     mortise_layout ( stile_inside )));
 
-    return stile;
+    return box( 1_m, 1_m, 1_m );
 }
 
 int main( int ac, char* av[] )
