@@ -55,18 +55,174 @@ struct SpaceOf
 template< typename T >
 using space_of = SpaceOf< T >::type;
 
+template< typename T >
+using vector_for = space_of< T >::vector_type;
+
+template< typename U, size_t Sections, size_t... Is >
+constexpr U divisions_helper( U amount, std::array< U, Sections >& ret, 
+    seq< Is... > )
+{ return amount - (( ret[ Is ] = amount / Sections ) + ... ); }
+
+template< typename U, size_t Sections >
+struct IgnoreRemainder
+{ constexpr void operator()( U remainder, std::array< U, Sections >& divisions )
+    { return; } };
+
+/// @brief divide a measurement into an array such that the sum of the array 
+/// equals the amount
+template< size_t Sections, typename U, 
+    typename RemainderStrategy = IgnoreRemainder< U, Sections >>
+requires( isgreater( Sections, 0 ))
+constexpr std::array< U, Sections > divisions( U amount, 
+    RemainderStrategy handle_remainder = RemainderStrategy{} )
+{ 
+    std::array< U, Sections > ret;
+    U rem = divisions_helper( amount, ret, make_seq< Sections >{} );
+    handle_remainder( rem, ret );
+    return ret;
+}
+
+
+
+template< typename... >
+struct Collection;
+
+template< >
+struct Collection< >
+{ 
+    using space_type = null_space;
+    using boundary_type = Collection< >; // no boundary
+    static constexpr size_t size() { return 0; }
+    constexpr boundary_type boundary() { return {}; }
+};
+
 // a zero dimensional geometric element
 struct Point
 { 
     using space_type = null_space;
+    using boundary_type = Collection< >; // no boundary
+    constexpr boundary_type boundary() { return {}; }
     // all zero dimensional
 };
 
-template< typename ObjectT, typename AttributeT >
-struct Attributed
+/// @brief a tuple-like collection of objects
+/// @tparam First type of first object
+/// @tparam ...Rest type of remaining objects
+template< typename First, typename... Rest >
+requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
+struct Collection< First, Rest... >: Collection< Rest... >
+{ 
+    using space_type = space_of< First >;
+    using boundary_type = Collection< typename First::boundary_type, 
+        typename Rest::boundary_type... >;
+    static constexpr size_t size() { return 1 + sizeof...( Rest ); }
+
+    constexpr First const& first() const { return _first; }
+    constexpr First& first() { return _first; }
+
+    constexpr Collection< Rest... > const& rest() const 
+    { return *this; }
+    constexpr Collection< Rest... >& rest() 
+    { return *this; }
+
+    constexpr boundary_type boundary() const
+    { return { First::boundary(), Rest::boundary()... }; }
+
+    constexpr Collection( First first, Rest... rest ): 
+        Collection< Rest... >{ rest... }, _first{ first }
+    { }
+    // constexpr Collection() = default;
+
+    First _first;
+};
+
+template< typename CollectionT, typename ObjT >
+struct CollectionAdd;
+
+template< typename... Objects, typename ObjT >
+struct CollectionAdd< Collection< Objects... >, ObjT >
+{ using type = Collection< Objects..., ObjT >; };
+
+template< typename CollectionT, typename ObjT >
+using collection_add_t = CollectionAdd< CollectionT, ObjT >::type;
+
+} // namespace geometry
+namespace std {
+template< typename... Ts >
+struct tuple_size< geometry::Collection< Ts... >>: 
+    integral_constant< size_t, sizeof...( Ts )> { };
+
+template< size_t I, typename... Ts >
+struct tuple_element< I, geometry::Collection< Ts... >>
+{ using type = tuple_element< I, tuple< Ts... >>::type; };
+
+template< typename U, typename T, typename... Ts >
+constexpr U const& get( geometry::Collection< T, Ts... > const& col )
 {
-    using object_type = ObjectT;
+    if constexpr( is_same_v< U, T > )
+        return col.first();
+    else
+        return get< U >( col.rest() );
+}
+
+template< typename U, typename T, typename... Ts >
+constexpr U& get( geometry::Collection< T, Ts... >& col )
+{
+    if constexpr( is_same_v< U, T > )
+        return col.first();
+    else
+        return get< U >( col.rest() );
+}
+
+template< size_t I, typename T, typename... Ts >
+constexpr tuple_element_t< I, tuple< T, Ts... >> const&
+get( geometry::Collection< T, Ts... > const& col )
+{ 
+    if constexpr( I == 0 )
+        return col.first();
+    else
+        return get< I-1 >( col.rest() );
+}
+
+template< size_t I, typename T, typename... Ts >
+constexpr tuple_element_t< I, tuple< T, Ts... >>&
+get( geometry::Collection< T, Ts... >& col )
+{ 
+    if constexpr( I == 0 )
+        return col.first();
+    else
+        return get< I-1 >( col.rest() );
+}
+} // namespace std
+namespace geometry {
+
+using std::get;
+
+
+//////////////
+// attributes
+struct Named 
+{ 
+    constexpr string const& name() const
+    { return _name; }
+
+    string _name; 
+};
+struct Boundary 
+{ 
+    constexpr int count() const
+    { return _count; }
+    
+    int _count; 
+};
+
+template< typename ObjT, typename AttributeT >
+struct Attribution
+{
+    using object_type = ObjT;
     using space_type = space_of< object_type >;
+    using boundary_type = Attribution< 
+        typename object_type::boundary_type, AttributeT >;
     using attribute_type = AttributeT;
 
     constexpr object_type object() const
@@ -75,7 +231,10 @@ struct Attributed
     constexpr attribute_type attribute() const
     { return _attribute; }
 
-    Attributed( object_type object, attribute_type attribute ):
+    constexpr boundary_type boundary() const
+    { return { object().boundary(), attribute() }; }
+
+    Attribution( object_type object, attribute_type attribute ):
         _object{ object }, _attribute{ attribute }
     { }
 
@@ -85,12 +244,13 @@ struct Attributed
 
 /// @brief an oriented object
 /// @tparam ObjectT the type of the object
-template< typename ObjectT >
-struct Oriented
+template< typename ObjT >
+struct Orientation
 {
-    using space_type = space_of< ObjectT >;
+    using object_type = ObjT;
+    using space_type = space_of< object_type >;
+    using boundary_type = Orientation< typename object_type::boundary_type >;
     using vector_type = space_type::vector_type;
-    using object_type = ObjectT;
 
     constexpr object_type object() const
     { return _object; }
@@ -98,13 +258,20 @@ struct Oriented
     constexpr vector_type orientation() const
     { return _orientation; }
 
-    Oriented( object_type object, vector_type orientation ):
+    constexpr boundary_type boundary() const
+    { return { object().boundary(), orientation() }; }
+
+    Orientation( object_type object, vector_type orientation ):
         _object{ object }, _orientation{ orientation }
     { }
 
     object_type _object;
     vector_type _orientation;
 };
+
+////////////////////////////
+/// space helper classes ///
+////////////////////////////
 
 template< typename T, typename U >
 struct ExtrudeSpace;
@@ -143,28 +310,6 @@ struct ExtrudeSpace< Space< Tensor< Shape< D >, Ts... >>, U >
     { return vector_helper( v, u, make_seq< D >{} ); }
 };
 
-template< typename ObjectT, typename U >
-struct Projected
-{
-    using object_type = ObjectT;
-    using unit_type = U;
-    using extrude_space = ExtrudeSpace< space_of< object_type >, unit_type >;
-    using space_type = extrude_space::space_type;
-    using vector_type = extrude_space::vector_type;
-
-    constexpr object_type object() const
-    { return _object; }
-
-    constexpr unit_type amount() const
-    { return _amount; }
-
-    constexpr Projected( object_type object, unit_type amount = 
-        static_cast< unit_type >( 0 )): _object{ object }, _amount{ amount } { }
-
-    object_type _object;
-    unit_type _amount;
-};
-
 template< typename T, size_t I = ( dimensions_of_v< T > - 1 )>
 struct IntrudedSpace;
 
@@ -192,65 +337,127 @@ struct IntrudedSpace< Space< Tensor< Shape< D >, Ts... >>, I >
     { return vector_helper( v, make_seq< D - 1 >{} ); }
 };
 
-template< typename... >
-struct Collection;
 
-template< >
-struct Collection< >
-{ };
+template< typename ObjectT, typename U >
+struct Projection
+{
+    using object_type = ObjectT;
+    using unit_type = U;
+    using extrude_space = ExtrudeSpace< space_of< object_type >, unit_type >;
+    using space_type = extrude_space::space_type;
+    using boundary_type = Projection< typename ObjectT::boundary_type, U >;
+    using vector_type = extrude_space::vector_type;
 
-/// @brief a collection of objects
-/// @tparam First type of first object
-/// @tparam ...Rest type of remaining objects
-template< typename First, typename... Rest >
-requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
-struct Collection< First, Rest... >: tuple< First, Rest... >
-{ 
-    using space_type = space_of< First >;
-    static constexpr size_t size() { return 1 + sizeof...( Rest ); }
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type&       object()       { return _object; }
+    constexpr unit_type   const& amount() const { return _amount; }
+    constexpr unit_type&         amount()       { return _amount; }
 
-    Collection( First first, Rest... rest ): 
-        tuple< First, Rest... >{ first, rest... }
+    constexpr boundary_type boundary() const
+    { return { object().boundary(), amount() }; }
+
+    constexpr Projection( object_type object, unit_type amount = 
+        static_cast< unit_type >( 0 )): _object{ object }, _amount{ amount } 
     { }
-};
 
+    object_type _object;
+    unit_type _amount;
+};
 
 // template< typename SpaceT, typename ObjT, unit... Us >
 // Projection< ObjT, SpaceT > project( ObjT object, Us... offsets )
 // { return { project, offsets... }; }
 
 // forward decl
-template< typename ObjT, typename U >
+template< typename ObjT, typename U, size_t Steps >
 struct Extrusion;
 
-template< typename ObjT, typename U >
+template< typename ObjT, typename U, size_t Steps >
+struct ExtrusionBase: Orientation< Projection< ObjT, U >>
+{ 
+    using object_type = ObjT;
+    using unit_type = U;
+    using step_values_type = std::array< unit_type, Steps >;
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+    using helper_type = ExtrudeSpace< space_of< ObjT >, U >;
+    using base_vector_type = space_of< ObjT >::vector_type;
+
+    ExtrusionBase( object_type const& object, step_values_type const& step_values ):
+        Orientation< Projection< object_type, U >>{{ object }, 
+            helper_type::extruded( base_vector_type{}, -sum( step_values ) )}
+    { }
+};
+
+template< typename ObjT, typename U, size_t Steps >
+struct ExtrusionCap: Orientation< Projection< ObjT, U >>
+{ 
+    using object_type = ObjT;
+    using unit_type = U;
+    using step_values_type = std::array< unit_type, Steps >;
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+    using helper_type = ExtrudeSpace< space_of< ObjT >, U >;
+    using base_vector_type = space_of< ObjT >::vector_type;
+
+    ExtrusionCap( object_type const& object, step_values_type const& step_values ):
+        Orientation< Projection< object_type, U >>{{ object, sum( step_values ) }, 
+            helper_type::extruded( base_vector_type{}, sum( step_values ))}
+    { }
+};
+
+template< typename ObjT, typename U, size_t Steps = 1 >
 struct Extrusion
 {
     using object_type = ObjT;
     using unit_type = U;
+    using step_values_type = std::array< unit_type, Steps >;
     using helper_type = ExtrudeSpace< space_of< object_type >, unit_type >;
     using space_type = helper_type::space_type;
 
-    enum component_type: size_t 
-    { base = 0, extruded };
+    using base_type = ExtrusionBase< ObjT, U, Steps >;
+    using cap_type = ExtrusionCap< ObjT, U, Steps >;
+    using shell_type = Extrusion< typename ObjT::boundary_type, unit_type, Steps >;
 
-    object_type object() const
+    using boundary_type = Collection< base_type, cap_type, shell_type >;
+
+    static constexpr size_t steps() { return Steps; }
+
+    object_type const& object() const 
+    { return _object; }
+    step_values_type const& step_values() const 
+    { return _step_values; }
+
+    base_type base() const 
+    { return { object(), step_values() }; }
+    cap_type cap() const 
+    { return { object(), step_values() }; }
+    shell_type shell() const 
+    { return { object().boundary(), step_values() }; }
+
+    step_values_type& step_values() 
+    { return _step_values; }
+    unit_type amount() const
+    { return sum( step_values() ); }
+    object_type& object() 
     { return _object; }
 
-    unit_type amount() const
-    { return _amount; }
+    constexpr boundary_type boundary() const
+    { return { base(), cap(), shell() }; }
 
-    constexpr Extrusion( object_type object, unit_type amount ): 
-        _object{ object }, _amount{ amount } { }
-    constexpr Extrusion(): _object{ }, _amount{ 0 } { }
+    constexpr Extrusion( object_type const& object, step_values_type const& step_values ): 
+        _object{ object }, _step_values{ step_values }
+    { }
+
+    constexpr Extrusion( object_type const& object, unit_type const& amount ): 
+        _object{ object }, _step_values{ divisions< steps() >( amount )}
+    { }
+
+    constexpr Extrusion(): 
+        _object{ }, _step_values{} 
+    { }
 
     object_type _object;
-    unit_type _amount;
+    step_values_type _step_values;
 };
-
-//////////////
-// attributes
-struct Named { string name; };
 
 //////////////
 // operations
@@ -263,7 +470,12 @@ struct Named { string name; };
  * project: place an object in a higher dimensional space
  * collection: group of objects
  * 
- * extrude > project > orient > attribute > collection << boundary
+ * attribute > extrude > project > orient > collection << boundary
+ * 
+ * subdivide( project(...) )   => project( subdivide(...) )
+ * subdivide( orient(...) )    => orient( subdivide(...) )
+ * subdivide( collection(...)) => collection( subdivide(...) )
+ * subdivide( extrude(...) )   => collection( project( extrude(...)) ... )
  * 
  * boundary( project(...) )    => project(       boundary(...) )
  * boundary( extrude(...) )    => collection( 
@@ -272,10 +484,10 @@ struct Named { string name; };
  * boundary( collection(...) ) => collection(    boundary(...) )
  * boundary( point )           => point
  * 
- * orient( project(...) )
+ * orient( project(...) )      
  * orient( extrude(...) )
  * orient( orient(...) )       => orient(...)
- * orient( collection(...) )   => collection(    orient(...) )
+ * orient( collection(...) )   
  * 
  * extrude( project(...) )     == ...
  * extrude( orient(...) )      => orient(        extrude(...) )
@@ -300,9 +512,80 @@ struct Named { string name; };
 /// @param object instance
 /// @param attribute value
 /// @return an attributed object
-template< typename ObjectT, typename T >
-constexpr Attributed< ObjectT, T > attribute( ObjectT object, T attribute )
+template< typename ObjT, typename AttT >
+constexpr Attribution< ObjT, AttT > attribute( ObjT const& object, 
+    AttT const& attribute )
 { return { object, attribute }; }
+
+template< typename AttT, typename ObjT >
+constexpr AttT get_attribute( ObjT const& object )
+{ return { }; }
+
+// found the attribute
+template< typename AttT, typename ObjT >
+constexpr AttT get_attribute( Attribution< ObjT, AttT > const& attributed )
+{ return attributed.attribute(); }
+
+// found a different attribute
+template< typename AttT, typename ObjT, typename OtherT >
+requires( not is_same_v< AttT, OtherT > )
+constexpr AttT get_attribute( Attribution< ObjT, OtherT > const& attributed )
+{ return get_attribute< AttT >( attributed.object() ); }
+
+template< typename AttT, typename ObjT >
+constexpr AttT get_attribute( Orientation< ObjT > const& oriented )
+{ return get_attribute< AttT >( oriented.object() ); }
+
+template< typename AttT, typename ObjT, typename U >
+constexpr AttT get_attribute( Projection< ObjT, U > const& projection )
+{ return get_attribute< AttT >( projection.object() ); }
+
+template< typename AttT, typename ObjT, typename U, size_t Steps >
+constexpr AttT get_attribute( Extrusion< ObjT, U, Steps > const& extrusion )
+{ return get_attribute< AttT >( extrusion.object() ); }
+
+/// @brief orienting an object
+/// @tparam ObjectT type of the object
+/// @param object instance
+/// @param orientation vector
+/// @return an object + orientation pair
+template< typename ObjectT >
+Orientation< ObjectT > orient( ObjectT const& object, 
+    typename space_of< ObjectT >::vector_type orientation )
+{ return { object, orientation }; }
+
+/// @brief re-orienting an object overrides the orientation
+/// @tparam ObjectT type of the object
+/// @param oriented instance
+/// @param orientation vector
+/// @return an object + orientation pair
+/// TODO: re-orient? 
+template< typename ObjT >
+Orientation< ObjT > orient( Orientation< ObjT > const& oriented, 
+    typename space_of< ObjT >::vector_type orientation )
+{ return { oriented.object(), orientation }; }
+
+template< typename ObjT >
+vector_for< ObjT > get_orientation( ObjT const& object )
+{ return { }; }
+
+template< typename ObjT >
+vector_for< ObjT > get_orientation( Orientation< ObjT > const& object )
+{ return object.orientation(); }
+
+template< typename ObjT, typename AttT >
+vector_for< ObjT > get_orientation( Attribution< ObjT, AttT > const& attributed )
+{ return get_orientation( attributed.object() ); }
+
+template< typename ObjT, typename U >
+vector_for< ObjT > get_orientation( Projection< ObjT, U > const& projected )
+{ return ExtrudeSpace< space_of< ObjT >, U >::base( get_orientation( 
+    projected.object() )); }
+
+template< typename ObjT, typename U, size_t Steps >
+vector_for< ObjT > get_orientation( Extrusion< ObjT, U, Steps > const& extruded )
+{ return ExtrudeSpace< space_of< ObjT >, U >::base( get_orientation( 
+    extruded.object() )); }
 
 /// @brief interpolate an object in a new dimension out to amount
 /// @tparam ObjT type of object to be extruded
@@ -310,8 +593,8 @@ constexpr Attributed< ObjectT, T > attribute( ObjectT object, T attribute )
 /// @param object to be extruded
 /// @param amount of extrusion
 /// @return the extruded object
-template< typename ObjT, typename U = units::Length >
-Extrusion< ObjT, U > extrude( ObjT object, U amount )
+template< size_t Steps, typename ObjT, typename U >
+Extrusion< ObjT, U, Steps > extrude( ObjT const& object, U amount )
 { return { object, amount }; }
 
 /// @brief projecting an object into an extrude space
@@ -321,194 +604,206 @@ Extrusion< ObjT, U > extrude( ObjT object, U amount )
 /// @param here position of projection
 /// @return an object + unit pair in the extrude space
 template< typename ObjectT, typename U >
-constexpr Projected< ObjectT, U > project( ObjectT object, U here )
+constexpr Projection< ObjectT, U > project( ObjectT const& object, U here )
 { return { object, here }; }
-
-/// @brief orienting an object
-/// @tparam ObjectT type of the object
-/// @param object instance
-/// @param orientation vector
-/// @return an object + orientation pair
-template< typename ObjectT >
-Oriented< ObjectT > orient( ObjectT object, 
-    typename space_of< ObjectT >::vector_type orientation )
-{ return { object, orientation }; }
 
 // forward decl
 template< typename... Objects >
-auto collection( Objects... );
+Collection< Objects... > collection( Objects const&... objects )
+{ return { objects... }; }
 
 
-//////////////////////////////
-// orientation specializations
-
-/// @brief re-orienting an object overrides the orientation
-/// @tparam ObjectT type of the object
-/// @param oriented instance
-/// @param orientation vector
-/// @return an object + orientation pair
-template< typename ObjectT >
-Oriented< ObjectT > orient( Oriented< ObjectT > oriented, 
-    typename space_of< ObjectT >::vector_type orientation )
-{ return { oriented.object(), orientation }; }
-
-/// @brief orientation of an attributed object attributes the orientation
-/// @tparam ObjectT attributed object type
-/// @tparam T attribute type
-/// @param obj attributed object
-/// @param orientation vector
-/// @return returns an attributed oriented object
-template< typename ObjectT, typename T >
-Attributed< Oriented< ObjectT >, T > orient( Attributed< ObjectT, T > obj, 
-    typename space_of< ObjectT >::vector_type orientation )
-{ return attribute( orient( obj.object(), orientation ), obj.attribute() ); }
-
-template< typename CollectionT, typename VectorT, size_t... Is >
-constexpr auto collection_orient_helper( CollectionT col, VectorT orientation, 
-    seq< Is... > )
-{ return collection( orient( get< Is >( col ), orientation )... ); }
-
-/// @brief re-orienting an object overrides the orientation
-/// @tparam ObjectT type of the object
-/// @param oriented instance
-/// @param orientation vector
-/// @return an object + orientation pair
-template< typename First, typename... Rest >
-Collection< Oriented< First >, Oriented< Rest >... > 
-orient( Collection< First, Rest... > col, 
-    typename space_of< First >::vector_type orientation )
-{ return collection_orient_helper( col, orientation, 
-    make_seq< 1 + sizeof...( Rest )>{} ); }
 
 
 /////////////////////////////
 // projection specializations
 
-/// @brief projection of an orientation is the orientation of a projection
-/// @tparam ObjectT oriented object type
-/// @tparam U projected location
-/// @param oriented object to be projected
-/// @param here projection location
-/// @return an oriented, projected object
-template< typename ObjectT, typename U >
-constexpr Oriented< Projected< ObjectT, U >> 
-project( Oriented< ObjectT > oriented, U here )
-{  
-    using extruded_space = ExtrudeSpace< space_of< ObjectT >, U >;
-    return orient( project( oriented.object(), here ),
-        extruded_space::extruded( oriented.orientation(), here ));
-}
+// /// @brief projection of an orientation is the orientation of a projection
+// /// @tparam ObjectT oriented object type
+// /// @tparam U projected location
+// /// @param oriented object to be projected
+// /// @param here projection location
+// /// @return an oriented, projected object
+// template< typename ObjectT, typename U >
+// constexpr Oriented< Projected< ObjectT, U >> 
+// project( Oriented< ObjectT > oriented, U here )
+// {  
+//     using extruded_space = ExtrudeSpace< space_of< ObjectT >, U >;
+//     return orient( project( oriented.object(), here ),
+//         extruded_space::extruded( oriented.orientation(), here ));
+// }
 
-/// @brief projection of an attributed object is an attributed projection
-/// @tparam ObjT type of the attributed object
-/// @tparam T attribute type
-/// @tparam U projection type
-/// @param obj attributed object instance
-/// @param amount projection amount
-/// @return an attributed projection
-template< typename ObjT, typename T, typename U >
-constexpr auto project( Attributed< ObjT, T > obj, U amount )
-{ return attribute( project( obj.object(), amount ), obj.attribute() ); }
+// /// @brief projection of an attributed object is an attributed projection
+// /// @tparam ObjT type of the attributed object
+// /// @tparam T attribute type
+// /// @tparam U projection type
+// /// @param obj attributed object instance
+// /// @param amount projection amount
+// /// @return an attributed projection
+// template< typename ObjT, typename T, typename U >
+// constexpr auto project( Attributed< ObjT, T > obj, U amount )
+// { return attribute( project( obj.object(), amount ), obj.attribute() ); }
 
-template< typename CollectionT, typename U, size_t... Is >
-constexpr auto collection_project_helper( CollectionT col, U here, 
-    seq< Is... > )
-{ return collection( project( get< Is >( col ), here )... ); }
+// template< typename CollectionT, typename U, size_t... Is >
+// constexpr auto collection_project_helper( CollectionT col, U here, 
+//     seq< Is... > )
+// { return collection( project( get< Is >( col ), here )... ); }
 
-/// @brief projection of a collection is the collection of the projected objects
-/// @tparam ...Objects object types to be projected
-/// @tparam U projection unit
-/// @param col collection of objects
-/// @param here amount of projection
-/// @return a collection of projected objects
-template< typename... Objects, typename U >
-constexpr auto project( Collection< Objects... > col, U here )
-{ return collection_project_helper( col, here, 
-    make_seq< sizeof...( Objects )>{} ); }
+// /// @brief projection of a collection is the collection of the projected objects
+// /// @tparam ...Objects object types to be projected
+// /// @tparam U projection unit
+// /// @param col collection of objects
+// /// @param here amount of projection
+// /// @return a collection of projected objects
+// template< typename... Objects, typename U >
+// constexpr auto project( Collection< Objects... > col, U here )
+// { return collection_project_helper( col, here, 
+//     make_seq< sizeof...( Objects )>{} ); }
 
 
 //////////////////////////
 // extrude specializations
 
-/// @brief extrusion of an oriented object is an orientation of the extrusion
-/// of the oriented object.
-/// @tparam ObjT the oriented object type
-/// @tparam U the unit of extrusion
-/// @param oriented the oriented object
-/// @param amount thee amount to be extruded
-/// @return the extruded object
-template< typename ObjT, typename U >
-Oriented< Extrusion< ObjT, U >> extrude( Oriented< ObjT > oriented, U amount )
-{
-    using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
+// /// @brief extrusion of an oriented object is an orientation of the extrusion
+// /// of the oriented object.
+// /// @tparam ObjT the oriented object type
+// /// @tparam U the unit of extrusion
+// /// @param oriented the oriented object
+// /// @param amount thee amount to be extruded
+// /// @return the extruded object
+// template< typename ObjT, typename U >
+// Oriented< Extrusion< ObjT, U >> extrude( Oriented< ObjT > oriented, U amount )
+// {
+//     using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
     
-    return { extrude( oriented.object(), amount ), 
-        extrusion_space::base( oriented.orientation() ) };
-}
+//     return { extrude( oriented.object(), amount ), 
+//         extrusion_space::base( oriented.orientation() ) };
+// }
 
-/// @brief extrusion of an attributed object is an attributed extrusion
-/// @tparam ObjT type of the attributed object
-/// @tparam T attribute type
-/// @tparam U extrusion type
-/// @param obj attributed object instance
-/// @param amount extrusion amount
-/// @return an attributed extrusion
-template< typename ObjT, typename T, typename U >
-constexpr auto extrude( Attributed< ObjT, T > obj, U amount )
-{ return attribute( extrude( obj.object(), amount ), obj.attribute() ); }
+// /// @brief extrusion of an attributed object is an attributed extrusion
+// /// @tparam ObjT type of the attributed object
+// /// @tparam T attribute type
+// /// @tparam U extrusion type
+// /// @param obj attributed object instance
+// /// @param amount extrusion amount
+// /// @return an attributed extrusion
+// template< typename ObjT, typename T, typename U >
+// constexpr auto extrude( Attributed< ObjT, T > obj, U amount )
+// { return attribute( extrude( obj.object(), amount ), obj.attribute() ); }
 
-template< typename CollectionT, typename U, size_t... Is >
-auto collection_extrude_helper( CollectionT col, U amount, seq< Is... > )
-{ return collection( extrude( get< Is >( col ), amount )... ); }
+// template< typename CollectionT, typename U, size_t... Is >
+// auto collection_extrude_helper( CollectionT col, U amount, seq< Is... > )
+// { return collection( extrude( get< Is >( col ), amount )... ); }
 
-/// @brief the extrusion of a collection is a collection of extrusions
-/// @tparam ...Objects the object types in the collection
-/// @tparam U the unit of extrusion
-/// @param collection the collection of objects
-/// @param amount the amount to be extruded
-/// @return a collection of extruded objects
-template< typename... Objects, typename U >
-auto extrude( Collection< Objects... > col, U amount )
-{ return collection_extrude_helper( col, amount, 
-    make_seq< sizeof...( Objects )>{} ); }
+// /// @brief the extrusion of a collection is a collection of extrusions
+// /// @tparam ...Objects the object types in the collection
+// /// @tparam U the unit of extrusion
+// /// @param collection the collection of objects
+// /// @param amount the amount to be extruded
+// /// @return a collection of extruded objects
+// template< typename... Objects, typename U >
+// auto extrude( Collection< Objects... > col, U amount )
+// { return collection_extrude_helper( col, amount, 
+//     make_seq< sizeof...( Objects )>{} ); }
 
 
 /////////////////////////////
 // collection specializations
 
-/// @brief empty collection
-/// @return an empty collection
-template< > auto collection() { return Collection<>{}; }
+// /// @brief empty collection
+// /// @return an empty collection
+// template< > auto collection() { return Collection<>{}; }
 
-/// @brief collection of a single object
-/// @tparam T single object type
-/// @param obj single object 
-/// @return a collection containing a single object
-template< typename T >
-Collection< T > collection( T obj )
-{ return { obj }; }
+// /// @brief collection of a single object
+// /// @tparam T single object type
+// /// @param obj single object 
+// /// @return a collection containing a single object
+// template< typename T >
+// Collection< T > collection( T obj )
+// { return { obj }; }
 
-/// @brief collection of a collection is the collection
-/// @tparam ...Ts objects in the collection
-/// @param col collection instance
-/// @return col itself
-template< typename... Ts >
-Collection< Ts... > collection( Collection< Ts... > col )
-{ return col; }
+// /// @brief collection of a collection is the collection
+// /// @tparam ...Ts objects in the collection
+// /// @param col collection instance
+// /// @return col itself
+// template< typename... Ts >
+// Collection< Ts... > collection( Collection< Ts... > col )
+// { return col; }
 
-template< typename ReturnT, typename ColT, typename ColU, size_t... Is, size_t... Js >
-ReturnT concat_collections_helper( ColT first, ColU second,
-    seq< Is... >, seq< Js... > )
-{ return { get< Is >( first )..., get< Js >( second )... }; }
+// template< typename ReturnT, typename ColT, typename ColU, size_t... Is, size_t... Js >
+// ReturnT concat_collections_helper( ColT first, ColU second,
+//     seq< Is... >, seq< Js... > )
+// { return { get< Is >( first )..., get< Js >( second )... }; }
 
-template< typename... Ts, typename... Us >
-auto concat_collections( Collection< Ts... > first, Collection< Us... > second )
-{ return concat_collections_helper< Collection< Ts..., Us... >>( first, second, 
-    make_seq< sizeof...( Ts ) >{}, make_seq< sizeof...( Us ) >{}); }
+// template< typename... Ts, typename... Us >
+// auto concat_collections( Collection< Ts... > first, Collection< Us... > second )
+// { return concat_collections_helper< Collection< Ts..., Us... >>( first, second, 
+//     make_seq< sizeof...( Ts ) >{}, make_seq< sizeof...( Us ) >{}); }
 
-template< typename First, typename... Rest >
-auto collection( First first, Rest... rest )
-{ return concat_collections( collection( first ), collection( rest... )); }
+// /// @brief collection of objects that ensures no collections of collections.  
+// /// Each object must be in the same vector space
+// /// @tparam First type of first object
+// /// @tparam ...Rest types of the remaining objects
+// /// @param first object instance
+// /// @param ...rest remaining object instances
+// /// @return a collection containing the objects, where nested collections are 
+// /// instead enumerated in the output
+// template< typename First, typename... Rest >
+// auto collection( First first, Rest... rest )
+// { return concat_collections( collection( first ), collection( rest... )); }
+
+// /////////////////////////////////
+// /// subdivide specializations ///
+// /////////////////////////////////
+
+// template< size_t Divisions >
+// constexpr Collection<> subdivide( Point ) { return {}; }
+
+// template< size_t Divisions, typename CollectionT, size_t... Is >
+// constexpr auto subdivide_collection_helper( CollectionT col, seq< Is... > )
+// { return colection( subdivide< Divisions >( get< Is >( col ))... ); }
+
+// template< size_t Divisions, typename... Objects >
+// constexpr auto subdivide( Collection< Objects... > col ) 
+// { return subdivide_collection_helper< Divisions >( col, 
+//     make_seq< sizeof...( Objects )>{} ); }
+
+// template< size_t Divisions, typename ObjT >
+// constexpr auto subdivide( Orientation< ObjT > oriented )
+// { return orient( subdivide< Divisions >( oriented.object() ), 
+//     oriented.orientation() ); }
+
+// template< size_t Divisions, typename ObjT, typename U >
+// constexpr auto subdivide( Projection< ObjT, U > proj )
+// { return project( subdivide< Divisions >( proj.object() ), proj.amount() ); }
+
+// template< size_t Divisions, typename ObjT >
+// struct SubdivisionHelper;
+
+// template< typename ObjT >
+// struct SubdivisionHelper< 0, ObjT > 
+// { static_assert( false, "cannot subdivide by zero"); };
+
+// template< typename ObjT, typename U >
+// struct SubdivisionHelper< 1, Extrusion< ObjT, U >>
+// {
+//     using type = Extruded< ObjT, U >;
+//     static constexpr type subdivide( type ext )
+//     { return ext; }
+// };
+
+// template< size_t Divisions, typename ObjT, typename U >
+// requires( Divisions > 1 )
+// struct SubdivisionHelper< Divisions, Extruded< ObjT, U >>
+// {
+//     using type = uniform_collection_t< 
+//     static constexpr type subdivide( type ext )
+//     { return ext; }
+// };
+
+// template< size_t Divisions, typename ObjT, typename U >
+// constexpr auto subdivide( Extrusion< ObjT, U > ext )
+// { return SubdivisionHelper< Divisions, Extrusion< ObjT, U >>::subdivide( ext ); }
 
 
 ///////////////////////////
@@ -525,7 +820,7 @@ constexpr Collection<> boundary( Point ) { return {}; }
 /// @param attributed attribute object
 /// @return the attributed boundary object
 template< typename ObjT, typename T >
-constexpr auto boundary( Attributed< ObjT, T > attributed )
+constexpr auto boundary( Attribution< ObjT, T > attributed )
 { return attribute( boundary( attributed.object() ), attributed.attribute() ); }
 
 /// @brief boundary of an extrusion is a collection including the 
@@ -533,9 +828,9 @@ constexpr auto boundary( Attributed< ObjT, T > attributed )
 /// @tparam U unit of extrusion
 /// @param ext extruded object
 /// @return the boundary of an extruded object
-template< typename ObjT, typename U >
+template< typename ObjT, typename U, size_t Steps >
 // requires( isgreater( dimensions_of_v< space_of< ObjT >>, 0 ))
-constexpr auto boundary( Extrusion< ObjT, U > ext )
+constexpr auto boundary( Extrusion< ObjT, U, Steps > ext )
 { 
     using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
     using vector_type = extrusion_space::vector_type;
@@ -549,7 +844,7 @@ constexpr auto boundary( Extrusion< ObjT, U > ext )
     return collection( 
         orient( project( ext.object(), static_cast< U >( 0 )), extrusion_direction ),      // proxinal
         orient( project( ext.object(), ext.amount() ), intrusion_direction ),              // distal
-        extrude( boundary( ext.object() ), ext.amount() )); // lateral
+        extrude< Steps >( boundary( ext.object() ), ext.amount() )); // lateral
 }
 
 /// @brief boundary of a projection is a projection of the boundary
@@ -558,7 +853,7 @@ constexpr auto boundary( Extrusion< ObjT, U > ext )
 /// @param ext projected object
 /// @return boundary of the projected object
 template< typename ObjT, typename U >
-constexpr auto boundary( Projected< ObjT, U > pro )
+constexpr auto boundary( Projection< ObjT, U > pro )
 { return project( boundary( pro.object() ), pro.amount() ); }
 
 /// @brief boundary of an oriented object is the orientation of the boundary
@@ -566,7 +861,7 @@ constexpr auto boundary( Projected< ObjT, U > pro )
 /// @param ori oriented object
 /// @return the boundary of the oriented object re-oriented
 template< typename ObjT >
-constexpr auto boundary( Oriented< ObjT > ori )
+constexpr auto boundary( Orientation< ObjT > ori )
 { return orient( boundary( ori.object() ), ori.orientation() ); }
 
 /// @brief helper function for calculating the boundary of a collection
@@ -575,7 +870,8 @@ constexpr auto boundary( Oriented< ObjT > ori )
 /// @param collection collection
 /// @return 
 template< typename CollectionT, size_t... Is >
-constexpr auto collection_boundary_helper( CollectionT collection, seq< Is... > )
+constexpr auto collection_boundary_helper( CollectionT collection, 
+    seq< Is... > )
 { return collection( boundary( get< Is >( collection ))... ); }
 
 /// @brief the boundary of a collection is a collection of all the boundaries
@@ -584,8 +880,63 @@ constexpr auto collection_boundary_helper( CollectionT collection, seq< Is... > 
 /// @return 
 template< typename... Objects >
 constexpr auto boundary( Collection< Objects... > collection )
-{ return collection_boundary_helper( collection, make_seq< sizeof...( Objects )>{} ); }
+{ return collection_boundary_helper( collection, 
+    make_seq< sizeof...( Objects )>{} ); }
 
+///////////////////
+/// translation ///
+///////////////////
+
+template< typename ObjT >
+auto translate( ObjT obj, vector_for< ObjT > rel );
+
+
+template< typename ObjT >
+requires( dimensions_of_v< space_of< ObjT >> == 0 )
+ObjT translate( ObjT obj, null_tensor_t )
+{ return obj; }
+
+template< typename ObjT, typename U, size_t Steps >
+auto translate( Extrusion< ObjT, U, Steps > proj, 
+    vector_for< Projection< ObjT, U >> rel )
+{
+    // get the dimensions of the projected object
+    // this will also be the index to the offset in rel
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+
+    // adjust the projection by the last dimension of our relative vector
+    // then recurse
+    return project( translate( proj.object(), element_subtensor< dim >( rel )), 
+        proj.amount() + tensor_get< dim >( rel ));
+}
+
+
+
+///////////
+/// pad ///
+///////////
+
+/// @brief construct a prism from the object along the orientation by the 
+/// specified amount.  This is different than an extrusion because a pad does 
+/// not increase the dimensionality of the space of the object.
+/// @tparam ObjT oriented object type
+/// @tparam U distance of the pad
+/// @param object to be padded
+/// @param amount pad distance
+template< typename ObjT, typename U >
+// TODO: write requirements on U
+// requires( norm_compable_v< typename Oriented< ObjT >::vector_type, U > )
+constexpr auto pad( Orientation< ObjT > object, U amount )
+{
+    auto direction = object.orientation();
+
+    // calculate the distance vector
+    // we want the final distance along direction to be amount
+    auto rel = scale( divide_scale( direction, norm( direction )), amount );
+
+    return collection( translate( object, rel ), 
+        extrude_along( boundary( object ), rel ));
+}
 
 template< typename U >
 Extrusion< Point, U > segment( U length )
@@ -596,7 +947,7 @@ Extrusion< Extrusion< Point, U >, U > rectangle( U length, U width )
 { return {{ {}, length }, width }; }
 
 template< typename U >
-Attributed< Extrusion< Extrusion< Extrusion< Point, U >, U >, U >, Named >
+Attribution< Extrusion< Extrusion< Extrusion< Point, U >, U >, U >, Named >
 box( U length, U width, U height )
 { return {{{{ {}, length }, width }, height }, { "box" }}; }
 

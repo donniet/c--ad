@@ -147,6 +147,10 @@ int main( int ac, char* av[] )
 
 //     cout << "PASS: inverse test" << endl;
 
+    assert(( matmul( i2, inverse( i2 )) == make_tensor< Shape< 2, 2 >>( 
+        1., 0.,
+        0., 1. )));
+
     
 
     return EXIT_SUCCESS;

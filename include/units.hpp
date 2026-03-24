@@ -534,6 +534,7 @@ requires( not unit< T > and is_arithmetic_v< T > )
 constexpr unit_inverse< RightU > operator /( T left, RightU right )
 { return unit_inverse< RightU >{ left / right.get_value() }; }
 
+
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator +( LeftU const& left, RightU const& right )

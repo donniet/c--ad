@@ -26,6 +26,15 @@ using std::function;
 using std::any, std::make_any, std::any_cast;
 
 /**
+ * Sequence helpers
+ */
+template< size_t... Is >
+using seq = std::index_sequence< Is... >;
+
+template< size_t Size >
+using make_seq = std::make_index_sequence< Size >;
+
+/**
  * string utilities 
  */
 constexpr string& ltrim( string& s )
@@ -86,6 +95,17 @@ constexpr auto pow( unsigned long long arg )
 { return std::pow( arg, Exp ); }
 
 } // namespace std;
+
+namespace detail {
+template< typename T, size_t Size, size_t... Is >
+constexpr T sum_helper( std::array< T, Size > const& values, seq< Is... > )
+{ return ( values[ Is ] + ... ); }
+} // namespace detail
+
+template< typename T, size_t Size >
+constexpr T sum( std::array< T, Size > const& values )
+{ return detail::sum_helper( values, make_seq< Size >{} ); }
+
 
 constexpr size_t perm( size_t n )
 {
@@ -161,14 +181,6 @@ struct NoopType { using type = T; };
 template< typename T, size_t Ignored >
 using noop_t = detail::NoopType< T, Ignored >::type;
 
-/**
- * Sequence helpers
- */
-template< size_t... Is >
-using seq = std::index_sequence< Is... >;
-
-template< size_t Size >
-using make_seq = std::make_index_sequence< Size >;
 
 /**
  * override of std::get<I> that can call Type::template at<I>

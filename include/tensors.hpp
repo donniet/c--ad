@@ -642,6 +642,8 @@ struct Tensor< Shape<> >
     static constexpr size_t size() { return 0; }
 };
 
+using null_tensor_t = Tensor< Shape< > >;
+
 /// @brief a shaped array of arbitrary arithmetic types
 /// @tparam T the type of the first element of the tensor
 /// @tparam ...Ts the remaining types
@@ -894,11 +896,10 @@ constexpr auto product_helper( LeftT const& left, RightT const& right,
 /// @param scalar the scalar value
 /// @param ten the tensor to scale
 /// @return the scaled tensor
-template< typename T, typename TensorT, size_t... Is >
-constexpr auto scale_helper( T scalar, TensorT const& ten, 
-    seq< Is... > )
-{ return make_tensor< tensor_shape_t< TensorT >>(
-    ( get< Is >( ten ) * scalar )... ); }
+template< typename TensorT, typename T, size_t... Is >
+constexpr auto scale_helper( TensorT const& ten, T scalar, seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>
+    (( get< Is >( ten ) * scalar )... ); }
 
 /// @brief helper to divide the elements of a tensor by a scalar
 /// @tparam T the type of the scalar
@@ -907,11 +908,10 @@ constexpr auto scale_helper( T scalar, TensorT const& ten,
 /// @param scalar the scalar value
 /// @param ten the tensor to scale
 /// @return the scaled tensor
-template< typename T, typename TensorT, size_t... Is >
-constexpr auto divide_scale_helper( T scalar, TensorT const& ten, 
-    seq< Is... > )
-{ return make_tensor< tensor_shape_t< TensorT >>(
-    ( get< Is >( ten ) / scalar )... ); }
+template< typename TensorT, typename T, size_t... Is >
+constexpr auto divide_scale_helper( TensorT const& ten, T scalar, seq< Is... > )
+{ return make_tensor< tensor_shape_t< TensorT >>
+    (( get< Is >( ten ) / scalar )... ); }
 
 /// @brief returns a tensor composed of op(E) where E is the corresponding 
 /// element from ten
@@ -1108,6 +1108,35 @@ template< typename TensorT, size_t... Ks >
 constexpr auto sum_helper( TensorT const& ten, seq< Ks... > )
 { return ( tensor_get< Ks >( ten ) + ... ); }
 
+/// @brief helper for matrix multiplication: a contraction over the middle
+/// indices of the product of LeftT and RightT
+/// @tparam LeftT the type of the left tensor
+/// @tparam RightT the type of the right tensor
+template< typename LeftT, typename RightT >
+struct MatrixMultiplyHelper
+{
+    using left_shape = tensor_shape_t< LeftT >;
+    using right_shape = tensor_shape_t< RightT >;
+    static constexpr size_t first_contraction_index = 
+        left_shape::dimensions() - 1;
+    static constexpr bool is_compatible = 
+        ( shape_element_v< first_contraction_index, left_shape > ==
+            shape_element_v< 0, right_shape > );
+
+    static constexpr auto matmul( LeftT const& left, RightT const& right )
+    { return contract< first_contraction_index, first_contraction_index + 1 >
+        ( tensor_product( left, right )); }
+};
+
+/// @brief trait to determine of the left and right tensors are compatible with
+/// matrix multiplication
+/// @tparam LeftT is the type of the left tensor
+/// @tparam RightT is the type of the right tensor
+template< typename LeftT, typename RightT >
+constexpr bool matmul_compatible_v = 
+    MatrixMultiplyHelper< LeftT, RightT >::is_compatible;
+
+
 } // namespace detail
 
 /////////////////////////
@@ -1158,6 +1187,20 @@ template< shape S, typename... Ts, typename... Us >
 constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
 { return detail::minus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
+
+/// @brief the tensor product
+/// @tparam A the shape of the left operand
+/// @tparam ...Ts the types of the left operand
+/// @tparam B the shape of the right operand
+/// @tparam ...Us the types of the right operand
+/// @param left the left operand
+/// @param right the right operand
+/// @return the tensor product of two tensors
+template< shape A, typename... Ts, shape B, typename... Us >
+constexpr auto tensor_product( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
+{ return detail::product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
+
+
 /// @brief the tensor product
 /// @tparam A the shape of the left operand
 /// @tparam ...Ts the types of the left operand
@@ -1186,9 +1229,9 @@ constexpr auto sum( Tensor< A, Ts... > const& ten )
 /// @param scalar the scalar value
 /// @param ten the tensor value
 /// @return the scaled tensor
-template< typename T, shape S, typename... Ts >
-constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
-{ return detail::scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+template< shape S, typename... Ts, typename T >
+constexpr auto scale( Tensor< S, Ts... > const& ten, T scalar )
+{ return detail::scale_helper( ten, scalar, make_seq< sizeof...( Ts )>{} ); }
 
 /// @brief divides a tensor by a scalar
 /// @tparam T the scalar type
@@ -1197,9 +1240,9 @@ constexpr auto scale( T scalar, Tensor< S, Ts... > const& ten )
 /// @param scalar the scalar value
 /// @param ten the tensor value
 /// @return the scaled tensor
-template< typename T, shape S, typename... Ts >
-constexpr auto divide_scale( T scalar, Tensor< S, Ts... > const& ten ) 
-{ return detail::divide_scale_helper( scalar, ten, make_seq< sizeof...( Ts )>{} ); }
+template< shape S, typename... Ts, typename T >
+constexpr auto divide_scale( Tensor< S, Ts... > const& ten, T scalar ) 
+{ return detail::divide_scale_helper( ten, scalar, make_seq< sizeof...( Ts )>{} ); }
 
 // dot product details
 namespace detail {
@@ -1262,6 +1305,15 @@ struct TensorNorm< 2, TensorT >
 template< size_t I, shape S, typename... Ts >
 constexpr auto norm( Tensor< S, Ts... > const& ten )
 { return detail::TensorNorm< I, Tensor< S, Ts... >>::value( ten ); }
+
+/// @brief L2 norm of a tensor is the default
+/// @tparam ...Ts the tensor element types
+/// @tparam S the shape of the tensor
+/// @param ten the tensor value
+/// @return the Ith norm of the tensor
+template< shape S, typename... Ts >
+constexpr auto norm( Tensor< S, Ts... > const& ten )
+{ return detail::TensorNorm< 2, Tensor< S, Ts... >>::value( ten ); }
 
 /// @brief contract a tensor along indices I and J
 /// @tparam TensorT the type of the tensor to contract
@@ -1409,13 +1461,24 @@ requires( tensor_shape_t< TensorT >::dimensions() == 2 and
     shape_element_v< 0, tensor_shape_t< TensorT >> ==
         shape_element_v< 1, tensor_shape_t< TensorT >> )
 constexpr auto inverse( TensorT const& ten )
-{ return divide_scale( det( ten ), transpose< 0, 1 >( cofactor( ten ))); }
+{ return divide_scale( transpose< 0, 1 >( cofactor( ten )), det( ten )); }
 
-/**
- * Tensor Type Operations
- */
+/// @brief multiply the tensors as matrices, ie: contract the tensor product
+/// along the conjoining indices
+/// @tparam LeftT the type of the left Tensor
+/// @tparam RightT the type of the right Tensor
+/// @param left the left tensor instance
+/// @param right the right tensor instance
+/// @return the tensor product contracted along the conjoining indices
+template< typename LeftT, typename RightT >
+requires( detail::matmul_compatible_v< LeftT, RightT > )
+auto matmul( LeftT const& left, RightT const& right )
+{ return detail::MatrixMultiplyHelper< LeftT, RightT >::
+    matmul( left, right ); }
 
-
+//////////////////////////////
+/// Tensor Type Operations ///
+//////////////////////////////
 
 template< shape A, shape B >
 struct IsSubShape;

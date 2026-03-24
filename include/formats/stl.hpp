@@ -165,6 +165,24 @@ template< typename ObjT >
 std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 { return stl.write_to( os ); }
 
+/**
+ * Here's what a cube looks like:
+ * 
+ * output<Solid, 
+ *    Orientation<Projection<Extrusion<Extrusion<Point, Length, long double>>, Length, long double>>, Length, long double>>>, 
+ *    Orientation<Projection<Extrusion<Extrusion<Point, Length, long double>>, Length, long double>>, Length, long double>>>, 
+ *    Extrusion<Collection<
+ *        Orientation<Projection<Extrusion<Point, Length, long double>>, Length, long double>>>, 
+ *        Orientation<Projection<Extrusion<Point, Length, long double>>, Length, long double>>>, 
+ *        Extrusion<Collection<
+ *            Orientation<Projection<Point, Length, long double>>>, 
+ *            Orientation<Projection<Point, Length, long double>>>, 
+ *            Extrusion<Collection<>, Length, long double>>>, 
+ *        Length, long double>>>, 
+ *    Length, long double>>>
+ */
+
+
 /// @brief outputing a point to an STL facet
 /// @param out facet to add a vertex to
 /// @param p point to add
@@ -196,7 +214,7 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
 
 template< typename ObjT >
 constexpr auto output( STLFile::Facet& out, 
-    Projected< ObjT, Length > const& object )
+    Projection< ObjT, Length > const& object )
 {
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
     size_t verts = out.size();
@@ -215,7 +233,7 @@ constexpr auto output( STLFile::Solid& out, Extrusion< ObjT, Length > const& obj
 
 template< typename ObjT >
 // requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto output( STLFile::Solid& out, Projected< ObjT, Length > const& object )
+constexpr auto output( STLFile::Solid& out, Projection< ObjT, Length > const& object )
 { return output( out.add_facet(), object ); }
 
 template< typename CollectionT, size_t... Is >
@@ -238,15 +256,15 @@ constexpr auto output( STLFile& out, Extrusion< ObjT, Length > const& obj )
 { return output( out.add_solid( "extrusion" ), obj ); } 
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Projected< ObjT, Length > const& obj )
+constexpr auto output( STLFile& out, Projection< ObjT, Length > const& obj )
 { return output( out.add_solid( "projection" ), obj ); } 
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Attributed< ObjT, Named > const& obj )
-{ return output( out.add_solid( obj.attribute().name ), obj.object() ); }
+constexpr auto output( STLFile& out, Attribution< ObjT, Named > const& obj )
+{ return output( out.add_solid( obj.attribute().name() ), obj.object() ); }
 
 template< typename ObjT >
-constexpr auto output( STLFile::Solid& out, Oriented< ObjT > const& object )
+constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
 { 
     auto v = object.orientation();
     auto& facet = out.add_facet( tensor_get< 0 >( v ), tensor_get< 1 >( v ), 

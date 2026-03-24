@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-
+add_compile_options("-ftemplate-backtrace-limit=0")
 # add_compile_options("-fexperimental-library")
 # add_compile_options("-stdlib=libstdc++")
 # add_compile_options("-stdlib=libc++" "-v")
