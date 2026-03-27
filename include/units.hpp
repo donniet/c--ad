@@ -257,6 +257,8 @@ struct base_unit
 
     constexpr scalar_type get_value() const
     { return value; }
+    constexpr scalar_type& get_value()
+    { return value; }
 
     scalar_type value;
 };
@@ -281,6 +283,8 @@ struct base_unit< scalar_unit_id, T >
     constexpr base_unit( scalar_type value ) : value{ value } { }
 
     constexpr scalar_type get_value() const
+    { return value; }
+    constexpr scalar_type& get_value()
     { return value; }
 
     scalar_type value;
@@ -534,7 +538,6 @@ requires( not unit< T > and is_arithmetic_v< T > )
 constexpr unit_inverse< RightU > operator /( T left, RightU right )
 { return unit_inverse< RightU >{ left / right.get_value() }; }
 
-
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator +( LeftU const& left, RightU const& right )
@@ -554,6 +557,44 @@ template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_continuous or unit_traits< RightU >::is_continuous )
 constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
 { return unit_quotient< LeftU, RightU >{ mod( left.get_value(), right.get_value() )}; }
+
+// assignment operators
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
+constexpr LeftU& operator +=( LeftU& left, RightU const& right )
+{ 
+    left.get_value() += right.get_value();
+    return left;
+}
+
+template< unit LeftU, unit RightU >
+requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
+constexpr LeftU& operator -=( LeftU& left, RightU const& right )
+{ 
+    left.get_value() -= right.get_value();
+    return left;
+}
+
+// product and quotient assignment operators only work on scalars
+// otherwise the units will not be the same.
+template< unit U >
+constexpr U& operator *=( U& left, Scalar const& right )
+{
+    left.get_value() *= right.get_value();
+    return left;
+}
+template< unit U >
+constexpr U& operator /=( U& left, Scalar const& right )
+{
+    left.get_value() /= right.get_value();
+    return left;
+}
+template< unit U >
+constexpr U& operator %=( U& left, Scalar const& right )
+{
+    left.get_value() = mod( left.get_value(), right.get_value() );
+    return left;
+}
 
 // discrete operators
 template< unit U >

@@ -43,6 +43,7 @@ struct STLFile
         Length x;
         Length y;
         Length z;
+        string comment;
     };
 
     // implemented using an outer loop of vertices
@@ -70,12 +71,21 @@ struct STLFile
             normal{ nx, ny, nz } { }
 
         Vertex normal;
+        string comment;
         std::vector< Vertex > vertices;
     };
 
     // TODO: format the string name for use as a solid name in STL
     static string solid_name( string const& name )
     { return name; }
+
+    // TODO: format the string as a comment
+    static string comment( string const& comment )
+    { 
+        if( comment == "" )
+            return comment;
+        return "; " + comment;
+    }
 
     struct Solid
     {
@@ -94,6 +104,7 @@ struct STLFile
         Solid( string const& name ): name{ solid_name( name ) } { }
 
         string name;
+        string comment;
         std::vector< Facet > facets;
     };
 
@@ -114,6 +125,7 @@ struct STL
     std::ostream& write_to( std::ostream& os ) const
     {
         STLFile out;
+        string (*cmt)( string const& ) = STLFile::comment;
 
         // stls are the boundary of a solid object
         output( out, boundary( object() ));
@@ -121,6 +133,7 @@ struct STL
         for( auto const& solid : out.solids )
         {
             os << "solid " << solid.name << "\n";
+
             for( auto const& facet : solid.facets )
             {
                 // malformed facet
@@ -180,6 +193,25 @@ std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
  *            Extrusion<Collection<>, Length, long double>>>, 
  *        Length, long double>>>, 
  *    Length, long double>>>
+ * 
+ * output<Collection<
+ *    Orientation<Projection<Extrusion<Extrusion<Point, Length>, Length>, Length>>, 
+ *    Orientation<Projection<Extrusion<Extrusion<Point, Length>, Length>, Length>>, 
+ *    Extrusion<Collection<
+ *       Orientation<Projection<Extrusion<Point, Length>, Length>>, 
+ *       Orientation<Projection<Extrusion<Point, Length>, Length>>, 
+ *       Extrusion<Collection<Orientation<Projection<Point, Length>>, 
+ *          Orientation<Projection<Point, Length>>, 
+ *          Extrusion<Collection<>, Length>>, Length>>, Length>>>
+ * 
+ * Collection<
+ *    Orientation<Projection<Extrusion<Extrusion<Point, Length, 1>, Length, 1>, Length > >, 
+ *    Collection<
+ *      Extrusion<Orientation<Projection<Extrusion<Point, Length, 1>, Length > >, Length, 1>, 
+ *      Extrusion<Orientation<Projection<Extrusion<Point, Length, 1>, Length > >, Length, 1>, 
+ *      Collection<
+ *         Extrusion<Extrusion<Orientation<Projection<Point, Length > >, Length, 1>, Length, 1>, 
+ *         Extrusion<Extrusion<Orientation<Projection<Point, Length > >, Length, 1>, Length, 1> > > >
  */
 
 
@@ -188,30 +220,51 @@ std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 /// @param p point to add
 /// @return the vertex
 constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
-{ return out.add_vertex(); }
+{ 
+    auto& v = out.add_vertex(); 
+#ifndef NDEBUG
+    v.comment = "Facet,Point";
+#endif
+    return v;
+}
 
-/// @brief output an extrusion to a facet
+/// @brief output an extrusion to a facet.
 /// @tparam ObjT extruded object type
 /// @param out facet to write this extrusion to
 /// @param object object to output
 /// @return the facet
-template< typename ObjT >
+template< typename ObjT, size_t Steps >
 constexpr STLFile::Facet& output( STLFile::Facet& out, 
-    Extrusion< ObjT, Length > const& object )
+    Extrusion< ObjT, Length, Steps > const& extrusion )
 { 
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
 
     size_t verts = out.size();
-    output( out, object.object() );
-    // add the y dimension
+    output( out, extrusion.object() );
     size_t i = out.size();
     verts = out.size() - verts;
-    for( size_t j = 0; j < verts; ++j )
-        out.add_vertex( out[--i] )[ dim ] = object.amount();
+    Length amount = {};
+    for( Length const& step : extrusion.step_values())
+    {
+        amount += step;
+        for( size_t j = 0; j < verts; ++j )
+        {
+            auto& v = out.add_vertex( out[--i] );
+            v[ dim ] = amount;
+#ifndef NDEBUG
+            v.comment = "Facet,Extrusion";
+#endif
+        }
+    }
     
     return out;
 }
 
+/// @brief output an extrusion to a facet
+/// @tparam ObjT 
+/// @param out 
+/// @param object 
+/// @return 
 template< typename ObjT >
 constexpr auto output( STLFile::Facet& out, 
     Projection< ObjT, Length > const& object )
@@ -222,8 +275,21 @@ constexpr auto output( STLFile::Facet& out,
     output( out, object.object());
     verts = out.size() - verts;
     for( auto j = out.rbegin(); verts > 0; --verts, ++j )
+    {
+        out.comment += "; Facet,Projection";
         (*j)[ dim ] = object.amount();
+    }
 }
+
+/// @brief outputing an orientation to a facet is duplicative since we already
+/// identified the normal vector
+/// TODO: what if we hane't set a normal vector yet?  
+/// @param out facet to add a vertex to
+/// @param p 
+/// @return the vertex
+template< typename ObjT >
+constexpr auto output( STLFile::Facet& out, Orientation< ObjT > const& object )
+{ return output( out, object.object() ); }
 
 // extrusion of a segment
 template< typename ObjT >
@@ -261,7 +327,11 @@ constexpr auto output( STLFile& out, Projection< ObjT, Length > const& obj )
 
 template< typename ObjT >
 constexpr auto output( STLFile& out, Attribution< ObjT, Named > const& obj )
-{ return output( out.add_solid( obj.attribute().name() ), obj.object() ); }
+{ 
+    auto& s = out.add_solid( obj.attribute().name() );
+    s.comment = "File,Attribute";
+    return output( s, obj.object() ); 
+}
 
 template< typename ObjT >
 constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
@@ -269,6 +339,7 @@ constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
     auto v = object.orientation();
     auto& facet = out.add_facet( tensor_get< 0 >( v ), tensor_get< 1 >( v ), 
         tensor_get< 2 >( v ));
+    facet.comment += "; Solid,Orientation";
     output( facet, object.object() );
 }
 
