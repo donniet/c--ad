@@ -510,6 +510,14 @@ constexpr Cardinal cardinal( unsigned long long n )
 { return { n }; }
 
 // general unit arithmetic
+template< unit U >
+constexpr bool is_positive( U const& u )
+{ return u.get_value() > 0; }
+
+template< unit U >
+constexpr bool is_negative( U const& u )
+{ return u.get_value() < 0; }
+
 template< unit LeftU, unit RightU >
 constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
 { return unit_product< LeftU, RightU >{ left.get_value() * right.get_value() }; }

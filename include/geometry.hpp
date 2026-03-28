@@ -645,12 +645,12 @@ vector_for< ObjT > get_orientation( Extrusion< ObjT, U, Steps > const& extruded 
 { return ExtrudeSpace< space_of< ObjT >, U >::base( get_orientation( 
     extruded.object() )); }
 
-// /// @brief interpolate an object in a new dimension out to amount
-// /// @tparam ObjT type of object to be extruded
-// /// @tparam U dimension to interpolate through
-// /// @param object to be extruded
-// /// @param amount of extrusion
-// /// @return the extruded object
+/// @brief interpolate an object in a new dimension out to amount
+/// @tparam ObjT type of object to be extruded
+/// @tparam U dimension to interpolate through
+/// @param object to be extruded
+/// @param amount of extrusion
+/// @return the extruded object
 template< size_t Steps, typename ObjT, typename U >
 Extrusion< ObjT, U, Steps > extrude( ObjT const& object, 
     std::array< U, Steps > const& step_values )
@@ -670,10 +670,6 @@ constexpr Projection< ObjectT, U > project( ObjectT const& object, U here )
 template< typename... Objects >
 typename MakeCollection< Objects... >::type collection( Objects const&... objects )
 { return MakeCollection< Objects... >::make( objects... ); }
-
-
-
-
 
 /////////////////////////////
 // projection specializations

@@ -6,19 +6,25 @@
  */
 
 #include "units.hpp"
+#include "tensors.hpp"
 #include "geometry.hpp"
 
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <algorithm>
 
 namespace formats {
 
 using namespace units;
+using namespace tensors;
 using namespace geometry;
+
 
 struct STLFile
 {
+    using vector_type = Tensor< Shape< 3 >, Length, Length, Length >;
+
     struct Vertex
     {
         Length& operator []( size_t n )
@@ -31,6 +37,9 @@ struct STLFile
                 return z;
             }
         }
+
+        vector_type as_vector() const
+        { return { x, y, z }; }
 
         Vertex( Length x, Length y, Length z ):
             x{ x }, y{ y }, z{ z }
@@ -58,6 +67,8 @@ struct STLFile
         reverse_iterator rbegin() { return vertices.rbegin(); }
         reverse_iterator rend() { return vertices.rend(); }
 
+        void reverse_vertex_order()
+        { std::reverse( vertices.begin(), vertices.end() ); }
 
         Vertex& add_vertex( Length x = 0_m, Length y = 0_m, Length z = 0_m )
         { return vertices.emplace_back( x, y, z ); }
@@ -178,43 +189,6 @@ template< typename ObjT >
 std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 { return stl.write_to( os ); }
 
-/**
- * Here's what a cube looks like:
- * 
- * output<Solid, 
- *    Orientation<Projection<Extrusion<Extrusion<Point, Length, long double>>, Length, long double>>, Length, long double>>>, 
- *    Orientation<Projection<Extrusion<Extrusion<Point, Length, long double>>, Length, long double>>, Length, long double>>>, 
- *    Extrusion<Collection<
- *        Orientation<Projection<Extrusion<Point, Length, long double>>, Length, long double>>>, 
- *        Orientation<Projection<Extrusion<Point, Length, long double>>, Length, long double>>>, 
- *        Extrusion<Collection<
- *            Orientation<Projection<Point, Length, long double>>>, 
- *            Orientation<Projection<Point, Length, long double>>>, 
- *            Extrusion<Collection<>, Length, long double>>>, 
- *        Length, long double>>>, 
- *    Length, long double>>>
- * 
- * output<Collection<
- *    Orientation<Projection<Extrusion<Extrusion<Point, Length>, Length>, Length>>, 
- *    Orientation<Projection<Extrusion<Extrusion<Point, Length>, Length>, Length>>, 
- *    Extrusion<Collection<
- *       Orientation<Projection<Extrusion<Point, Length>, Length>>, 
- *       Orientation<Projection<Extrusion<Point, Length>, Length>>, 
- *       Extrusion<Collection<Orientation<Projection<Point, Length>>, 
- *          Orientation<Projection<Point, Length>>, 
- *          Extrusion<Collection<>, Length>>, Length>>, Length>>>
- * 
- * Collection<
- *    Orientation<Projection<Extrusion<Extrusion<Point, Length, 1>, Length, 1>, Length > >, 
- *    Collection<
- *      Extrusion<Orientation<Projection<Extrusion<Point, Length, 1>, Length > >, Length, 1>, 
- *      Extrusion<Orientation<Projection<Extrusion<Point, Length, 1>, Length > >, Length, 1>, 
- *      Collection<
- *         Extrusion<Extrusion<Orientation<Projection<Point, Length > >, Length, 1>, Length, 1>, 
- *         Extrusion<Extrusion<Orientation<Projection<Point, Length > >, Length, 1>, Length, 1> > > >
- */
-
-
 /// @brief outputing a point to an STL facet
 /// @param out facet to add a vertex to
 /// @param p point to add
@@ -222,9 +196,6 @@ std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
 { 
     auto& v = out.add_vertex(); 
-#ifndef NDEBUG
-    v.comment = "Facet,Point";
-#endif
     return v;
 }
 
@@ -251,9 +222,6 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
         {
             auto& v = out.add_vertex( out[--i] );
             v[ dim ] = amount;
-#ifndef NDEBUG
-            v.comment = "Facet,Extrusion";
-#endif
         }
     }
     
@@ -275,10 +243,7 @@ constexpr auto output( STLFile::Facet& out,
     output( out, object.object());
     verts = out.size() - verts;
     for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-    {
-        out.comment += "; Facet,Projection";
         (*j)[ dim ] = object.amount();
-    }
 }
 
 /// @brief outputing an orientation to a facet is duplicative since we already
@@ -329,7 +294,6 @@ template< typename ObjT >
 constexpr auto output( STLFile& out, Attribution< ObjT, Named > const& obj )
 { 
     auto& s = out.add_solid( obj.attribute().name() );
-    s.comment = "File,Attribute";
     return output( s, obj.object() ); 
 }
 
@@ -337,10 +301,28 @@ template< typename ObjT >
 constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
 { 
     auto v = object.orientation();
-    auto& facet = out.add_facet( tensor_get< 0 >( v ), tensor_get< 1 >( v ), 
-        tensor_get< 2 >( v ));
-    facet.comment += "; Solid,Orientation";
+    STLFile::Facet& facet = out.add_facet( tensor_get< 0 >( v ), 
+        tensor_get< 1 >( v ), tensor_get< 2 >( v ));
     output( facet, object.object() );
+
+    // check if the triangle order matches the orientation
+    if( facet.vertices.size() < 3 )
+        return out;
+
+    auto n = facet.normal.as_vector();
+    
+    auto const& x1 = facet.vertices[ 1 ].as_vector() - 
+        facet.vertices[ 0 ].as_vector();
+    auto const& x2 = facet.vertices[ 2 ].as_vector() -
+        facet.vertices[ 0 ].as_vector();
+
+    // reverse the order of the vertices to match the orientation
+    // NOTE: orientation from geometry.hpp points INSIDE whereas STLs expect
+    // normals to be pointing outside, hence the is_positive here
+    if( is_positive( dot( cross( x1, x2 ), n )))
+        facet.reverse_vertex_order();
+    
+    return out;
 }
 
 // template< >

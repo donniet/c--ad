@@ -869,7 +869,7 @@ constexpr auto plus_helper( LeftT const& left, RightT const& right,
 template< typename LeftT, typename RightT, size_t... Is >
 constexpr auto minus_helper( LeftT const& left, RightT const& right, 
     seq< Is... > )
-{ return make_tensor< LeftT::shape_type >(
+{ return make_tensor< typename LeftT::shape_type >(
     ( get< Is >( left ) - get< Is >( right ))... ); }
 
 /// @brief helper to calculate the product of two tensors
@@ -1264,6 +1264,32 @@ constexpr auto dot_helper( LeftT const& left, RightT const& right,
 template< shape S, typename... Ts, typename... Us >
 constexpr auto dot( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
 { return detail::dot_helper( left, right, make_seq< sizeof...( Us ) >{} ); }
+
+/// @brief cross product of 3d vectors
+/// @tparam T[012] are the tyeps of the left vector 
+/// @tparam U[012] are the types of the right vector
+/// @param left vector
+/// @param right vector
+/// @return a 3d vector normal to left and right by the right-hand rule and with
+/// length equal to the area of the parallelogram formed by left and right.
+/// NOTE: interesting that this has units of area (when the inputs have units of
+/// length).  Do we need a cross_root function which divides the cross product
+/// by the square-root of the length of the cross product?
+/// NOTE: taking the dot product of a length-vector with this area-vector will
+/// yield a volume-vector.
+template< typename T0, typename T1, typename T2,
+    typename U0, typename U1, typename U2 >
+constexpr auto cross( Tensor< Shape< 3 >, T0, T1, T2 > const& left,
+    Tensor< Shape< 3 >, U0, U1, U2 > const& right )
+{ 
+    return make_tensor< Shape< 3 >>(
+        tensor_get< 1 >( left ) * tensor_get< 2 >( right ) -
+            tensor_get< 2 >( left ) * tensor_get< 1 >( right ),
+        tensor_get< 2 >( left ) * tensor_get< 0 >( right ) - 
+            tensor_get< 0 >( left ) * tensor_get< 2 >( right ),
+        tensor_get< 0 >( left ) * tensor_get< 1 >( right ) -
+            tensor_get< 1 >( left ) * tensor_get< 0 >( right ));
+}
 
 // tensor norm details
 namespace detail {
