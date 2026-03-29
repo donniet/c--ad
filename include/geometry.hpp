@@ -656,6 +656,12 @@ Extrusion< ObjT, U, Steps > extrude( ObjT const& object,
     std::array< U, Steps > const& step_values )
 { return { object, step_values }; }
 
+template< typename ObjT, typename First, typename... Rest >
+requires(( is_same_v< First, Rest > and ... ))
+Extrusion< ObjT, First, 1 + sizeof...( Rest ) > extrude( ObjT const& object, 
+    First const& first, Rest const&... rest )
+{ return { object, { first, rest... }}; }
+
 /// @brief projecting an object into an extrude space
 /// @tparam ObjectT type of the object
 /// @tparam U unit of additional dimension
@@ -729,11 +735,12 @@ typename MakeCollection< Objects... >::type collection( Objects const&... object
 /// @return the extruded object
 template< size_t Steps, typename ObjT, typename U >
 Orientation< Extrusion< ObjT, U, Steps >> extrude( 
-    Orientation< ObjT > const& oriented, std::array< U, Steps > const& amount )
+    Orientation< ObjT > const& oriented, 
+    std::array< U, Steps > const& step_values )
 {
     using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
     
-    return orient( extrude< Steps >( oriented.object(), amount ), 
+    return orient( extrude< Steps >( oriented.object(), step_values ), 
         extrusion_space::base( oriented.orientation() ) );
 }
 

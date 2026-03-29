@@ -1835,6 +1835,15 @@ using Information = base_unit< information_unit_id, long double >;
 // formating of units
 namespace std {
 
+/// @brief print out the unit value
+/// TODO: assess if this should include the unit type
+/// @tparam U unit type
+/// @param u value
+template< typename U >
+requires( units::unit< U > )
+constexpr string to_string( U const& u )
+{ return to_string( u.get_value() ); }
+
 template< units::unit U >
 requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
 constexpr units::unit_square_root_t< U > sqrt( U u )

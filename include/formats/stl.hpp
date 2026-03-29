@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <vector>
+#include <list>
 #include <functional>
 #include <algorithm>
 
@@ -58,9 +59,14 @@ struct STLFile
     // implemented using an outer loop of vertices
     struct Facet
     {
-        using iterator = std::vector< Vertex >::iterator;
-        using reverse_iterator = std::vector< Vertex >::reverse_iterator;
+        using iterator = std::list< Vertex >::iterator;
+        using const_iterator = std::list< Vertex >::const_iterator;
+        using reverse_iterator = std::list< Vertex >::reverse_iterator;
 
+        Vertex& front() { return vertices.front(); }
+        Vertex const& front() const { return vertices.front(); }
+        Vertex& back() { return vertices.back(); }
+        Vertex const& back() const { return vertices.back(); }
         size_t size() { return vertices.size(); }
         iterator begin() { return vertices.begin(); }
         iterator end() { return vertices.end(); }
@@ -75,16 +81,61 @@ struct STLFile
         Vertex& add_vertex( Vertex const& v )
         { return vertices.emplace_back( v ); }
 
-        Vertex& operator []( size_t n )
-        { return vertices[ n ]; }
+        iterator emplace( const_iterator here, 
+            Length x = 0_m, Length y = 0_m, Length z = 0_m )
+        { return vertices.emplace( here, x, y, z ); }
+        iterator emplace( const_iterator here, Vertex const& v )
+        { return vertices.emplace( here, v ); }
 
         Facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
             normal{ nx, ny, nz } { }
 
         Vertex normal;
         string comment;
-        std::vector< Vertex > vertices;
+        std::list< Vertex > vertices;
     };
+
+    /// @brief output a string representing this STLFile. 
+    /// NOTE: this is for debug purposes.  Use the STL class to output an STL 
+    /// file format
+    /// @return a string containing the solids, facets and vertices of this STLFile
+    string to_string() const
+    {
+        string ret = "{\n";
+        ret += "\t.solids = {\n";
+
+        for( auto const& solid: solids )
+        {
+            ret += "\t\t.name = \"" + solid.name + "\";\n";
+            ret += "\t\t.comment = \"" + solid.comment + "\";\n";
+            ret += "\t\t.facets = {\n";
+
+            for( auto const& facet: solid.facets )
+            {
+                ret += "\t\t\t.normal = {" 
+                    + std::to_string( facet.normal.x ) + ", " 
+                    + std::to_string( facet.normal.y ) + ", " 
+                    + std::to_string( facet.normal.z ) + " };\n";
+                ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
+                ret += "\t\t\t.vertices = {\n";
+
+                for( auto const& vertex: facet.vertices )
+                {
+                    ret += "\t\t\t\t{ " 
+                        + std::to_string( vertex.x ) + ", " 
+                        + std::to_string( vertex.y ) + ", "
+                        + std::to_string( vertex.z ) + " };\n";
+                }
+
+                ret += "\t\t\t};\n";
+            }
+
+            ret += "\t\t}\n"
+                   "\t};\n";
+        }
+        ret += "}\n";
+        return ret;
+    }
 
     // TODO: format the string name for use as a solid name in STL
     static string solid_name( string const& name )
@@ -151,18 +202,35 @@ struct STL
                 if( facet.vertices.size() < 3 )
                     continue;
 
-                for( size_t i = 1; i < facet.vertices.size() - 1; ++i )
+                auto i = facet.vertices.begin();
+                while( i != facet.vertices.end() )
                 {
+                    // we should always have three...
+                    auto v0 = *i++;
+                    auto v1 = *i++;
+                    auto v2 = *i++;
+
                     os << "facet normal " << facet.normal << "\n"
                        << "\touter loop\n"
-                       << "\t\tvertex " <<  facet.vertices[ 0 ] << "\n";
-
-                    for( size_t j = 0; j < 2; ++j )
-                        os << "\t\tvertex " << facet.vertices[ i + j ] << "\n";
-
-                    os << "\tendloop\n"
-                    << "endfacet\n";
+                       << "\t\tvertex " << v0 << "\n"
+                       << "\t\tvertex " << v1 << "\n"
+                       << "\t\tvertex " << v2 << "\n"
+                       << "\tendloop\n"
+                       << "enfacet\n";
                 }
+
+                // for( size_t i = 1; i < facet.vertices.size() - 1; ++i )
+                // {
+                //     os << "facet normal " << facet.normal << "\n"
+                //        << "\touter loop\n"
+                //        << "\t\tvertex " <<  facet.vertices[ 0 ] << "\n";
+
+                //     for( size_t j = 0; j < 2; ++j )
+                //         os << "\t\tvertex " << facet.vertices[ i + j ] << "\n";
+
+                //     os << "\tendloop\n"
+                //     << "endfacet\n";
+                // }
             }
             os << "endsolid " << solid.name << "\n";
         }
@@ -194,39 +262,141 @@ std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 /// @param p point to add
 /// @return the vertex
 constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
-{ 
-    auto& v = out.add_vertex(); 
-    return v;
+{ return out.add_vertex(); }
+
+/// @brief extrusion of a point
+template< typename ObjT, size_t Steps >
+constexpr STLFile::Facet& output( STLFile::Facet& out, 
+    Extrusion< ObjT, Length, Steps > const& extrusion )
+{
+    using iterator = STLFile::Facet::iterator;
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+    // gather the vertex
+    output( out, extrusion.object() );
+
+    if( out.size() == 1 )
+    {
+        // expects only a single vertex and adds a string of vertices
+        Length amount = {};
+        for( Length const& step: extrusion.step_values() )
+        {
+            amount += step;
+            auto v = out.front();
+            v[ dim ] = amount;
+            out.add_vertex( v );
+        }
+
+        return out;
+    }
+
+    // expects a string of vertices and creates triplets
+    Length amount = {};
+    size_t s = 0;
+
+    std::list< STLFile::Vertex > layer;
+    // transfer our string to the layer
+    layer.splice( layer.end(), out.vertices );
+
+    for( Length const& step: extrusion.step_values() )
+    {
+        amount += step;
+        iterator p1, p2;
+        p1 = p2 = layer.begin();
+        ++p2;
+
+        while( p2 != layer.end() )
+        {
+            auto v1 = *p1;
+            auto v2 = *p2;
+            auto v3 = *p1;
+            v3[ dim ] = amount;
+            auto v4 = *p2;
+            v4[ dim ] = amount;
+
+            // first triangle uses the original v1 vertices
+            // v1-v2-v3
+            out.add_vertex( v1 );
+            out.add_vertex( v2 );
+            out.add_vertex( v3 );
+
+            // second triangle inserted after first
+            // v4-v3-v2
+            out.add_vertex( v4 );
+            out.add_vertex( v3 );
+            out.add_vertex( v2 );
+
+            p1 = p2;
+            ++p2;
+        }
+
+        // move layer one step forward
+        for( auto& v: layer )
+            v[ dim ] = amount;
+    }
+
+    return out;
 }
 
-/// @brief output an extrusion to a facet.
+/// @brief extrusion of a.  Assumes the facet is linear
+/// NOTE: vertices should be in sets of three
 /// @tparam ObjT extruded object type
 /// @param out facet to write this extrusion to
 /// @param object object to output
 /// @return the facet
-template< typename ObjT, size_t Steps >
-constexpr STLFile::Facet& output( STLFile::Facet& out, 
-    Extrusion< ObjT, Length, Steps > const& extrusion )
-{ 
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+// template< typename ObjT, size_t Steps >
+// constexpr STLFile::Facet& output( STLFile::Facet& out, 
+//     Extrusion< ObjT, Length, Steps > const& extrusion )
+// { 
+//     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+//     using iterator = STLFile::Facet::iterator;
 
-    size_t verts = out.size();
-    output( out, extrusion.object() );
-    size_t i = out.size();
-    verts = out.size() - verts;
-    Length amount = {};
-    for( Length const& step : extrusion.step_values())
-    {
-        amount += step;
-        for( size_t j = 0; j < verts; ++j )
-        {
-            auto& v = out.add_vertex( out[--i] );
-            v[ dim ] = amount;
-        }
-    }
+//     // add vertices for the sub object
+//     output( out, extrusion.object() );
+//     Length amount = {};
+//     iterator last_step = out.begin();
+
+//     switch( dim ) {
+//     case 0:
+//         // extrusion of a single point
+//         for( Length const& step: extrusion.step_values() )
+//         {
+
+//         }
+//         break;
+//     case 1:
+//         break;
+//     case 2:
+//         break;
+//     }
+
+//     if constexpr( dim == 0 )
+//     {
+
+//     }
+
+//     for( Length const& step : extrusion.step_values() )
+//     {
+//         amount += step;
+//         iterator v1, v2;
+//         v1 = v2 = last_step;
+//         if( v2 == out.end() )
+//             break;
+
+//         ++v2;
+//         while( v2 != out.end() )
+//         {
+//             // we have two vertices on the last step
+//         }
+
+//         for( size_t j = 0; j < verts; ++j )
+//         {
+//             auto& v = out.add_vertex( out[--i] );
+//             v[ dim ] = amount;
+//         }
+//     }
     
-    return out;
-}
+//     return out;
+// }
 
 /// @brief output an extrusion to a facet
 /// @tparam ObjT 
@@ -310,15 +480,15 @@ constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
         return out;
 
     auto n = facet.normal.as_vector();
-    
-    auto const& x1 = facet.vertices[ 1 ].as_vector() - 
-        facet.vertices[ 0 ].as_vector();
-    auto const& x2 = facet.vertices[ 2 ].as_vector() -
-        facet.vertices[ 0 ].as_vector();
 
-    // reverse the order of the vertices to match the orientation
-    // NOTE: orientation from geometry.hpp points INSIDE whereas STLs expect
-    // normals to be pointing outside, hence the is_positive here
+    auto i = facet.vertices.begin();
+    auto const& v0 = (i++)->as_vector();
+    auto const& v1 = (i++)->as_vector();
+    auto const& v2 = i->as_vector();
+
+    auto x1 = v1 - v0;
+    auto x2 = v2 - v0;
+    
     if( is_positive( dot( cross( x1, x2 ), n )))
         facet.reverse_vertex_order();
     
