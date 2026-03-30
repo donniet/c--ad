@@ -11,7 +11,6 @@ using namespace formats;
 
 auto mortise_and_tenon()
 {
-
     // auto tenon_layout = Grid< 3, 3 >{};
     // auto mortise_layout = Grid< 3, 3 >{};
 
@@ -25,16 +24,18 @@ auto mortise_and_tenon()
 
     // return box( 1_m, 1_ft, 3_in );
 
-    return extrude( rectangle( 5_m, 4_m ), 2_m, 1_m, 1_in );
+    auto rect = extrude( segment( 5_m ), 2_m, 2_m );
+
+    return extrude( rect, 2_m, 1_m, 1_in );
 }
 
 int main( int ac, char* av[] )
 {
     auto obj = mortise_and_tenon();
 
-    STLFile file;
+    // STLFile file;
     // output( file, extrude( segment( 5_m ), 3_m, 2_m ) );
-    output( file, boundary( obj ));
+    // output( file, boundary( obj ));
     // std::cout << file.to_string() << std::endl;
 
     std::cout << STL{ obj } << std::endl;

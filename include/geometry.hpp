@@ -965,7 +965,6 @@ constexpr auto boundary( Collection< Objects... > collection )
 template< typename ObjT >
 auto translate( ObjT obj, vector_for< ObjT > rel );
 
-
 template< typename ObjT >
 requires( dimensions_of_v< space_of< ObjT >> == 0 )
 ObjT translate( ObjT obj, null_tensor_t )
@@ -984,8 +983,6 @@ auto translate( Extrusion< ObjT, U, Steps > proj,
     return project( translate( proj.object(), element_subtensor< dim >( rel )), 
         proj.amount() + tensor_get< dim >( rel ));
 }
-
-
 
 ///////////
 /// pad ///
@@ -1026,7 +1023,6 @@ Attribution< Extrusion< Extrusion< Extrusion< Point, U >, U >, U >, Named >
 box( U length, U width, U height )
 { return {{{{ {}, length }, width }, height }, { "box" }}; }
 
-
 /*
 
 template< typename ObjT >
@@ -1041,8 +1037,6 @@ Padded< ObjT > pad( ObjT object );
 */
 
 } // namespace geometry
-
-
 
 /////////
 // output
@@ -1063,7 +1057,6 @@ template< typename OutT, typename... Objects >
 requires( isgreater( sizeof...( Objects ), 0 ))
 constexpr void output( OutT& out, Collection< Objects... > const& col )
 { output_collection_helper( out, col, make_seq< sizeof...( Objects )>{} ); }
-
 
 } // namespace formats
 
