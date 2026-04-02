@@ -96,6 +96,15 @@ struct Collection< >
     constexpr boundary_type boundary() { return {}; }
 };
 
+/// @brief a collection-like object that inhabits the space of an object
+/// but acts as a empty collection
+template< typename ObjT >
+struct Ignored : Collection< >
+{
+    using space_type = space_of< ObjT >;
+    Ignored( ObjT const& ) { };
+};
+
 // a zero dimensional geometric element
 struct Point
 { 
@@ -517,6 +526,30 @@ struct Extrusion
     step_values_type _step_values;
 };
 
+template< size_t Step, typename ExtrusionT >
+struct ExtrusionStep;
+
+/// @brief represents a single step of an extrusion
+template< size_t Step, typename ObjT, typename U, size_t Steps >
+requires( isless( Step, Steps ))
+struct ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
+{
+    using boundary_type = Extrusion< typename ObjT::boundary_type, U, 1 >;
+    using extrusion_type = Extrusion< ObjT, U, Steps >;
+    using space_type = space_of< extrusion_type >;
+    static constexpr size_t step() { return Step; }
+
+    constexpr extrusion_type const& extrusion() const
+    { return _extrusion; }
+
+    constexpr ExtrusionStep( extrusion_type const& ext ):
+        _extrusion{ ext }
+    { }
+    constexpr ExtrusionStep(): _extrusion{} { }
+
+    extrusion_type _extrusion;
+};
+
 //////////////
 // operations
 
@@ -563,6 +596,50 @@ struct Extrusion
  * 
  * collection(...)
  */
+
+template< size_t... Is >
+struct IndexSelector
+{
+    template< size_t I, typename >
+    struct selector: integral_constant< bool, (( I == Is ) or ... ) > { };
+};
+
+template< size_t Step, typename ObjT, typename U, size_t Steps >
+requires( isless( Step, Steps ))
+ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
+extrusion_step( Extrusion< ObjT, U, Steps > const& ext )
+{ return { ext }; }
+
+template< template< size_t, typename > class Selector, typename CollectionT, size_t... Is >
+auto collection_select_helper( CollectionT const& col, seq< Is... > )
+{
+    return MakeCollection< std::conditional_t< 
+        Selector< Is, tuple_element_t< Is, CollectionT >>::value,
+        tuple_element_t< Is, CollectionT >,
+        Ignored< tuple_element_t< Is, CollectionT >>>... >::make( 
+            get< Is >( col )... );
+}
+
+/// @brief extract components using predicate into new collection
+template< template< size_t, typename > class Selector, typename... Objects >
+auto select( Collection< Objects... > const& col )
+{ return collection_select_helper< Selector >( col, make_seq< sizeof...( Objects )>{} ); }
+
+template< template< size_t, typename > class Selector, typename ExtrusionT, size_t... Is >
+auto extrusion_select_helper( ExtrusionT const& ext, seq< Is... > )
+{    
+    return MakeCollection< std::conditional_t< 
+        Selector< Is, ExtrusionStep< Is, ExtrusionT >>::value,
+        ExtrusionStep< Is, ExtrusionT >,
+        Ignored< ExtrusionStep< Is, ExtrusionT >>>... >::make(
+            extrusion_step< Is >( ext )... );
+}
+
+/// @brief 
+template< template< size_t, typename > class Selector, 
+    typename ObjT, typename U, size_t Steps >
+auto select( Extrusion< ObjT, U, Steps > const& ext )
+{ return extrusion_select_helper< Selector >( ext, make_seq< Steps >{} ); }
 
 /// @brief tag an object with an attribute
 /// @tparam ObjectT object type
@@ -672,9 +749,15 @@ template< typename ObjectT, typename U >
 constexpr Projection< ObjectT, U > project( ObjectT const& object, U here )
 { return { object, here }; }
 
-// forward decl
+/// @brief creates a collection of geometric objects which can be operated on
+/// together. 
+/// @tparam ...Objects types in the collection
+/// @param ...objects in the collection
+/// @return a collection where any nested collections are enumerated into the 
+/// returned collection
 template< typename... Objects >
-typename MakeCollection< Objects... >::type collection( Objects const&... objects )
+typename MakeCollection< Objects... >::type 
+collection( Objects const&... objects )
 { return MakeCollection< Objects... >::make( objects... ); }
 
 /////////////////////////////
@@ -734,14 +817,24 @@ typename MakeCollection< Objects... >::type collection( Objects const&... object
 /// @param amount thee amount to be extruded
 /// @return the extruded object
 template< size_t Steps, typename ObjT, typename U >
-Orientation< Extrusion< ObjT, U, Steps >> extrude( 
+constexpr Orientation< Extrusion< ObjT, U, Steps >> extrude( 
     Orientation< ObjT > const& oriented, 
     std::array< U, Steps > const& step_values )
 {
     using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
     
     return orient( extrude< Steps >( oriented.object(), step_values ), 
-        extrusion_space::base( oriented.orientation() ) );
+        extrusion_space::base( oriented.orientation() ));
+}
+
+template< size_t Step, typename ObjT, typename U, size_t Steps >
+constexpr auto extrusion_step( Orientation< Extrusion< ObjT, U, Steps >> const& ori )
+{ 
+    using extrusion_space = ExtrudeSpace< space_of< ObjT >, U >;
+
+    return orient( extrusion_step< Step >( ori.object() ), 
+        ori.orientation() );
+        // extrusion_space::base( ori.orientation() )); 
 }
 
 // template< typename Steps, typename ObjT, typename AttT, typename U >
@@ -777,9 +870,17 @@ auto collection_extrude_helper( CollectionT col, U amount, seq< Is... > )
 /// @param amount the amount to be extruded
 /// @return a collection of extruded objects
 template< size_t Steps, typename... Objects, typename U >
-auto extrude( Collection< Objects... > col, std::array< U, Steps > const& amount )
+auto extrude( Collection< Objects... > const& col, std::array< U, Steps > const& amount )
 { return collection_extrude_helper< Steps >( col, amount, 
     make_seq< sizeof...( Objects )>{} ); }
+
+template< size_t Step, typename CollectionT, size_t... Is >
+auto collection_extrusion_step_helper( CollectionT const& col, seq< Is... > )
+{ return collection( extrusion_step< Step >( get< Is >( col ))... ); }
+
+template< size_t Step, typename... Objects >
+auto extrusion_step( Collection< Objects... > const& col )
+{ return collection_extrusion_step_helper< Step >( col, make_seq< sizeof...( Objects )>{} ); }
 
 
 /////////////////////////////
@@ -911,8 +1012,7 @@ constexpr auto boundary( Extrusion< ObjT, U, Steps > ext )
     using vector_type = extrusion_space::vector_type;
 
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-    vector_type extrusion_direction;
-    vector_type intrusion_direction;
+    vector_type extrusion_direction, intrusion_direction;
     get< dim >( extrusion_direction ) = static_cast< U >( 1 );
     get< dim >( intrusion_direction ) = static_cast< U >( -1 );
 
@@ -920,6 +1020,56 @@ constexpr auto boundary( Extrusion< ObjT, U, Steps > ext )
         orient( project( ext.object(), static_cast< U >( 0 )), extrusion_direction ),      // proxinal
         orient( project( ext.object(), ext.amount() ), intrusion_direction ),              // distal
         extrude< Steps >( boundary( ext.object() ), ext.step_values() )); // lateral
+}
+
+template< typename ObjT >
+constexpr Collection< > boundary( Ignored< ObjT > const& )
+{ return {}; }
+
+template< size_t Step, typename ObjT, typename U, size_t Steps >
+constexpr auto boundary( ExtrusionStep< Step, Extrusion< ObjT, U, Steps >> const& ext_step )
+{
+    Extrusion< ObjT, U, Steps > const& ext = ext_step.extrusion();
+
+    return extrusion_step< Step >( extrude< Steps >( 
+        boundary( ext.object() ), ext.step_values() ));
+}
+
+template< size_t FirstStep, size_t... Rest >
+struct ExtrudedSurface
+{
+    // since the type tracks the element, the implementation can store the traversal
+    template< typename ObjT, typename U, size_t Steps >
+    requires( isless( FirstStep, Steps ))
+    static constexpr auto select( Extrusion< ObjT, U, Steps > const& extrusion )
+    {
+        U from, to = extrusion.step_values()[ FirstStep ];
+        if constexpr( FirstStep > 0 )
+            from = extrusion.step_values()[ FirstStep - 1 ];
+        
+        
+    }
+};
+
+
+/// @brief pad an element of a geometric shape
+template< typename SurfaceElement, typename ObjT, typename U, size_t Steps, typename V >
+auto pad( Extrusion< ObjT, U, Steps > const& extrusion, V amount )
+{
+    // first we identify the element possibly through recursion
+    // Element is a type and types contain the information needed to identify 
+    // the geometric piece to be padded. So it's two types talking to one another.
+    
+
+    // then we mimic an extrusion by finding the boundary of the padded element
+    // and extruding it in the direction of the orientation of the extruded
+    // element, and projecting the extruded element by amount
+    auto surface_element = SurfaceElement::select( extrusion );
+
+    // extrude won't work here becuase it creates a new dimension
+    auto padded_surface_element = extrude( surface_element, amount );
+
+    return collection( extrusion, padded_surface_element );
 }
 
 /// @brief boundary of a projection is a projection of the boundary
@@ -945,17 +1095,17 @@ constexpr auto boundary( Orientation< ObjT > ori )
 /// @param collection collection
 /// @return 
 template< typename CollectionT, size_t... Is >
-constexpr auto collection_boundary_helper( CollectionT collection, 
+constexpr auto collection_boundary_helper( CollectionT col, 
     seq< Is... > )
-{ return collection( boundary( get< Is >( collection ))... ); }
+{ return collection( boundary( get< Is >( col ))... ); }
 
 /// @brief the boundary of a collection is a collection of all the boundaries
 /// @tparam ...Objects
 /// @param collection 
 /// @return 
 template< typename... Objects >
-constexpr auto boundary( Collection< Objects... > collection )
-{ return collection_boundary_helper( collection, 
+constexpr auto boundary( Collection< Objects... > col )
+{ return collection_boundary_helper( col, 
     make_seq< sizeof...( Objects )>{} ); }
 
 ///////////////////

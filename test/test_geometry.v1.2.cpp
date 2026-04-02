@@ -26,7 +26,17 @@ auto mortise_and_tenon()
 
     auto rect = extrude( segment( 5_m ), 2_m, 2_m );
 
-    return extrude( rect, 2_m, 1_m, 1_in );
+    auto box = extrude( rect, 2_m, 1_m, 1_in );
+
+    // return box;
+
+    return select< IndexSelector< 1, 2 >::template selector >( box );
+
+    // using tenon_element = ExtrudedSurface< 1, 0, 0 >;
+
+    // auto padded = pad< tenon_element >( box, 3_in );
+
+    // return padded;
 }
 
 int main( int ac, char* av[] )

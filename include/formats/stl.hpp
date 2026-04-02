@@ -279,6 +279,107 @@ constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
 { return out.add_vertex(); }
 
 /// @brief extrusion of a point
+template< size_t SelectedStep, typename ObjT, size_t Steps >
+constexpr STLFile::Facet& output( STLFile::Facet& out, 
+    ExtrusionStep< SelectedStep, Extrusion< ObjT, Length, Steps >> const& ext_step )
+{
+    using iterator = STLFile::Facet::iterator;
+    using extrusion_type = Extrusion< ObjT, Length, Steps >;
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+
+    extrusion_type const& extrusion = ext_step.extrusion();
+
+    // fetch the minimum length
+    Length min_length = out.solid()->stl_file()->minimum_length();
+
+    output( out, extrusion.object() );
+
+    if( out.size() == 1 )
+    {
+        // expects only a single vertex and adds a string of vertices
+        Length amount = {};
+        size_t step = 0;
+        for( Length const& step_value: extrusion.step_values() )
+        {
+            if( step++ < SelectedStep )
+            {
+                amount += step_value;
+                continue;
+            }
+
+            auto& v = out.front();
+            v[ dim ] = amount;
+            auto w = v;
+            w[ dim ] = amount + step_value;
+            out.add_vertex( w );
+            break;
+        }
+
+        return out;
+    }
+
+    // expects a string of vertices and creates triplets
+    Length amount = {};
+    size_t s = 0;
+
+    std::list< STLFile::Vertex > layer;
+    // transfer our string to the layer
+    layer.splice( layer.end(), out.vertices );
+
+    size_t step = 0;
+    for( Length const& step_value: extrusion.step_values() )
+    {
+        if( step++ < SelectedStep )
+        {
+            amount += step_value;
+            continue;
+        }
+
+        // amount += step_value;
+        iterator p1, p2;
+        p1 = p2 = layer.begin();
+        ++p2;
+
+        while( p2 != layer.end() )
+        {
+            auto v1 = *p1;
+            v1[ dim ] = amount;
+            auto v2 = *p2;
+            v2[ dim ] = amount;
+            auto v3 = *p1;
+            v3[ dim ] = amount + step_value;
+            auto v4 = *p2;
+            v4[ dim ] = amount + step_value;
+
+            // is it possible to be less than the minimum length?
+            if( not is_positive( min_length )) 
+            {
+                // v1-v2-v3
+                out.add_vertex( v1 );
+                out.add_vertex( v2 );
+                out.add_vertex( v3 );
+
+                // v4-v3-v2
+                out.add_vertex( v4 );
+                out.add_vertex( v3 );
+                out.add_vertex( v2 );
+            }
+            else
+            {
+                throw std::logic_error( "STL minimum length not implemented" );
+            }
+            p1 = p2;
+            ++p2;
+        }
+
+        break;
+    }
+
+    return out;
+
+}
+
+/// @brief extrusion of a point
 template< typename ObjT, size_t Steps >
 constexpr STLFile::Facet& output( STLFile::Facet& out, 
     Extrusion< ObjT, Length, Steps > const& extrusion )
@@ -286,7 +387,7 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
     using iterator = STLFile::Facet::iterator;
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
 
-    // gather the vertex
+    // gather the vertices
     output( out, extrusion.object() );
 
     // fetch the minimum length
