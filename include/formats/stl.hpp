@@ -207,6 +207,8 @@ struct STL
 {
     using object_type = ObjT;
 
+    // STLFile::Solid& output_solid( );
+
     std::ostream& write_to( std::ostream& os ) const
     {
         STLFile out;

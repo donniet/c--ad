@@ -133,8 +133,8 @@ struct object_traits
 template< typename ObjectType >
 using pointer_to = object_traits< ObjectType >::pointer;
 
-template< typename ObjectType >
-using domain_of = object_traits< ObjectType >::domain_type;
+// template< typename ObjectType >
+// using domain_of = object_traits< ObjectType >::domain_type;
 
 template< typename ObjectType, typename... ArgTypes >
 // requires std::is_virtual_base_of< Object, ObjectType >::value
@@ -166,9 +166,6 @@ struct Object
     static void* operator new( size_t size, Universe& here );
     static void operator delete( void* ptr, Universe& here );
 };
-
-
-
 
 template< typename ObjectType >
 Universe& universe_of( pointer_to< ObjectType > obj )
