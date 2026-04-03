@@ -502,6 +502,20 @@ struct Extrusion
 
     step_values_type& step_values() 
     { return _step_values; }
+    constexpr U step_from( size_t step ) const
+    {
+        U value = {};
+        for( size_t i = 0; i < step; ++i )
+            value += step_values()[ i ];
+        return value;
+    }
+    constexpr U step_to( size_t step ) const
+    {
+        U value = {};
+        for( size_t i = 0; i <= step; ++i )
+            value += step_values()[ i ];
+        return value;
+    }
     unit_type amount() const
     { return sum( step_values() ); }
     object_type& object() 
@@ -538,6 +552,12 @@ struct ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
     using extrusion_type = Extrusion< ObjT, U, Steps >;
     using space_type = space_of< extrusion_type >;
     static constexpr size_t step() { return Step; }
+
+    constexpr U from() const
+    { return extrusion().step_from( Step ); }
+
+    constexpr U to() const
+    { return extrusion().step_to( Step ); }
 
     constexpr extrusion_type const& extrusion() const
     { return _extrusion; }
@@ -603,6 +623,9 @@ struct IndexSelector
     template< size_t I, typename >
     struct selector: integral_constant< bool, (( I == Is ) or ... ) > { };
 };
+
+template< size_t I, typename T >
+using index_selector = IndexSelector< 
 
 template< size_t Step, typename ObjT, typename U, size_t Steps >
 requires( isless( Step, Steps ))
@@ -1029,10 +1052,23 @@ constexpr Collection< > boundary( Ignored< ObjT > const& )
 template< size_t Step, typename ObjT, typename U, size_t Steps >
 constexpr auto boundary( ExtrusionStep< Step, Extrusion< ObjT, U, Steps >> const& ext_step )
 {
-    Extrusion< ObjT, U, Steps > const& ext = ext_step.extrusion();
+    using extrusion_type = Extrusion< ObjT, U, Steps >;
+    using extrusion_space = space_of< extrusion_type >;
+    using vector_type = extrusion_space::vector_type;
 
-    return extrusion_step< Step >( extrude< Steps >( 
-        boundary( ext.object() ), ext.step_values() ));
+    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+    vector_type extrusion_direction, intrusion_direction;
+    get< dim >( extrusion_direction ) = static_cast< U >( 1 );
+    get< dim >( intrusion_direction ) = static_cast< U >( -1 );
+
+    extrusion_type const& ext = ext_step.extrusion();
+    U from = ext_step.from(), to = ext_step.to();
+
+    return collection(
+        orient( project( ext.object(), from ), extrusion_direction ),
+        orient( project( ext.object(), to ), intrusion_direction ),
+        extrusion_step< Step >( extrude< Steps >( 
+            boundary( ext.object() ), ext.step_values() )));
 }
 
 template< size_t FirstStep, size_t... Rest >
