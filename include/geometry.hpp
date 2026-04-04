@@ -419,7 +419,7 @@ struct LinearTransformation
     constexpr object_type const& object() const { return _object; }
     constexpr object_type& object() { return _object; }
     constexpr matrix_type const& transformation() const { return _transform; }
-    constexpr matrix_type& transformation() const { return _transform; }
+    constexpr matrix_type& transformation() { return _transform; }
 
     constexpr LinearTransformation( object_type const& obj, matrix_type const& mat ):
         _object{ obj }, _transform{ mat }
@@ -984,7 +984,7 @@ template< typename ObjT >
 constexpr Intrusion< LinearTransformation< Projection< ObjT, Scalar >>>
 translate( ObjT const& obj, typename space_of< ObjT >::vector_type const& by )
 { 
-    using vector_type = VecT;
+    using vector_type = typename space_of< ObjT >::vector_type;
     static constexpr size_t dim = vector_type::size();
     return {{{ obj }, translation_matrix< dim >( by )}, 1 }; 
 }
