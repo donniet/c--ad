@@ -430,6 +430,28 @@ struct LinearTransformation
     matrix_type _transform;
 };
 
+template< typename ObjectT >
+struct Translation
+{
+    using object_type = ObjectT;
+    using space_type = space_of< object_type >;
+    static constexpr size_t dim = dimensions_of_v< space_type >;
+    using vector_type = space_type::vector_type;
+    using boundary_type = Translation< typename object_type::boundary_type >;
+
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type& object() { return _object; }
+    constexpr vector_type const& translation() const { return _transl; }
+    constexpr vector_type& translation() { return _transl; }
+
+    constexpr Translation( object_type const& obj, vector_type const& mat ):
+        _object{ obj }, _transl{ mat }
+    { }
+    constexpr Translation(): _object{}, _transl{} { }
+
+    object_type _object;
+    vector_type _transl;
+};
 
 template< typename ObjectT, typename U >
 struct Projection
@@ -981,13 +1003,9 @@ rotate_plane( ObjT const& obj, Scalar angle )
 }
 
 template< typename ObjT >
-constexpr Intrusion< LinearTransformation< Projection< ObjT, Scalar >>>
+constexpr Translation< ObjT >
 translate( ObjT const& obj, typename space_of< ObjT >::vector_type const& by )
-{ 
-    using vector_type = typename space_of< ObjT >::vector_type;
-    static constexpr size_t dim = vector_type::size();
-    return {{{ obj }, translation_matrix< dim >( by )}, 1 }; 
-}
+{ return { obj, by }; }
 
 /////////////////////////////
 // collection specializations
@@ -1159,6 +1177,11 @@ constexpr auto boundary( LinearTransformation< ObjT > const& transformed )
 { return transform_linear( boundary( transformed.object() ), 
     transformed.transformation() ); }
 
+template< typename ObjT >
+constexpr auto boundary( Translation< ObjT > const& translated )
+{ return translate( boundary( translated.object() ), 
+    translated.translation() ); }
+
 template< size_t FirstStep, size_t... Rest >
 struct ExtrudedSurface
 {
@@ -1236,27 +1259,27 @@ constexpr auto boundary( Collection< Objects... > col )
 /// translation ///
 ///////////////////
 
-template< typename ObjT >
-auto translate( ObjT obj, vector_for< ObjT > rel );
+// template< typename ObjT >
+// auto translate( ObjT obj, vector_for< ObjT > rel );
 
-template< typename ObjT >
-requires( dimensions_of_v< space_of< ObjT >> == 0 )
-ObjT translate( ObjT obj, null_tensor_t )
-{ return obj; }
+// template< typename ObjT >
+// requires( dimensions_of_v< space_of< ObjT >> == 0 )
+// ObjT translate( ObjT obj, null_tensor_t )
+// { return obj; }
 
-template< typename ObjT, typename U, size_t Steps >
-auto translate( Extrusion< ObjT, U, Steps > proj, 
-    vector_for< Projection< ObjT, U >> rel )
-{
-    // get the dimensions of the projected object
-    // this will also be the index to the offset in rel
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
+// template< typename ObjT, typename U, size_t Steps >
+// auto translate( Extrusion< ObjT, U, Steps > proj, 
+//     vector_for< Projection< ObjT, U >> rel )
+// {
+//     // get the dimensions of the projected object
+//     // this will also be the index to the offset in rel
+//     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
 
-    // adjust the projection by the last dimension of our relative vector
-    // then recurse
-    return project( translate( proj.object(), element_subtensor< dim >( rel )), 
-        proj.amount() + tensor_get< dim >( rel ));
-}
+//     // adjust the projection by the last dimension of our relative vector
+//     // then recurse
+//     return project( translate( proj.object(), element_subtensor< dim >( rel )), 
+//         proj.amount() + tensor_get< dim >( rel ));
+// }
 
 ///////////
 /// pad ///

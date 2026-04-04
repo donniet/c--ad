@@ -30,7 +30,8 @@ auto mortise_and_tenon()
 
     // return box;
 
-    return rotate_plane< 0, 1 >( box, pi / 4. );
+    // return rotate_plane< 0, 1 >( box, pi / 4. );
+    return translate( box, { 0.5_m, 0.2_m, 3_m });
 
     // return select< IndexSelector< 1, 2 >::template selector >( box );
 

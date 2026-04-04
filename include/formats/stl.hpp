@@ -501,6 +501,17 @@ constexpr auto output( STLFile& out,
 }
 
 template< typename ObjT >
+constexpr auto output( STLFile& out, Translation< ObjT > const& translated )
+{ 
+    output( out, translated.object() );
+    for( auto& solid: out.solids )
+        for( auto& facet: solid.facets )
+            for( auto& v: facet.vertices )
+                v = ( translated.translation() + v.as_vector() );
+    return out;
+}
+
+template< typename ObjT >
 constexpr auto output( STLFile::Solid& solid, 
     LinearTransformation< ObjT > const& transformed )
 { 
