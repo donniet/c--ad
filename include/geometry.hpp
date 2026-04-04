@@ -2,6 +2,7 @@
 #define __GEOMETRY_HPP__
 
 #include "tensors.hpp"
+#include "units.hpp"
 // #include "expressions.hpp"
 
 #include <print>
@@ -11,6 +12,7 @@
 namespace geometry {
 
 using namespace tensors;
+using namespace units;
 
 /**
  * What is a component?
@@ -25,6 +27,7 @@ template< vector T >
 struct Space 
 {
     using vector_type = T;
+    using matrix_type = decltype( T{} * T{} );
     static constexpr size_t dimensions();
 };
 
@@ -348,6 +351,7 @@ struct ExtrudeSpace< Space< Tensor< Shape<> >>, U >
 {
     using unit_type = U;
     using vector_type = Tensor< Shape< 1 >, unit_type >;
+    using matrix_type = Tensor< Shape< 1, 1 >, unit_type >;
     using space_type = Space< vector_type >;
 
     static constexpr vector_type base( Tensor< Shape<> > )
@@ -404,6 +408,28 @@ struct IntrudedSpace< Space< Tensor< Shape< D >, Ts... >>, I >
     { return vector_helper( v, make_seq< D - 1 >{} ); }
 };
 
+template< typename ObjectT >
+struct LinearTransformation
+{
+    using object_type = ObjectT;
+    using space_type = space_of< object_type >;
+    using matrix_type = space_type::matrix_type;
+    using boundary_type = LinearTransformation< typename object_type::boundary_type >;
+
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type& object() { return _object; }
+    constexpr matrix_type const& transformation() const { return _transform; }
+    constexpr matrix_type& transformation() const { return _transform; }
+
+    constexpr LinearTransformation( object_type const& obj, matrix_type const& mat ):
+        _object{ obj }, _transform{ mat }
+    { }
+    constexpr LinearTransformation(): _object{}, _transform{} { }
+
+    object_type _object;
+    matrix_type _transform;
+};
+
 
 template< typename ObjectT, typename U >
 struct Projection
@@ -429,6 +455,22 @@ struct Projection
 
     object_type _object;
     unit_type _amount;
+};
+
+template< typename ObjT >
+requires( isgreater( dimensions_of_v< space_of< ObjT >>, 0 ))
+struct Intrusion
+{
+    using object_type = ObjT;
+    using helper_type = IntrudedSpace< space_of< object_type >>;
+    static constexpr size_t dim = dimensions_of_v< space_of< object_type >> - 1;
+
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type& object() { return _object; }
+
+    Intrusion( object_type const& obj ): _object{ obj } { }
+
+    object_type _object;
 };
 
 // template< typename SpaceT, typename ObjT, unit... Us >
@@ -623,9 +665,6 @@ struct IndexSelector
     template< size_t I, typename >
     struct selector: integral_constant< bool, (( I == Is ) or ... ) > { };
 };
-
-template< size_t I, typename T >
-using index_selector = IndexSelector< 
 
 template< size_t Step, typename ObjT, typename U, size_t Steps >
 requires( isless( Step, Steps ))
@@ -893,7 +932,8 @@ auto collection_extrude_helper( CollectionT col, U amount, seq< Is... > )
 /// @param amount the amount to be extruded
 /// @return a collection of extruded objects
 template< size_t Steps, typename... Objects, typename U >
-auto extrude( Collection< Objects... > const& col, std::array< U, Steps > const& amount )
+auto extrude( Collection< Objects... > const& col, 
+    std::array< U, Steps > const& amount )
 { return collection_extrude_helper< Steps >( col, amount, 
     make_seq< sizeof...( Objects )>{} ); }
 
@@ -903,8 +943,51 @@ auto collection_extrusion_step_helper( CollectionT const& col, seq< Is... > )
 
 template< size_t Step, typename... Objects >
 auto extrusion_step( Collection< Objects... > const& col )
-{ return collection_extrusion_step_helper< Step >( col, make_seq< sizeof...( Objects )>{} ); }
+{ return collection_extrusion_step_helper< Step >( col, 
+    make_seq< sizeof...( Objects )>{} ); }
 
+
+/// @brief linear transformation
+template< typename ObjT >
+constexpr LinearTransformation< ObjT > 
+transform_linear( ObjT const& obj, 
+    typename space_of< ObjT >::matrix_type const& transform )
+{ return { obj, transform }; }
+
+template< typename MatT, size_t Axis0, size_t Axis1 >
+constexpr MatT rotate_plane_matrix( Scalar angle )
+{
+    using shape_type = MatT::shape_type;
+    auto rot = identity_matrix< MatT >();
+    
+    tensor_get< shape_type( Axis0, Axis0 )>( rot ) = cos( angle );
+    tensor_get< shape_type( Axis0, Axis1 )>( rot ) = -sin( angle );
+    tensor_get< shape_type( Axis1, Axis0 )>( rot ) = sin( angle );
+    tensor_get< shape_type( Axis1, Axis1 )>( rot ) = cos( angle );
+
+    return rot;
+}
+
+template< size_t Axis0, size_t Axis1, typename ObjT >
+requires( Axis0 != Axis1 and isless( Axis0, dimensions_of_v< space_of< ObjT >> ) 
+    and isless( Axis1, dimensions_of_v< space_of< ObjT >> ))
+constexpr LinearTransformation< ObjT >
+rotate_plane( ObjT const& obj, Scalar angle )
+{ 
+    using matrix_type = space_of< ObjT >::matrix_type;
+
+    return transform_linear( obj, 
+        rotate_plane_matrix< matrix_type, Axis0, Axis1 >( angle ));
+}
+
+template< typename ObjT >
+constexpr Intrusion< LinearTransformation< Projection< ObjT, Scalar >>>
+translate( ObjT const& obj, typename space_of< ObjT >::vector_type const& by )
+{ 
+    using vector_type = VecT;
+    static constexpr size_t dim = vector_type::size();
+    return {{{ obj }, translation_matrix< dim >( by )}, 1 }; 
+}
 
 /////////////////////////////
 // collection specializations
