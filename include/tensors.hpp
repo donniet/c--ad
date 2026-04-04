@@ -735,6 +735,17 @@ struct Tensor< S, T, Ts... > : std::array< T, 1 + sizeof...( Ts )>
     { }
 };
 
+template< shape S, typename T, typename Seq >
+struct UniformTensorHelper;
+
+template< shape S, typename T, size_t... Is >
+struct UniformTensorHelper< S, T, seq< Is... >>
+{ using type = Tensor< S, std::conditional_t< Is == Is, T, T >... >; };
+
+template< shape S, typename T >
+using uniform_tensor_t = 
+    UniformTensorHelper< S, T, make_seq< S::size() >>::type;
+
 /// @brief get the Ith element of a tensor
 /// @tparam TensorT the type of the tensor
 /// @tparam I the element to get
@@ -1360,7 +1371,7 @@ struct IdentityMatrixHelper< Tensor< S, Ts... >>
 
     template< size_t... Is >
     static constexpr matrix_type identity_helper( seq< Is... > )
-    { return make_tensor( static_cast< tensor_element_t< Is, matrix_type >>( 
+    { return make_tensor< S >( static_cast< tensor_element_t< Is, matrix_type >>( 
         // are we on the diagonal?
         shape_get< 0 >( S::from_element( Is )) == shape_get< 1 >( S::from_element( Is )) ?
             1 : 0 )... ); }

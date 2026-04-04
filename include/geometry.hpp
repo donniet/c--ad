@@ -27,7 +27,6 @@ template< vector T >
 struct Space 
 {
     using vector_type = T;
-    using matrix_type = decltype( T{} * T{} );
     static constexpr size_t dimensions();
 };
 
@@ -413,7 +412,8 @@ struct LinearTransformation
 {
     using object_type = ObjectT;
     using space_type = space_of< object_type >;
-    using matrix_type = space_type::matrix_type;
+    static constexpr size_t dim = dimensions_of_v< space_type >;
+    using matrix_type = uniform_tensor_t< Shape< dim, dim >, Scalar >;
     using boundary_type = LinearTransformation< typename object_type::boundary_type >;
 
     constexpr object_type const& object() const { return _object; }
@@ -951,7 +951,7 @@ auto extrusion_step( Collection< Objects... > const& col )
 template< typename ObjT >
 constexpr LinearTransformation< ObjT > 
 transform_linear( ObjT const& obj, 
-    typename space_of< ObjT >::matrix_type const& transform )
+    typename LinearTransformation< ObjT >::matrix_type const& transform )
 { return { obj, transform }; }
 
 template< typename MatT, size_t Axis0, size_t Axis1 >
@@ -974,7 +974,7 @@ requires( Axis0 != Axis1 and isless( Axis0, dimensions_of_v< space_of< ObjT >> )
 constexpr LinearTransformation< ObjT >
 rotate_plane( ObjT const& obj, Scalar angle )
 { 
-    using matrix_type = space_of< ObjT >::matrix_type;
+    using matrix_type = LinearTransformation< ObjT >::matrix_type;
 
     return transform_linear( obj, 
         rotate_plane_matrix< matrix_type, Axis0, Axis1 >( angle ));
@@ -1153,6 +1153,11 @@ constexpr auto boundary( ExtrusionStep< Step, Extrusion< ObjT, U, Steps >> const
         extrusion_step< Step >( extrude< Steps >( 
             boundary( ext.object() ), ext.step_values() )));
 }
+
+template< typename ObjT >
+constexpr auto boundary( LinearTransformation< ObjT > const& transformed )
+{ return transform_linear( boundary( transformed.object() ), 
+    transformed.transformation() ); }
 
 template< size_t FirstStep, size_t... Rest >
 struct ExtrudedSurface

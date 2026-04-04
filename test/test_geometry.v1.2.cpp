@@ -30,7 +30,9 @@ auto mortise_and_tenon()
 
     // return box;
 
-    return select< IndexSelector< 1, 2 >::template selector >( box );
+    return rotate_plane< 0, 1 >( box, pi / 4. );
+
+    // return select< IndexSelector< 1, 2 >::template selector >( box );
 
     // using tenon_element = ExtrudedSurface< 1, 0, 0 >;
 

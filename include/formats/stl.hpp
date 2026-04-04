@@ -45,6 +45,14 @@ struct STLFile
         vector_type as_vector() const
         { return { x, y, z }; }
 
+        Vertex& operator =( vector_type const& vec )
+        {
+            x = tensor_get< 0 >( vec );
+            y = tensor_get< 1 >( vec );
+            z = tensor_get< 2 >( vec );
+            return *this;
+        }
+
         Facet* facet() { return _facet; }
         Facet const* facet() const { return _facet; }
 
@@ -477,6 +485,43 @@ constexpr auto output( STLFile::Facet& out,
     verts = out.size() - verts;
     for( auto j = out.rbegin(); verts > 0; --verts, ++j )
         (*j)[ dim ] = object.amount();
+}
+
+
+template< typename ObjT >
+constexpr auto output( STLFile& out, 
+    LinearTransformation< ObjT > const& transformed )
+{ 
+    output( out, transformed.object() );
+    for( auto& solid: out.solids )
+        for( auto& facet: solid.facets )
+            for( auto& v: facet.vertices )
+                v = matmul( transformed.transformation(), v.as_vector() );
+    return out;
+}
+
+template< typename ObjT >
+constexpr auto output( STLFile::Solid& solid, 
+    LinearTransformation< ObjT > const& transformed )
+{ 
+    output( solid, transformed.object() );
+    for( auto& facet: solid.facets )
+        for( auto& v: facet.vertices )
+            v = matmul( transformed.transformation(), v.as_vector() );
+    return solid;
+}
+
+template< typename ObjT >
+constexpr auto output( STLFile::Facet& out,
+    LinearTransformation< ObjT > const& transformed )
+{
+    size_t verts = out.size();
+    output( out, transformed.object() );
+    verts = out.size() - verts;
+    for( auto j = out.rbegin(); verts > 0; --verts, ++j )
+        *j = matmul( transformed.transformation(), j->as_vector());
+
+    return out;
 }
 
 /// @brief outputing an orientation to a facet is duplicative since we already
