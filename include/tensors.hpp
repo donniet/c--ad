@@ -741,7 +741,16 @@ struct Tensor< S, T, Ts... > : std::array< T, 1 + sizeof...( Ts )>
 /// @param ten an instance of the tensor containing the desired value
 /// @return the value of the Ith element of tensor ten
 template< size_t I, typename TensorT >
-constexpr auto tensor_get( TensorT const& ten )
+constexpr auto const& tensor_get( TensorT const& ten )
+{ return get< I >( ten ); }
+
+/// @brief get the Ith element of a tensor
+/// @tparam TensorT the type of the tensor
+/// @tparam I the element to get
+/// @param ten an instance of the tensor containing the desired value
+/// @return the value of the Ith element of tensor ten
+template< size_t I, typename TensorT >
+constexpr auto& tensor_get( TensorT& ten )
 { return get< I >( ten ); }
 
 /// @brief extract an element from a tensor using a non-const index
@@ -1187,7 +1196,6 @@ template< shape S, typename... Ts, typename... Us >
 constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
 { return detail::minus_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
-
 /// @brief the tensor product
 /// @tparam A the shape of the left operand
 /// @tparam ...Ts the types of the left operand
@@ -1199,7 +1207,6 @@ constexpr auto operator -( Tensor< S, Ts... > const& left, Tensor< S, Us... > co
 template< shape A, typename... Ts, shape B, typename... Us >
 constexpr auto tensor_product( Tensor< A, Ts... > const& left, Tensor< B, Us... > const& right )
 { return detail::product_helper( left, right, make_seq< sizeof...( Ts ) * sizeof...( Us )>{} ); }
-
 
 /// @brief the tensor product
 /// @tparam A the shape of the left operand
@@ -1341,6 +1348,31 @@ template< shape S, typename... Ts >
 constexpr auto norm( Tensor< S, Ts... > const& ten )
 { return detail::TensorNorm< 2, Tensor< S, Ts... >>::value( ten ); }
 
+template< typename MatrixT >
+struct IdentityMatrixHelper;
+
+template< shape S, typename... Ts >
+requires( S::dimensions() == 2 and 
+    shape_element_v< 0, S > == shape_element_v< 1, S > )
+struct IdentityMatrixHelper< Tensor< S, Ts... >>
+{ 
+    using matrix_type = Tensor< S, Ts... >;
+
+    template< size_t... Is >
+    static constexpr matrix_type identity_helper( seq< Is... > )
+    { return make_tensor( static_cast< tensor_element_t< Is, matrix_type >>( 
+        // are we on the diagonal?
+        shape_get< 0 >( S::from_element( Is )) == shape_get< 1 >( S::from_element( Is )) ?
+            1 : 0 )... ); }
+
+    static constexpr matrix_type identity()
+    { return identity_helper( make_seq< sizeof...( Ts )>{} ); }
+};
+
+template< typename MatrixT >
+constexpr MatrixT identity_matrix()
+{ return IdentityMatrixHelper< MatrixT >::identity(); }
+
 /// @brief contract a tensor along indices I and J
 /// @tparam TensorT the type of the tensor to contract
 /// @tparam I the first contraction index
@@ -1447,7 +1479,7 @@ constexpr auto cofactor_helper( TensorT const& ten, seq< Is... > )
 { 
     using shape_type = tensor_shape_t< TensorT >;
     return make_tensor< shape_type >((
-        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * // i think this works for element ids too...
+        ( is_element_even_v< Is, shape_type > ? 1 : -1 ) * 
         det( element_subtensor< Is >( ten )))... );
 }
 } // namespace detail
