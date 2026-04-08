@@ -688,6 +688,31 @@ struct TupleUnique< tuple< T, Ts... >>
 template< typename TupleT >
 using tuple_unique_t = detail::TupleUnique< TupleT >::type;
 
+namespace detail {
+
+template< typename T, typename TupleT, size_t Index = 0 >
+struct TupleIndexHelper;
+
+template< typename T, size_t Index >
+struct TupleIndexHelper< T, tuple< >, Index >
+{ static constexpr size_t value = Index; };
+
+template< typename T, typename U, typename... Us, size_t Index >
+requires( is_same_v< T, U > )
+struct TupleIndexHelper< T, tuple< U, Us... >, Index >
+{ static constexpr size_t value = Index; };
+
+template< typename T, typename U, typename... Us, size_t Index >
+requires( not is_same_v< T, U > )
+struct TupleIndexHelper< T, tuple< U, Us... >, Index >
+{ static constexpr size_t value = 
+    TupleIndexHelper< T, tuple< U, Us... >, 1 + Index >::value; };
+
+} // namespace detail 
+
+template< typename T, typename TupleT >
+constexpr size_t tuple_index_v = detail::TupleIndexHelper< T, TupleT >::value;
+
 /**
  * Pack helpers
  */

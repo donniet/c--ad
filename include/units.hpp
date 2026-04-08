@@ -1845,7 +1845,7 @@ constexpr string to_string( U const& u )
 { return to_string( u.get_value() ); }
 
 template< units::unit U >
-requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
+// requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
 constexpr units::unit_square_root_t< U > sqrt( U u )
 { return units::unit_square_root_t< U >{ sqrt( u.get_value()) }; }
 

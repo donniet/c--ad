@@ -24,20 +24,21 @@ auto mortise_and_tenon()
 
     // return box( 1_m, 1_ft, 3_in );
 
-    auto rect = extrude( segment( 5_m ), 2_m, 2_m );
+    // auto rect = extrude( segment( 5_m ), 2_m, 2_m );
 
-    auto box = extrude( rect, 2_m, 1_m, 1_in );
+    auto box = extrude( extrude( segment( 5_m ), 1_m ), 
+            2_m );
 
     // return box;
 
-    // return rotate_plane< 0, 1 >( box, pi / 4. );
-    return translate( box, { 0.5_m, 0.2_m, 3_m });
+    return rotate_plane< 0, 1 >( box, pi / 4. );
+    // return translate( box, { 0.5_m, 0.2_m, 3_m });
 
     // return select< IndexSelector< 1, 2 >::template selector >( box );
 
-    // using tenon_element = ExtrudedSurface< 1, 0, 0 >;
-
-    // auto padded = pad< tenon_element >( box, 3_in );
+    // constexpr auto tenon_element = box.boundary_element( 1, 0, 0 );
+    // auto padded = pad< tenon_element >( box, 3_m );
+    // pad( boundary_component< extrusion_shell, 1, 0 >( box ), 3_m );
 
     // return padded;
 }

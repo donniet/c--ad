@@ -64,6 +64,10 @@ struct STLFile
             _facet{ f }, x{ v.x }, y{ v.y }, z{ v.z }
         { }
 
+
+// private:
+        Vertex( Facet* f ): _facet{ f } { }
+
         Facet* _facet;
         Length x;
         Length y;
@@ -387,7 +391,15 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
 
 }
 
-/// @brief extrusion of a point
+
+template< typename ObjT, size_t Steps >
+constexpr auto& output( STLFile& out, 
+    Extrusion< ObjT, Length, Steps > const& extrusion )
+{
+    auto& solid = out.add_solid( Extrusion< ObjT, Length, Steps >::object_name() );
+    return output( solid, extrusion );
+}
+
 template< typename ObjT, size_t Steps >
 constexpr STLFile::Facet& output( STLFile::Facet& out, 
     Extrusion< ObjT, Length, Steps > const& extrusion )
@@ -395,20 +407,24 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
     using iterator = STLFile::Facet::iterator;
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
 
+    // create a temporary facet to output the sub-object to
+    STLFile::Facet temp{ out.solid() };
+
     // gather the vertices
-    output( out, extrusion.object() );
+    output( temp, extrusion.object() );
 
     // fetch the minimum length
     Length min_length = out.solid()->stl_file()->minimum_length();
 
-    if( out.size() == 1 )
+    if( temp.size() == 1 )
     {
+        STLFile::Vertex v = temp.front();
+        out.add_vertex( v );
         // expects only a single vertex and adds a string of vertices
         Length amount = {};
         for( Length const& step: extrusion.step_values() )
         {
             amount += step;
-            auto v = out.front();
             v[ dim ] = amount;
             out.add_vertex( v );
         }
@@ -420,9 +436,7 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
     Length amount = {};
     size_t s = 0;
 
-    std::list< STLFile::Vertex > layer;
-    // transfer our string to the layer
-    layer.splice( layer.end(), out.vertices );
+    std::list< STLFile::Vertex >& layer = temp.vertices;
 
     for( Length const& step: extrusion.step_values() )
     {
@@ -462,8 +476,8 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
         }
 
         // move layer one step forward
-        for( auto& v: layer )
-            v[ dim ] = amount;
+        // for( auto& v: layer )
+        //     v[ dim ] = amount;
     }
 
     return out;
@@ -475,7 +489,7 @@ constexpr STLFile::Facet& output( STLFile::Facet& out,
 /// @param object 
 /// @return 
 template< typename ObjT >
-constexpr auto output( STLFile::Facet& out, 
+constexpr auto& output( STLFile::Facet& out, 
     Projection< ObjT, Length > const& object )
 {
     static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
@@ -485,11 +499,47 @@ constexpr auto output( STLFile::Facet& out,
     verts = out.size() - verts;
     for( auto j = out.rbegin(); verts > 0; --verts, ++j )
         (*j)[ dim ] = object.amount();
+    return out;
 }
 
+template< typename CompoundT, size_t... Is >
+constexpr auto& output_compound_helper( STLFile::Facet& out, CompoundT const& compound,
+    seq< Is... > )
+{ return ( output( out, get_component< Is >( compound )), ... ); }
+
+template< typename CompoundT, size_t... Is >
+constexpr auto& output_compound_helper( STLFile::Solid& out, CompoundT const& compound,
+    seq< Is... > )
+{ return ( output( out, get_component< Is >( compound )), ... ); }
+
+template< typename CompoundT, size_t... Is >
+constexpr auto& output_compound_helper( STLFile& out, CompoundT const& compound,
+    seq< Is... > )
+{ return ( output( out, get_component< Is >( compound )), ... ); }
+
+template< typename ComponentsT, typename... Objects >
+constexpr auto& output( STLFile::Facet& facet, 
+    Compound< ComponentsT, Objects... > const& compound )
+{ return output_compound_helper( facet, compound, 
+        make_seq< sizeof...( Objects )>{} ); }
+
+template< typename ComponentsT, typename... Objects >
+constexpr auto& output( STLFile::Solid& solid, 
+    Compound< ComponentsT, Objects... > const& compound )
+{ return output_compound_helper( solid, compound, 
+        make_seq< sizeof...( Objects )>{} ); }
+
+template< typename ComponentsT, typename... Objects >
+constexpr auto& output( STLFile& out, 
+    Compound< ComponentsT, Objects... > const& compound )
+{ 
+    // auto& solid = out.add_solid( "compound" );
+    return output_compound_helper( out, compound, 
+        make_seq< sizeof...( Objects )>{} ); 
+}
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, 
+constexpr auto& output( STLFile& out, 
     LinearTransformation< ObjT > const& transformed )
 { 
     output( out, transformed.object() );
@@ -501,7 +551,7 @@ constexpr auto output( STLFile& out,
 }
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Translation< ObjT > const& translated )
+constexpr auto& output( STLFile& out, Translation< ObjT > const& translated )
 { 
     output( out, translated.object() );
     for( auto& solid: out.solids )
@@ -512,7 +562,7 @@ constexpr auto output( STLFile& out, Translation< ObjT > const& translated )
 }
 
 template< typename ObjT >
-constexpr auto output( STLFile::Solid& solid, 
+constexpr auto& output( STLFile::Solid& solid, 
     LinearTransformation< ObjT > const& transformed )
 { 
     output( solid, transformed.object() );
@@ -523,7 +573,7 @@ constexpr auto output( STLFile::Solid& solid,
 }
 
 template< typename ObjT >
-constexpr auto output( STLFile::Facet& out,
+constexpr auto& output( STLFile::Facet& out,
     LinearTransformation< ObjT > const& transformed )
 {
     size_t verts = out.size();
@@ -542,52 +592,63 @@ constexpr auto output( STLFile::Facet& out,
 /// @param p 
 /// @return the vertex
 template< typename ObjT >
-constexpr auto output( STLFile::Facet& out, Orientation< ObjT > const& object )
+constexpr auto& output( STLFile::Facet& out, Orientation< ObjT > const& object )
 { return output( out, object.object() ); }
 
+template< typename SpaceT >
+constexpr auto& output( STLFile::Facet& out, Empty< SpaceT > const& object )
+{ return out; }
+
 // extrusion of a segment
-template< typename ObjT >
+template< typename ObjT, size_t Steps >
 // requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto output( STLFile::Solid& out, Extrusion< ObjT, Length > const& object )
+constexpr auto& output( STLFile::Solid& out, Extrusion< ObjT, Length, Steps > const& object )
 { return output( out.add_facet(), object ); }
 
 template< typename ObjT >
 // requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto output( STLFile::Solid& out, Projection< ObjT, Length > const& object )
+constexpr auto& output( STLFile::Solid& out, Projection< ObjT, Length > const& object )
 { return output( out.add_facet(), object ); }
 
 template< typename CollectionT, size_t... Is >
-constexpr auto output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
+constexpr auto& output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
     seq< Is... > )
 { return ( output( out, get< Is >( col )), ... ); }
 
 // template< typename CollectionT, size_t... Is >
-// constexpr auto output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
+// constexpr auto& output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
 //     seq< Is... > )
 // { return ( output( out, get< Is >( col )), ... ); }
 
 template< typename... Objects >
-constexpr auto output( STLFile& out, Collection< Objects... > const& col )
-{ return output_collection_helper( out.add_solid( "collection"), col, 
+constexpr auto& output( STLFile& out, Collection< Objects... > const& col )
+{ return output_collection_helper( out.add_solid( Collection< Objects... >::object_name() ), col, 
     make_seq< sizeof...( Objects )>{} ); } 
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Extrusion< ObjT, Length > const& obj )
-{ return output( out.add_solid( "extrusion" ), obj ); } 
+constexpr auto& output( STLFile& out, Extrusion< ObjT, Length > const& obj )
+{ return output( out.add_solid( Extrusion< ObjT, Length >::object_name() ), obj ); } 
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Projection< ObjT, Length > const& obj )
-{ return output( out.add_solid( "projection" ), obj ); } 
+constexpr auto& output( STLFile& out, Projection< ObjT, Length > const& obj )
+{ return output( out.add_solid( Projection< ObjT, Length >::object_name() ), obj ); } 
 
 template< typename ObjT >
-constexpr auto output( STLFile& out, Attribution< ObjT, Named > const& obj )
+constexpr auto& output( STLFile& out, Attribution< ObjT, Named > const& obj )
 { 
     auto& s = out.add_solid( obj.attribute().name() );
     return output( s, obj.object() ); 
 }
 
 template< typename ObjT >
-constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
+constexpr auto& output( STLFile& out, Orientation< ObjT > const& object )
+{
+    auto& solid = out.add_solid( Orientation< ObjT >::object_name() );
+    return output( solid, object );
+}
+
+template< typename ObjT >
+constexpr auto& output( STLFile::Solid& out, Orientation< ObjT > const& object )
 { 
     auto v = object.orientation();
     STLFile::Facet& facet = out.add_facet( tensor_get< 0 >( v ), 
@@ -615,7 +676,7 @@ constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
 }
 
 // template< >
-// constexpr auto output( STLFile::Facet& out, 
+// constexpr auto& output( STLFile::Facet& out, 
 //     Projected< Projected< Projected< Point, Length >, Length >, Length > const& p )
 // { 
 //     out.add_vertex( p.object().object().amount(), 
@@ -624,7 +685,7 @@ constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
 
 // extrusion of a point 
 // template< unit U >
-// constexpr auto output( STLFile::Facet& out, Extrusion< Point, U > const& object )
+// constexpr auto& output( STLFile::Facet& out, Extrusion< Point, U > const& object )
 // { 
 //     out.add_vertex();
 //     out.add_vertex( object.amount() );

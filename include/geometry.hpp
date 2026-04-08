@@ -84,7 +84,82 @@ constexpr std::array< U, Sections > divisions( U amount,
     return ret;
 }
 
+template< typename... Ts >
+using ComponentList = std::tuple< Ts... >;
 
+// this can't make boundaries of line segments because the extruded component is
+// empty.  but why?  they should all be the same space_type
+template< typename ComponentsT, typename First, typename... Rest >
+requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
+struct Compound: tuple< First, Rest... >
+{
+    using components_type = ComponentsT;
+    using space_type = space_of< First >;
+
+    static string object_name() 
+    { return "compound__" + First::object_name() + (( "-" + Rest::object_name() ) + ... ) + "__"; }
+
+    constexpr Compound( First const& first, Rest const&... rest ): 
+        tuple< First, Rest... >{ first, rest... } { }
+};
+
+template< typename... Ts >
+struct NestedComponents { };
+
+template< typename... Ts >
+using nested = NestedComponents< Ts... >;
+
+template< typename ComponentT, typename CompoundT >
+struct GetComponent;
+
+template< typename ComponentT, typename ComponentListT, typename... Objects >
+struct GetComponent< ComponentT, Compound< ComponentListT, Objects... > >
+{ 
+    using compound_type = Compound< ComponentListT, Objects... >;
+    using component_type = tuple_element_t< 
+        tuple_index_v< ComponentT, ComponentListT >, tuple< Objects... >>;
+
+    static constexpr component_type get( compound_type const& compound ) 
+    { return std::get< tuple_index_v< ComponentT, ComponentListT >>( compound ); } 
+};
+
+template< typename First, typename... Rest, typename ComponentListT, typename... Objects >
+requires( isgreater( sizeof...( Rest ), 0 ))
+struct GetComponent< nested< First, Rest... >, Compound< ComponentListT, Objects... >>
+{ 
+    using compound_type = Compound< ComponentListT, Objects... >;
+    using first_getter = GetComponent< First, compound_type >;
+    using nested_getter = GetComponent< nested< Rest... >, 
+        typename first_getter::component_type >;
+    using component_type = nested_getter::component_type;
+
+    static constexpr component_type get( compound_type const& compound ) 
+    { return nested_getter::get( first_getter::get( compound )); } 
+};
+
+template< typename First, typename ComponentListT, typename... Objects >
+struct GetComponent< nested< First >, Compound< ComponentListT, Objects... >>:
+    GetComponent< First, Compound< ComponentListT, Objects... >> { };
+
+template< typename ComponentT, typename CompoundT >
+constexpr typename GetComponent< ComponentT, CompoundT >::component_type
+get_component( CompoundT const& compound )
+{ return GetComponent< ComponentT, CompoundT >::get( compound ); }
+
+template< size_t I, typename ComponentListT, typename... Objects >
+constexpr tuple_element_t< I, tuple< Objects... >>
+get_component( Compound< ComponentListT, Objects... > const& compound )
+{ return std::get< I >( compound ); }
+
+template< typename... Components >
+struct MakeCompound
+{
+    template< typename... Objects >
+    requires( sizeof...( Objects ) == sizeof...( Components ))
+    static constexpr Compound< ComponentList< Components... >, Objects... >
+    make( Objects const&... objects )
+    { return { objects... }; }
+};
 
 template< typename... >
 struct Collection;
@@ -93,9 +168,7 @@ template< >
 struct Collection< >
 { 
     using space_type = null_space;
-    using boundary_type = Collection< >; // no boundary
     static constexpr size_t size() { return 0; }
-    constexpr boundary_type boundary() { return {}; }
 };
 
 /// @brief a collection-like object that inhabits the space of an object
@@ -107,14 +180,44 @@ struct Ignored : Collection< >
     Ignored( ObjT const& ) { };
 };
 
+template< typename SpaceT >
+struct Empty
+{ 
+    static string object_name() { return "empty"; }
+    using space_type = SpaceT; 
+};
+
+template< typename T >
+struct IsEmpty
+{ static constexpr bool value = false; };
+
+template< typename SpaceT >
+struct IsEmpty< Empty< SpaceT >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+constexpr bool is_empty = IsEmpty< T >::value;
+
 // a zero dimensional geometric element
 struct Point
 { 
     using space_type = null_space;
-    using boundary_type = Collection< >; // no boundary
-    constexpr boundary_type boundary() { return {}; }
+    // using boundary_type = Collection< >; // no boundary
+    struct boundary_element_type 
+    { constexpr boundary_element_type() { } };
+
+    static string object_name() { return "point"; }
+
+    // constexpr boundary_type boundary() { return {}; }
     // all zero dimensional
+
+    constexpr boundary_element_type boundary_element() { return {}; }
 };
+
+template< >
+struct IsEmpty< Point >
+{ static constexpr bool value = false; };
+
 
 /// @brief a tuple-like collection of objects
 /// @tparam First type of first object
@@ -124,8 +227,6 @@ requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
 struct Collection< First, Rest... >: Collection< Rest... >
 { 
     using space_type = space_of< First >;
-    using boundary_type = Collection< typename First::boundary_type, 
-        typename Rest::boundary_type... >;
     static constexpr size_t size() { return 1 + sizeof...( Rest ); }
 
     constexpr First const& first() const { return _first; }
@@ -136,8 +237,11 @@ struct Collection< First, Rest... >: Collection< Rest... >
     constexpr Collection< Rest... >& rest() 
     { return *this; }
 
-    constexpr boundary_type boundary() const
-    { return { First::boundary(), Rest::boundary()... }; }
+    // constexpr boundary_type boundary() const
+    // { return { First::boundary(), Rest::boundary()... }; }
+
+    static string object_name() { return "collection__" + First::object_name() + 
+        (( "_" + Rest::object_name() ) + ... ) + "__"; }
 
     constexpr Collection( First const& first, Rest const&... rest ): 
         Collection< Rest... >{ rest... }, _first{ first }
@@ -151,6 +255,10 @@ struct Collection< First, Rest... >: Collection< Rest... >
 
     First _first;
 };
+
+template< typename... Objects >
+struct IsEmpty< Collection< Objects... >>
+{ static constexpr bool value = ( IsEmpty< Objects >::value and ... ); };
 
 template< typename ObjT, typename CollectionT >
 struct CollectionAdd;
@@ -209,9 +317,6 @@ struct MakeCollection< Collection< LeadingFirst, LeadingRest... >, Rest... >
         return maker::make( first.first(), tail ); 
     }
 };
-
-
-
 
 } // namespace geometry
 namespace std {
@@ -272,17 +377,11 @@ using std::get;
 // attributes
 struct Named 
 { 
+    static string object_name() { return "named"; }
     constexpr string const& name() const
     { return _name; }
 
     string _name; 
-};
-struct Boundary 
-{ 
-    constexpr int count() const
-    { return _count; }
-
-    int _count; 
 };
 
 template< typename ObjT, typename AttributeT >
@@ -290,18 +389,16 @@ struct Attribution
 {
     using object_type = ObjT;
     using space_type = space_of< object_type >;
-    using boundary_type = Attribution< 
-        typename object_type::boundary_type, AttributeT >;
     using attribute_type = AttributeT;
+
+    static string object_name() { return "attribution__" + 
+        AttributeT::object_name() + "__" + object_type::object_name(); }
 
     constexpr object_type object() const
     { return _object; }
 
     constexpr attribute_type attribute() const
     { return _attribute; }
-
-    constexpr boundary_type boundary() const
-    { return { object().boundary(), attribute() }; }
 
     Attribution( object_type object, attribute_type attribute ):
         _object{ object }, _attribute{ attribute }
@@ -311,6 +408,10 @@ struct Attribution
     attribute_type _attribute;
 };
 
+template< typename ObjT, typename AttributeT >
+struct IsEmpty< Attribution< ObjT, AttributeT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 /// @brief an oriented object
 /// @tparam ObjectT the type of the object
 template< typename ObjT >
@@ -318,17 +419,16 @@ struct Orientation
 {
     using object_type = ObjT;
     using space_type = space_of< object_type >;
-    using boundary_type = Orientation< typename object_type::boundary_type >;
     using vector_type = space_type::vector_type;
+
+    static string object_name() 
+    { return "orientation_" + object_type::object_name(); }
 
     constexpr object_type object() const
     { return _object; }
 
     constexpr vector_type orientation() const
     { return _orientation; }
-
-    constexpr boundary_type boundary() const
-    { return { object().boundary(), orientation() }; }
 
     Orientation( object_type object, vector_type orientation ):
         _object{ object }, _orientation{ orientation }
@@ -337,6 +437,10 @@ struct Orientation
     object_type _object;
     vector_type _orientation;
 };
+
+template< typename ObjT >
+struct IsEmpty< Orientation< ObjT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
 
 ////////////////////////////
 /// space helper classes ///
@@ -414,7 +518,9 @@ struct LinearTransformation
     using space_type = space_of< object_type >;
     static constexpr size_t dim = dimensions_of_v< space_type >;
     using matrix_type = uniform_tensor_t< Shape< dim, dim >, Scalar >;
-    using boundary_type = LinearTransformation< typename object_type::boundary_type >;
+
+    static string object_name() 
+    { return "lineartransformation_" + object_type::object_name(); }
 
     constexpr object_type const& object() const { return _object; }
     constexpr object_type& object() { return _object; }
@@ -430,6 +536,10 @@ struct LinearTransformation
     matrix_type _transform;
 };
 
+template< typename ObjT >
+struct IsEmpty< LinearTransformation< ObjT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 template< typename ObjectT >
 struct Translation
 {
@@ -438,6 +548,9 @@ struct Translation
     static constexpr size_t dim = dimensions_of_v< space_type >;
     using vector_type = space_type::vector_type;
     using boundary_type = Translation< typename object_type::boundary_type >;
+
+    static string object_name() 
+    { return "translation_" + object_type::object_name(); }
 
     constexpr object_type const& object() const { return _object; }
     constexpr object_type& object() { return _object; }
@@ -453,6 +566,10 @@ struct Translation
     vector_type _transl;
 };
 
+template< typename ObjT >
+struct IsEmpty< Translation< ObjT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 template< typename ObjectT, typename U >
 struct Projection
 {
@@ -460,16 +577,15 @@ struct Projection
     using unit_type = U;
     using extrude_space = ExtrudeSpace< space_of< object_type >, unit_type >;
     using space_type = extrude_space::space_type;
-    using boundary_type = Projection< typename ObjectT::boundary_type, U >;
     using vector_type = extrude_space::vector_type;
 
-    constexpr object_type const& object() const { return _object; }
-    constexpr object_type&       object()       { return _object; }
-    constexpr unit_type   const& amount() const { return _amount; }
-    constexpr unit_type&         amount()       { return _amount; }
+    static string object_name() 
+    { return "projection_" + object_type::object_name(); }
 
-    constexpr boundary_type boundary() const
-    { return { object().boundary(), amount() }; }
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type& object() { return _object; }
+    constexpr unit_type const& amount() const { return _amount; }
+    constexpr unit_type& amount() { return _amount; }
 
     constexpr Projection( object_type object, unit_type amount = 
         static_cast< unit_type >( 0 )): _object{ object }, _amount{ amount } 
@@ -479,6 +595,10 @@ struct Projection
     unit_type _amount;
 };
 
+template< typename ObjT, typename U >
+struct IsEmpty< Projection< ObjT, U >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 template< typename ObjT >
 requires( isgreater( dimensions_of_v< space_of< ObjT >>, 0 ))
 struct Intrusion
@@ -486,6 +606,9 @@ struct Intrusion
     using object_type = ObjT;
     using helper_type = IntrudedSpace< space_of< object_type >>;
     static constexpr size_t dim = dimensions_of_v< space_of< object_type >> - 1;
+
+    static string object_name() 
+    { return "intrusion_" + object_type::object_name(); }
 
     constexpr object_type const& object() const { return _object; }
     constexpr object_type& object() { return _object; }
@@ -495,6 +618,10 @@ struct Intrusion
     object_type _object;
 };
 
+template< typename ObjT >
+struct IsEmpty< Intrusion< ObjT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 // template< typename SpaceT, typename ObjT, unit... Us >
 // Projection< ObjT, SpaceT > project( ObjT object, Us... offsets )
 // { return { project, offsets... }; }
@@ -502,6 +629,7 @@ struct Intrusion
 // forward decl
 template< typename ObjT, typename U, size_t Steps >
 struct Extrusion;
+
 
 template< typename ObjT, typename U, size_t Steps >
 struct ExtrusionBase: Orientation< Projection< ObjT, U >>
@@ -513,11 +641,18 @@ struct ExtrusionBase: Orientation< Projection< ObjT, U >>
     using helper_type = ExtrudeSpace< space_of< ObjT >, U >;
     using base_vector_type = space_of< ObjT >::vector_type;
 
+    static string object_name() 
+    { return "extrusionbase_" + object_type::object_name(); }
+
     ExtrusionBase( object_type const& object, step_values_type const& step_values ):
         Orientation< Projection< object_type, U >>{{ object }, 
             helper_type::extruded( base_vector_type{}, -sum( step_values ) )}
     { }
 };
+
+template< typename ObjT, typename U, size_t Steps >
+struct IsEmpty< ExtrusionBase< ObjT, U, Steps >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
 
 template< typename ObjT, typename U, size_t Steps >
 struct ExtrusionCap: Orientation< Projection< ObjT, U >>
@@ -529,10 +664,43 @@ struct ExtrusionCap: Orientation< Projection< ObjT, U >>
     using helper_type = ExtrudeSpace< space_of< ObjT >, U >;
     using base_vector_type = space_of< ObjT >::vector_type;
 
+    static string object_name() 
+    { return "extrusioncap_" + object_type::object_name(); }
+
     ExtrusionCap( object_type const& object, step_values_type const& step_values ):
         Orientation< Projection< object_type, U >>{{ object, sum( step_values ) }, 
             helper_type::extruded( base_vector_type{}, sum( step_values ))}
     { }
+};
+
+template< typename ObjT, typename U, size_t Steps >
+struct IsEmpty< ExtrusionCap< ObjT, U, Steps >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
+/// @brief represents an element of the boundary of an extrusion
+template< typename ObjT, size_t Steps >
+struct ExtrusionBoundaryElement
+{
+    using object_type = ObjT;
+    static constexpr size_t steps() { return Steps; }
+    using object_boundary_element_type = object_type::boundary_element_type;
+
+    constexpr size_t step() const { return _step; }
+    constexpr object_boundary_element_type sub_element() { return _sub_element; }
+
+    constexpr ExtrusionBoundaryElement( size_t step, 
+        object_boundary_element_type sub_elem ):
+        _step{ step }, _sub_element{ sub_elem } { }
+
+    size_t _step;
+    object_boundary_element_type _sub_element;
+};
+
+struct extrusion_boundary
+{
+    struct shell { };
+    struct base { };
+    struct cap { };
 };
 
 template< typename ObjT, typename U, size_t Steps = 1 >
@@ -544,11 +712,7 @@ struct Extrusion
     using helper_type = ExtrudeSpace< space_of< object_type >, unit_type >;
     using space_type = helper_type::space_type;
 
-    using base_type = ExtrusionBase< ObjT, U, Steps >;
-    using cap_type = ExtrusionCap< ObjT, U, Steps >;
-    using shell_type = Extrusion< typename ObjT::boundary_type, unit_type, Steps >;
-
-    using boundary_type = Collection< base_type, cap_type, shell_type >;
+    using boundary_element_type = ExtrusionBoundaryElement< ObjT, Steps >;
 
     static constexpr size_t steps() { return Steps; }
 
@@ -557,12 +721,12 @@ struct Extrusion
     step_values_type const& step_values() const 
     { return _step_values; }
 
-    base_type base() const 
-    { return { object(), step_values() }; }
-    cap_type cap() const 
-    { return { object(), step_values() }; }
-    shell_type shell() const 
-    { return { object().boundary(), step_values() }; }
+    // base_type base() const 
+    // { return { object(), step_values() }; }
+    // cap_type cap() const 
+    // { return { object(), step_values() }; }
+    // shell_type shell() const 
+    // { return { object().boundary(), step_values() }; }
 
     step_values_type& step_values() 
     { return _step_values; }
@@ -580,21 +744,28 @@ struct Extrusion
             value += step_values()[ i ];
         return value;
     }
+
+    static string object_name() 
+    { return "extrusion_" + object_type::object_name(); }
     unit_type amount() const
     { return sum( step_values() ); }
-    object_type& object() 
+    constexpr object_type& object() 
     { return _object; }
 
-    constexpr boundary_type boundary() const
-    { return { base(), cap(), shell() }; }
+    // constexpr boundary_type boundary() const
+    // { return { base(), cap(), shell() }; }
+
+    /// @brief index to the element in the boundary
+    template< typename... Rest >
+    constexpr boundary_element_type boundary_element( size_t first, 
+        Rest... rest )
+    { return { first, object().boundary_element( rest... ) }; }
 
     constexpr Extrusion( object_type const& object, step_values_type const& step_values ): 
-        _object{ object }, _step_values{ step_values }
-    { }
+        _object{ object }, _step_values{ step_values } { }
 
     constexpr Extrusion( object_type const& object, unit_type const& amount ): 
-        _object{ object }, _step_values{ divisions< steps() >( amount )}
-    { }
+        _object{ object }, _step_values{ divisions< steps() >( amount )} { }
 
     constexpr Extrusion(): 
         _object{ }, _step_values{} 
@@ -604,6 +775,10 @@ struct Extrusion
     step_values_type _step_values;
 };
 
+template< typename ObjT, typename U, size_t Steps >
+struct IsEmpty< Extrusion< ObjT, U, Steps >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
 template< size_t Step, typename ExtrusionT >
 struct ExtrusionStep;
 
@@ -612,8 +787,9 @@ template< size_t Step, typename ObjT, typename U, size_t Steps >
 requires( isless( Step, Steps ))
 struct ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
 {
-    using boundary_type = Extrusion< typename ObjT::boundary_type, U, 1 >;
-    using extrusion_type = Extrusion< ObjT, U, Steps >;
+    using object_type = ObjT;
+    using boundary_type = Extrusion< typename object_type::boundary_type, U, 1 >;
+    using extrusion_type = Extrusion< object_type, U, Steps >;
     using space_type = space_of< extrusion_type >;
     static constexpr size_t step() { return Step; }
 
@@ -622,6 +798,9 @@ struct ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
 
     constexpr U to() const
     { return extrusion().step_to( Step ); }
+
+    static string object_name() 
+    { return "extrusionstep_" + object_type::object_name(); }
 
     constexpr extrusion_type const& extrusion() const
     { return _extrusion; }
@@ -633,6 +812,45 @@ struct ExtrusionStep< Step, Extrusion< ObjT, U, Steps >>
 
     extrusion_type _extrusion;
 };
+
+template< size_t Step, typename ObjT >
+struct IsEmpty< ExtrusionStep< Step, ObjT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
+
+struct padding_boundary {
+    struct base { };
+    struct shell { };
+    struct cap { };
+};
+
+template< typename ObjectT, typename SurfaceElementT >
+struct Padding
+{
+    using object_type = ObjectT;
+    using space_type = space_of< object_type >;
+    using vector_type = space_type::vector_type;
+    using amount_type = decltype( norm<2>( vector_type{} ));
+    using surface_element_type = SurfaceElementT;
+
+    static string object_name() 
+    { return "padding_" + object_type::object_name(); }
+
+    constexpr object_type const& object() const { return _object; }
+    constexpr object_type& object() { return _object; }
+    constexpr amount_type const& amount() const { return _amount; }
+    constexpr amount_type& amount() { return _amount; }
+
+    constexpr Padding( object_type const& obj, amount_type const& amount ):
+        _object{ obj }, _amount{ amount }
+    { }
+
+    object_type _object;
+    amount_type _amount;
+};
+
+template< typename ObjT, typename SurfaceElementT >
+struct IsEmpty< Padding< ObjT, SurfaceElementT >>
+{ static constexpr bool value = IsEmpty< ObjT >::value; };
 
 //////////////
 // operations
@@ -813,15 +1031,22 @@ vector_for< ObjT > get_orientation( Extrusion< ObjT, U, Steps > const& extruded 
 /// @param amount of extrusion
 /// @return the extruded object
 template< size_t Steps, typename ObjT, typename U >
+requires( not is_empty< ObjT > )
 Extrusion< ObjT, U, Steps > extrude( ObjT const& object, 
     std::array< U, Steps > const& step_values )
 { return { object, step_values }; }
 
 template< typename ObjT, typename First, typename... Rest >
-requires(( is_same_v< First, Rest > and ... ))
+requires( not is_empty< ObjT > and ( is_same_v< First, Rest > and ... ))
 Extrusion< ObjT, First, 1 + sizeof...( Rest ) > extrude( ObjT const& object, 
     First const& first, Rest const&... rest )
 { return { object, { first, rest... }}; }
+
+template< size_t Steps, typename ObjT, typename U >
+requires( is_empty< ObjT > )
+Empty< typename ExtrudeSpace< space_of< ObjT >, U >::space_type >  
+extrude( ObjT const&, std::array< U, Steps > const& first )
+{ return { }; }
 
 /// @brief projecting an object into an extrude space
 /// @tparam ObjectT type of the object
@@ -839,10 +1064,15 @@ constexpr Projection< ObjectT, U > project( ObjectT const& object, U here )
 /// @param ...objects in the collection
 /// @return a collection where any nested collections are enumerated into the 
 /// returned collection
+// template< typename... Objects >
+// typename MakeCollection< Objects... >::type 
+// collection( Objects const&... objects )
+// { return MakeCollection< Objects... >::make( objects... ); }
+
+// NOTE: original dumb implementation
 template< typename... Objects >
-typename MakeCollection< Objects... >::type 
-collection( Objects const&... objects )
-{ return MakeCollection< Objects... >::make( objects... ); }
+Collection< Objects... > collection( Objects const&... objects )
+{ return { objects... }; }
 
 /////////////////////////////
 // projection specializations
@@ -1105,6 +1335,22 @@ translate( ObjT const& obj, typename space_of< ObjT >::vector_type const& by )
 // constexpr auto subdivide( Extrusion< ObjT, U > ext )
 // { return SubdivisionHelper< Divisions, Extrusion< ObjT, U >>::subdivide( ext ); }
 
+template< size_t FirstStep, size_t... Rest >
+struct ExtrudedSurface
+{
+    // since the type tracks the element, the implementation can store the traversal
+    template< typename ObjT, typename U, size_t Steps >
+    requires( isless( FirstStep, Steps ))
+    static constexpr auto select( Extrusion< ObjT, U, Steps > const& extrusion )
+    {
+        U from, to = extrusion.step_values()[ FirstStep ];
+        if constexpr( FirstStep > 0 )
+            from = extrusion.step_values()[ FirstStep - 1 ];
+        
+        
+    }
+};
+
 
 ///////////////////////////
 // boundary specializations
@@ -1112,7 +1358,7 @@ translate( ObjT const& obj, typename space_of< ObjT >::vector_type const& by )
 /// @brief boundary of a point is a point
 /// @param Point parameter
 /// @return a Point
-constexpr Collection<> boundary( Point ) { return {}; }
+constexpr Empty< null_space > boundary( Point ) { return {}; }
 
 /// @brief boundary of an attributed object attributes the boundary
 /// @tparam ObjT attributed object type
@@ -1140,10 +1386,25 @@ constexpr auto boundary( Extrusion< ObjT, U, Steps > ext )
     get< dim >( extrusion_direction ) = static_cast< U >( 1 );
     get< dim >( intrusion_direction ) = static_cast< U >( -1 );
 
-    return collection( 
-        orient( project( ext.object(), static_cast< U >( 0 )), extrusion_direction ),      // proxinal
-        orient( project( ext.object(), ext.amount() ), intrusion_direction ),              // distal
-        extrude< Steps >( boundary( ext.object() ), ext.step_values() )); // lateral
+    // return collection(
+    //     extrude< Steps >( boundary( ext.object() ), ext.step_values() ),
+    //     orient( project( ext.object(), static_cast< U >( 0 )), extrusion_direction ),      // proxinal
+    //     orient( project( ext.object(), ext.amount() ), intrusion_direction )); // lateral
+
+    // we have to define the boundary of a line segment ( Extrusion< Point, U, Steps > )
+    // a compound can have empty's or no?
+
+    // the problem was that the boundary of an extrusion of an empty object
+    // must still extrude the space of that object or else it will not match the 
+    // space of the oriented, projected objects
+    return MakeCompound< extrusion_boundary::shell, extrusion_boundary::base, 
+        extrusion_boundary::cap >::make( 
+            extrude< Steps >( boundary( ext.object() ), ext.step_values() ),
+            orient( project( ext.object(), static_cast< U >( 0 )), 
+                extrusion_direction ),      // proxinal
+            orient( project( ext.object(), ext.amount() ), 
+                intrusion_direction )); // lateral
+
 }
 
 template< typename ObjT >
@@ -1166,10 +1427,10 @@ constexpr auto boundary( ExtrusionStep< Step, Extrusion< ObjT, U, Steps >> const
     U from = ext_step.from(), to = ext_step.to();
 
     return collection(
-        orient( project( ext.object(), from ), extrusion_direction ),
-        orient( project( ext.object(), to ), intrusion_direction ),
         extrusion_step< Step >( extrude< Steps >( 
-            boundary( ext.object() ), ext.step_values() )));
+            boundary( ext.object() ), ext.step_values() )),
+        orient( project( ext.object(), from ), extrusion_direction ),
+        orient( project( ext.object(), to ), intrusion_direction ));
 }
 
 template< typename ObjT >
@@ -1182,42 +1443,52 @@ constexpr auto boundary( Translation< ObjT > const& translated )
 { return translate( boundary( translated.object() ), 
     translated.translation() ); }
 
-template< size_t FirstStep, size_t... Rest >
-struct ExtrudedSurface
+template< typename ObjT, typename PaddedElementT >
+constexpr auto boundary( Padding< ObjT, PaddedElementT > const& padding )
 {
-    // since the type tracks the element, the implementation can store the traversal
-    template< typename ObjT, typename U, size_t Steps >
-    requires( isless( FirstStep, Steps ))
-    static constexpr auto select( Extrusion< ObjT, U, Steps > const& extrusion )
-    {
-        U from, to = extrusion.step_values()[ FirstStep ];
-        if constexpr( FirstStep > 0 )
-            from = extrusion.step_values()[ FirstStep - 1 ];
-        
-        
-    }
-};
+    // first get the boundary of the padded object
+    auto bounds = boundary( padding.object() );
 
+    // select the padded element from the boundary
+    auto padded_element = select< PaddedElementT >( bounds );
 
-/// @brief pad an element of a geometric shape
-template< typename SurfaceElement, typename ObjT, typename U, size_t Steps, typename V >
-auto pad( Extrusion< ObjT, U, Steps > const& extrusion, V amount )
-{
-    // first we identify the element possibly through recursion
-    // Element is a type and types contain the information needed to identify 
-    // the geometric piece to be padded. So it's two types talking to one another.
+    // get the orientation of the padded element
+    auto direction = get_orientation( padded_element );
+    auto padding_vector = direction / norm< 2 >( direction ) * padding.amount();
+
+    // create a new collection from the unpadded elements, the translated 
+    // padded element, and the translated extrusion of the boundary of the 
+    // padded element
+    return collection(
+        select_inverse< PaddedElementT >( bounds ),
+        translate( padded_element, padding_vector )
+        //, extrude( boundary( padded_element ), padding_vector )
+    );
+}
+
+template< typename SurfaceElementT, typename ObjT, typename U >
+Padding< ObjT, SurfaceElementT > pad( ObjT const& object, U amount )
+{ return { object, amount }; }
+
+// /// @brief pad an element of a geometric shape
+// template< typename SurfaceElement, typename ObjT, typename U, size_t Steps, typename V >
+// auto pad( Extrusion< ObjT, U, Steps > const& extrusion, V amount )
+// {
+//     // first we identify the element possibly through recursion
+//     // Element is a type and types contain the information needed to identify 
+//     // the geometric piece to be padded. So it's two types talking to one another.
     
 
-    // then we mimic an extrusion by finding the boundary of the padded element
-    // and extruding it in the direction of the orientation of the extruded
-    // element, and projecting the extruded element by amount
-    auto surface_element = SurfaceElement::select( extrusion );
+//     // then we mimic an extrusion by finding the boundary of the padded element
+//     // and extruding it in the direction of the orientation of the extruded
+//     // element, and projecting the extruded element by amount
+//     auto surface_element = SurfaceElement::select( extrusion );
 
-    // extrude won't work here becuase it creates a new dimension
-    auto padded_surface_element = extrude( surface_element, amount );
+//     // extrude won't work here becuase it creates a new dimension
+//     auto padded_surface_element = extrude( surface_element, amount );
 
-    return collection( extrusion, padded_surface_element );
-}
+//     return collection( extrusion, padded_surface_element );
+// }
 
 /// @brief boundary of a projection is a projection of the boundary
 /// @tparam ObjT projected object type
@@ -1292,20 +1563,20 @@ constexpr auto boundary( Collection< Objects... > col )
 /// @tparam U distance of the pad
 /// @param object to be padded
 /// @param amount pad distance
-template< typename ObjT, typename U >
-// TODO: write requirements on U
-// requires( norm_compable_v< typename Oriented< ObjT >::vector_type, U > )
-constexpr auto pad( Orientation< ObjT > object, U amount )
-{
-    auto direction = object.orientation();
+// template< typename ObjT, typename U >
+// // TODO: write requirements on U
+// // requires( norm_compable_v< typename Oriented< ObjT >::vector_type, U > )
+// constexpr auto pad( Orientation< ObjT > object, U amount )
+// {
+//     auto direction = object.orientation();
 
-    // calculate the distance vector
-    // we want the final distance along direction to be amount
-    auto rel = scale( divide_scale( direction, norm( direction )), amount );
+//     // calculate the distance vector
+//     // we want the final distance along direction to be amount
+//     auto rel = scale( divide_scale( direction, norm( direction )), amount );
 
-    return collection( translate( object, rel ), 
-        extrude_along( boundary( object ), rel ));
-}
+//     return collection( translate( object, rel ), 
+//         extrude_along( boundary( object ), rel ));
+// }
 
 template< typename U >
 Extrusion< Point, U > segment( U length )
