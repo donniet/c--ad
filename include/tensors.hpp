@@ -862,9 +862,54 @@ namespace detail {
 /// @param right the right operand
 /// @return true of the elements ...Is are equal in both operands
 template< typename LeftT, typename RightT, size_t... Is >
-constexpr bool equals_helper( LeftT const& left, RightT const& right,
+constexpr auto equals_helper( LeftT const& left, RightT const& right,
     seq< Is... > )
 { return ((get< Is >( left ) == get< Is >( right )) and ... ); }
+
+template< typename LeftT, typename RighT >
+struct IsEqualityDefined;
+
+/// @brief for non-tensors, equality is defined if the sub-types are convertible
+/// NOTE: watch out for circular logic here!!!
+/// @tparam LeftT 
+/// @tparam RightT 
+template< typename LeftT, typename RightT >
+requires( not tensor< LeftT > and not tensor< RightT > )
+struct IsEqualityDefined< LeftT, RightT >:
+    integral_constant< bool, std::is_convertible_v< LeftT, RightT >> { };
+
+/// @brief specialization of IsTensorEqualityDefined in the case where the 
+/// tensor shapes are not the same.
+template< shape LeftS, typename... Ts, shape RightS, typename... Us >
+requires( not is_same_v< LeftS, RightS > )
+struct IsEqualityDefined< Tensor< LeftS, Ts... >, 
+    Tensor< RightS, Us... >>: integral_constant< bool, false > { };
+
+template< typename LeftT, typename RightT, typename Seq >
+struct IsTensorEqualityDefinedHelper;
+
+template< typename LeftT, typename RightT, size_t... Is >
+struct IsTensorEqualityDefinedHelper< LeftT, RightT,
+    seq< Is... >>: integral_constant< bool, 
+        ( IsEqualityDefined< tensor_element_t< Is, LeftT >, 
+            tensor_element_t< Is, RightT >>::value and ... )> { };
+
+/// @brief specialization of IsTensorEqualityDefined in the case where the 
+/// tensor shapes are the same.  In this case we inherit to the helper value
+template< shape LeftS, typename... Ts, shape RightS, typename... Us >
+requires( is_same_v< LeftS, RightS > )
+struct IsEqualityDefined< Tensor< LeftS, Ts... >, Tensor< RightS, Us... >>: 
+    IsTensorEqualityDefinedHelper< 
+        Tensor< LeftS, Ts... >, Tensor< RightS, Us... >, 
+            make_seq< sizeof...( Ts )>> { };
+
+/// @brief trait to check if two tensor types are compatible with the equality 
+/// operator
+/// @tparam LeftT 
+/// @tparam RightT 
+template< typename LeftT, typename RightT >
+constexpr bool is_equality_defined_v = 
+    IsEqualityDefined< LeftT, RightT >::value;
 
 /// @brief helper to add two tensors
 /// @tparam LeftT the type of the left tensor operand
@@ -1171,10 +1216,12 @@ constexpr bool matmul_compatible_v =
 /// @param right the right operand
 /// @return true of the elements of the operands are equal
 template< shape S, typename... Ts, typename... Us >
+requires( detail::is_equality_defined_v< Tensor< S, Ts... >, Tensor< S, Us... >> )
 constexpr auto operator ==( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
 { return detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 /// @brief inequality of two tensors
+/// TODO: write a not_equals_helper to aid in disambiguation
 /// @tparam S the shape of the operands
 /// @tparam ...Ts the types of the left operand
 /// @tparam ...Us the types of the right operand
@@ -1182,6 +1229,7 @@ constexpr auto operator ==( Tensor< S, Ts... > const& left, Tensor< S, Us... > c
 /// @param right the right operand
 /// @return true of any element of the tensors is not equal
 template< shape S, typename... Ts, typename... Us >
+requires( detail::is_equality_defined_v< Tensor< S, Ts... >, Tensor< S, Us... >> )
 constexpr auto operator !=( Tensor< S, Ts... > const& left, Tensor< S, Us... > const& right )
 { return not detail::equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 

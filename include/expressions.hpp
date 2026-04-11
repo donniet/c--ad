@@ -1,7 +1,7 @@
 #ifndef __EXPRESSIONS_HPP__
 #define __EXPRESSIONS_HPP__
 
-#include "tensor.hpp"
+#include "tensors.hpp"
 #include "utility.hpp"
 
 #include <cmath>
@@ -28,7 +28,7 @@ using std::map, std::set;
 using std::any, std::any_cast;
 using std::optional;
 
-using namespace tensor;
+using namespace tensors;
 
 /// @brief base class of any expression
 ///
@@ -691,6 +691,47 @@ struct Conjunction: ExpressionTag
     U _right;
 };
 
+/// @brief logical or expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct Disjunction: ExpressionTag
+{
+    using result_type = bool;
+
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
+
+    constexpr result_type eval( ) const
+    { return expressions::eval( left_arg() ) or expressions::eval( right_arg() ); }
+
+    constexpr Disjunction( T left, U right ): 
+        _left{ left }, _right{ right } { } 
+    constexpr Disjunction() = default;
+    
+    T _left;
+    U _right;
+};
+
+/// @brief logical not expression
+/// @tparam T 
+/// @tparam U 
+template< typename T >
+struct Compliment: ExpressionTag
+{
+    using result_type = bool;
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return not expressions::eval( arg() ); }
+
+    constexpr Compliment( T arg ): _arg{ arg } { } 
+    constexpr Compliment() = default;
+    
+    T _arg;
+};
+
 
 /**
  * OPERATORS
@@ -832,11 +873,24 @@ constexpr auto operator==( tuple< Ts... > const& left,
     tuple< Us... > const& right )
 { return tuple_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
+template< typename... Ts, typename... Us >
+requires( sizeof...( Ts ) == sizeof...( Us ) and 
+    (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( tuple< Ts... > const& left, 
+    tuple< Us... > const& right )
+{ return not tuple_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
 template< typename ShapeT, typename... Ts, typename... Us >
 requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
 constexpr auto operator==( Tensor< ShapeT, Ts... > const& left,
     Tensor< ShapeT, Us... > const& right )
 { return tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename ShapeT, typename... Ts, typename... Us >
+requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( Tensor< ShapeT, Ts... > const& left,
+    Tensor< ShapeT, Us... > const& right )
+{ return not tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 // logical operations
 template< expression T, expression U >
@@ -853,6 +907,23 @@ requires( not expression< T > )
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< StaticValue< T >, U >{ static_expr( left ), right }; }
 
+template< expression T, expression U >
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< T, U >{ left, right }; }
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< T, StaticValue< U >>{ left, static_expr( right )}; }
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< StaticValue< T >, U >{ static_expr( left ), right }; }
+
+template< expression T >
+constexpr auto operator not( T const& arg )
+{ return Compliment< T >{ arg }; }
 
 template< size_t I, typename T >
 struct Differential

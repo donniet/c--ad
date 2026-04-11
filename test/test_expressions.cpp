@@ -79,10 +79,12 @@ int main( int ac, char* av[] )
     v = 2_mm / 1_s;
 
     assert( eval( eq ));
+    assert( eval( s1 == s2 ));
 
     v = 2_ft / 1_s;
 
     assert( not eval( eq ));
+    assert( eval( s1 != s2 ));
 
     auto m1 = make_tensor< Shape< 2, 2 >>( 
         a, -a,
