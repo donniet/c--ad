@@ -24,7 +24,8 @@ using namespace geometry;
 
 struct STLFile
 {
-    using vector_type = Tensor< Shape< 3 >, Length, Length, Length >;
+    using vector_type = uniform_tensor_t< Shape< 3 >, Length >;
+    using matrix_type = uniform_tensor_t< Shape< 3, 3 >, Scalar >;
 
     struct Solid;
     struct Facet;
@@ -63,7 +64,6 @@ struct STLFile
         Vertex( Facet* f, Vertex const& v ):
             _facet{ f }, x{ v.x }, y{ v.y }, z{ v.z }
         { }
-
 
 // private:
         Vertex( Facet* f ): _facet{ f } { }
@@ -144,47 +144,37 @@ struct STLFile
         std::vector< Facet > facets;
     };
 
-    /// @brief output a string representing this STLFile. 
-    /// NOTE: this is for debug purposes.  Use the STL class to output an STL 
-    /// file format
-    /// @return a string containing the solids, facets and vertices of this STLFile
-    string to_string() const
-    {
-        string ret = "{\n";
-        ret += "\t.solids = {\n";
+    struct Cursor 
+    { 
+        Facet* add_facet();
+        Vertex* add_vertex();
+        Solid* add_solid();
 
-        for( auto const& solid: solids )
-        {
-            ret += "\t\t.name = \"" + solid.name + "\";\n";
-            ret += "\t\t.comment = \"" + solid.comment + "\";\n";
-            ret += "\t\t.facets = {\n";
+        void push_orientation( vector_type ori );
+        void pop_orientation();
 
-            for( auto const& facet: solid.facets )
-            {
-                ret += "\t\t\t.normal = {" 
-                    + std::to_string( facet.normal.x ) + ", " 
-                    + std::to_string( facet.normal.y ) + ", " 
-                    + std::to_string( facet.normal.z ) + " };\n";
-                ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
-                ret += "\t\t\t.vertices = {\n";
+        void push_transformation( matrix_type mat );
+        void pop_transformation();
 
-                for( auto const& vertex: facet.vertices )
-                {
-                    ret += "\t\t\t\t{ " 
-                        + std::to_string( vertex.x ) + ", " 
-                        + std::to_string( vertex.y ) + ", "
-                        + std::to_string( vertex.z ) + " };\n";
-                }
+        void push_translation( vector_type trans );
+        void pop_translation();
 
-                ret += "\t\t\t};\n";
-            }
+        void push_projection( Length at );
+        void pop_projection();
 
-            ret += "\t\t}\n"
-                   "\t};\n";
-        }
-        ret += "}\n";
-        return ret;
-    }
+        template< size_t I >
+        void push_injection();
+        void pop_injection();
+
+        STLFile* file;
+        Facet* facet;
+        Vertex* vertex;
+        Solid* solid;
+    };
+
+    Cursor cursor() { return Cursor{ .file = this }; }
+
+    string to_string() const;
 
     // TODO: format the string name for use as a solid name in STL
     static string solid_name( string const& name )
@@ -218,44 +208,49 @@ template< typename ObjT >
 struct STL
 {
     using object_type = ObjT;
+    using cursor_type = STLFile::Cursor;
 
-    std::ostream& write_to( std::ostream& os ) const
-    {
-        STLFile out;
-        out.minimum_length( _minimum_length );
+    /// @brief output a point
+    void output( cursor_type cursor, Point object ) const;
 
-        // stls are the boundary of a solid object
-        output( out, boundary( object() ));
+    /// output compounds and attributed objects
+    template< typename ComponentsU, typename... Objs >
+    void output( cursor_type cursor, Compound< ComponentsU, Objs... > object ) const;
+    template< typename... Objs >
+    void output( cursor_type cursor, Collection< Objs... > object ) const;
+    template< typename ObjU, typename AttU >
+    void output( cursor_type cursor, Attribution< ObjU, AttU > object ) const;
+    template< typename ObjU >
+    void output( cursor_type cursor, Orientation< ObjU > object ) const;
 
-        for( auto const& solid : out.solids )
-        {
-            os << "solid " << solid.name << "\n";
+    // output a sub-component of an object
+    template< typename ElementU, typename ObjU >
+    void output( cursor_type cursor, Component< ElementU, ObjU > object ) const;
 
-            for( auto const& facet : solid.facets )
-            {
-                // TODO: should each facet just have 3 vertices?
-                auto i = facet.vertices.begin();
-                while( i != facet.vertices.end() )
-                {
-                    // we should always have three...
-                    auto v0 = *i++;
-                    auto v1 = *i++;
-                    auto v2 = *i++;
+    // output the boundary of an object
+    template< typename ObjU >
+    void output( cursor_type cursor, Boundary< ObjU > object ) const;
+    
+    // output an extrusion of an object
+    template< typename ObjU, typename U >
+    void output( cursor_type cursor, Extrusion< ObjU, U > object ) const;
 
-                    os << "facet normal " << facet.normal << "\n"
-                       << "\touter loop\n"
-                       << "\t\tvertex " << v0 << "\n"
-                       << "\t\tvertex " << v1 << "\n"
-                       << "\t\tvertex " << v2 << "\n"
-                       << "\tendloop\n"
-                       << "enfacet\n";
-                }
-            }
-            os << "endsolid " << solid.name << "\n";
-        }
+    // output the projection of an object to another space
+    template< typename ObjU, typename SpaceV >
+    void output( cursor_type cursor, Projection< ObjU, SpaceV > object ) const;
 
-        return os;
+    template< size_t I, size_t J, typename ObjU >
+    void output( cursor_type cursor, Revolution< I, J, ObjU > object ) const
+    {  
+
     }
+    template< typename ObjU, typename ElementU, typename U >
+    void output( cursor_type cursor, Pad< Component< ElementU, ObjU >, U > object ) const
+    {
+
+    }
+
+    std::ostream& write_to( std::ostream& os ) const;
 
     constexpr object_type const& object() const 
     { return _object; }
@@ -274,14 +269,83 @@ struct STL
     Length _minimum_length;
 };
 
-/// @brief ostream operator
-/// @tparam ObjT solid object type
-/// @param os ostream instance
-/// @param stl the STL object wrapper
-/// @return the ostream operator
+
+/// specializations of output method ///
+///
+
 template< typename ObjT >
-std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
-{ return stl.write_to( os ); }
+void STL< ObjT >::output( STLFile::Cursor cursor, Point object ) const
+{ cursor.add_vertex(); }
+
+template< typename ObjT, typename CompoundT, size_t... Is >
+void output_compound_helper( STL< ObjT >& stl, STLFile::Cursor cursor, 
+    CompoundT compound, seq< Is... > )
+{ ( stl.output( cursor, get_component< Is >( compound )), ... ); }
+
+template< typename ObjT >
+template< typename ComponentsU, typename... Objs >
+void STL< ObjT >::output( STLFile::Cursor cursor, Compound< ComponentsU, Objs... > object ) const
+{ output_compound_helper( *this, cursor, object, make_seq< sizeof...( Objs )>{} ); }
+
+template< typename ObjT >
+template< typename... Objs >
+void STL< ObjT >::output( STLFile::Cursor cursor, Collection< Objs... > object ) const
+{ output_compound_helper( *this, cursor, object, make_seq< sizeof...( Objs )>{} ); }
+
+template< typename ObjT >
+template< typename ObjU, typename AttU >
+void STL< ObjT >::output( STLFile::Cursor cursor, Attribution< ObjU, AttU > object ) const
+{ output( cursor, object.object ); }
+
+template< typename ObjT >
+template< typename ObjU >
+void STL< ObjT >::output( STLFile::Cursor cursor, Orientation< ObjU > object ) const
+{ 
+    cursor.push_orientation( object.orientation );;
+    output( cursor, object.object );
+    cursor.pop_orientation();
+}
+
+template< typename ObjT >
+template< typename ObjU, typename SpaceV >
+void STL< ObjT >::output( STLFile::Cursor cursor, Projection< ObjU, SpaceV > object ) const
+{ 
+    cursor.push_transformation( object.transform );
+    output( cursor, object.object );
+    cursor.pop_orientation();
+}
+
+template< typename ObjT >
+template< typename ObjU >
+void STL< ObjT >::output( STLFile::Cursor cursor, Translation< ObjU > object ) const
+{ 
+    cursor.push_translation( object.transl );
+    output( cursor, object.object );
+    cursor.pop_translation();
+}
+
+template< typename ObjT >
+template< typename ElementT, typename ObjU >
+void STL< ObjT >::output( STLFile::Cursor cursor, Component< ElementT, ObjU > object ) const
+{ output( cursor, get_component< ElementT >( object )); }
+
+// this is a pad
+template< typename ObjT >
+template< typename ObjU >
+void STL< ObjT >::output( STLFile::Cursor cursor, 
+    Boundary< // stl files can only output boundaries
+        Projection< Extrusion< // this is a pad
+            Component< ElementT, Boundary< ObjU >>>, 
+            space_of< ObjU >>> object ) const
+{ 
+
+}
+
+template< typename ObjT >
+template< typename ObjU >
+void STL< ObjT >::output( STLFile::Cursor cursor, Boundary< ObjU > object ) const
+{ }
+
 
 /// @brief outputing a point to an STL facet
 /// @param out facet to add a vertex to
@@ -691,6 +755,95 @@ constexpr auto& output( STLFile::Solid& out, Orientation< ObjT > const& object )
 //     out.add_vertex( object.amount() );
 // }
 
+/// @brief output a string representing this STLFile. 
+/// NOTE: this is for debug purposes.  Use the STL class to output an STL 
+/// file format
+/// @return a string containing the solids, facets and vertices of this STLFile
+string STLFile::to_string() const
+{
+    string ret = "{\n";
+    ret += "\t.solids = {\n";
+
+    for( auto const& solid: solids )
+    {
+        ret += "\t\t.name = \"" + solid.name + "\";\n";
+        ret += "\t\t.comment = \"" + solid.comment + "\";\n";
+        ret += "\t\t.facets = {\n";
+
+        for( auto const& facet: solid.facets )
+        {
+            ret += "\t\t\t.normal = {" 
+                + std::to_string( facet.normal.x ) + ", " 
+                + std::to_string( facet.normal.y ) + ", " 
+                + std::to_string( facet.normal.z ) + " };\n";
+            ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
+            ret += "\t\t\t.vertices = {\n";
+
+            for( auto const& vertex: facet.vertices )
+            {
+                ret += "\t\t\t\t{ " 
+                    + std::to_string( vertex.x ) + ", " 
+                    + std::to_string( vertex.y ) + ", "
+                    + std::to_string( vertex.z ) + " };\n";
+            }
+
+            ret += "\t\t\t};\n";
+        }
+
+        ret += "\t\t}\n"
+                "\t};\n";
+    }
+    ret += "}\n";
+    return ret;
+}
+
+template< typename ObjT >
+std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
+{
+    STLFile out;
+    out.minimum_length( _minimum_length );
+
+    // stls are the boundary of a solid object
+    output( out.cursor(), boundary( object() ));
+
+    for( auto const& solid : out.solids )
+    {
+        os << "solid " << solid.name << "\n";
+
+        for( auto const& facet : solid.facets )
+        {
+            // TODO: should each facet just have 3 vertices?
+            auto i = facet.vertices.begin();
+            while( i != facet.vertices.end() )
+            {
+                // we should always have three...
+                auto v0 = *i++;
+                auto v1 = *i++;
+                auto v2 = *i++;
+
+                os << "facet normal " << facet.normal << "\n"
+                    << "\touter loop\n"
+                    << "\t\tvertex " << v0 << "\n"
+                    << "\t\tvertex " << v1 << "\n"
+                    << "\t\tvertex " << v2 << "\n"
+                    << "\tendloop\n"
+                    << "enfacet\n";
+            }
+        }
+        os << "endsolid " << solid.name << "\n";
+    }
+
+    return os;
+}
+
+/// @brief ostream operator
+/// @tparam ObjT solid object type
+/// @param os ostream instance
+/// @param stl the STL object wrapper
+/// @return the ostream operator
+template< typename ObjT >
+std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
+{ return stl.write_to( os ); }
 
 } // namespace formats
 

@@ -238,6 +238,9 @@ constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
     return name.str();
 }
 
+/// @brief the base type for all units
+/// @tparam Id is the identifier of this unit
+/// @tparam T is an arithmetic type that stores the value
 template< unit_id_type Id, arithmetic T >
 struct base_unit
 {
@@ -263,6 +266,11 @@ struct base_unit
     scalar_type value;
 };
 
+/// @brief specialization of base_unit for scalars.  This is helpful because 
+/// generally we want casting to and from units to be explicit, but with scalars
+/// it's nice and harmless for casting and construction from the arithmetic
+/// value type to be implicit.
+/// @tparam T the arithmetic type of the value of this scalar
 template< arithmetic T >
 struct base_unit< scalar_unit_id, T >
 {

@@ -838,6 +838,39 @@ concept tensor = is_tensor_v< T >;
 template< typename T >
 concept vector = ( is_tensor_v< T > and tensor_shape_t< T >::dimensions() <= 1 );
 
+namespace detail {
+template< vector V, typename T >
+struct ExtendVector;
+
+template< size_t N, typename... Ts, typename T >
+struct ExtendVector< Tensor< Shape< N >, Ts... >, T >
+{
+    using vector_type = Tensor< Shape< N >, Ts... >;
+    using type = Tensor< Shape< N + 1 >, Ts..., T >;
+
+    template< size_t... Is >
+    static constexpr type make_helper( vector_type const& vec, T const& value, seq< Is... > )
+    { return { tensor_get< Is >( vec )..., value }; }
+
+    static constexpr type make( vector_type const& vec, T const& value )
+    { return make_helper( vec, value, make_seq< sizeof...( Ts )>{} ); }
+};
+
+} // namespace detail
+
+template< vector V, typename T >
+using extend_vector_t = detail::ExtendVector< V, T >::type;
+
+/// @brief adds a value to the end of a vector
+/// @tparam T the type of the value
+/// @tparam V the vector type
+/// @param vec the vector values
+/// @param value to be added
+/// @return a new vector with the value as the last element
+template< vector V, typename T >
+extend_vector_t< V, T > extend_vector( V const& vec, T const& value )
+{ return detail::ExtendVector< V, T >::make( vec, value ); }
+
 /// @brief trait to identify if the given tensor has shape S
 /// @tparam T the type of the tensor to test
 /// @tparam S the shape to compare
