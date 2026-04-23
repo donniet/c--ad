@@ -5,25 +5,40 @@
 #include "geometry/attribute.hpp"
 #include "geometry/collection.hpp"
 #include "geometry/compound.hpp"
-#include "geometry/linear_transform.hpp"
 #include "geometry/orient.hpp"
 #include "geometry/project.hpp"
+#include "geometry/extrude.hpp"
 #include "geometry/translate.hpp"
-#include "geometry/extrusion.hpp"
+
+#include <numeric>
 
 namespace geometry { 
+
+template< typename ObjT >
+struct Boundary
+{
+    using object_type = ObjT;
+    static constexpr size_t dimensions() { return object_type::dimensions(); }
+    static constexpr size_t parameters() { return object_type::parameters() - 1; }
+
+    constexpr object_type object() { return _object; }
+
+    constexpr Boundary( object_type object ): _object{ object } { }
+
+    object_type _object;
+};
 
 /// @brief boundary of a point is empty
 /// @param Point parameter
 /// @return empty space
-constexpr Empty< null_space > boundary( Point ) { return {}; }
+constexpr Empty<> boundary( Point ) { return {}; }
 
 /// @brief boundary of empty space is empty
 /// @param ObjT type of empty object
 /// @return an empty in the space of ObjT
 template< typename ObjT >
 requires( is_empty< ObjT > )
-constexpr Empty< space_of< ObjT >> boundary( ObjT const& ) { return {}; }
+constexpr Empty< ObjT::dimensions() > boundary( ObjT const& ) { return {}; }
 
 /// @brief boundary of an attributed object attributes the boundary
 /// @tparam ObjT attributed object type
@@ -42,11 +57,10 @@ constexpr auto boundary( Attribution< ObjT, T > attributed )
 template< typename ObjT >
 requires( not is_empty< ObjT > )
 constexpr auto boundary( Orientation< ObjT > ori )
-{ return orient( boundary( ori.object() ), ori.orientation() ); }
+{ return orient( boundary( ori.object() )); }
 
 template< typename CollectionT, size_t... Is >
-constexpr auto collection_boundary_helper( CollectionT col, 
-    seq< Is... > )
+constexpr auto collection_boundary_helper( CollectionT col, seq< Is... > )
 { return collection( boundary( get< Is >( col ))... ); }
 
 /// @brief the boundary of a collection is a collection of all the boundaries
@@ -59,10 +73,12 @@ constexpr auto boundary( Collection< Objects... > col )
 { return collection_boundary_helper( col, 
     make_seq< sizeof...( Objects )>{} ); }
 
-template< typename ObjT, space SpaceU >
+/// TODO: I think we need something more sophisticated here...
+template< typename ObjT, typename TransformT, size_t Dim >
 requires( not is_empty< ObjT > )
-auto boundary( Projection< ObjT, SpaceU > projected )
-{ return project< SpaceU >( boundary( projected.object() )); }
+auto boundary( Projection< ObjT, TransformT, Dim > projected )
+{ return project< Dim >( boundary( projected.object() ), 
+    projected.transform() ); }
 
 /// @brief boundary components of an extrusion
 struct extrusion {
@@ -71,37 +87,56 @@ struct extrusion {
     struct cap { };
 };
 
+/*
+
+Example of matrix multiplication to a higher dimension
+------------------
+1 0  0.25    0.25
+0 1  0.125 = 0.125
+2 4          1. 
+
+And an example where this doesn't work
+--------------------
+1 0  0        0
+0 1  0     =  0
+? ?           ?
+
+We might need to add translation...
+or we could have special projection transforms like a ProjectAt transform
+that sets the additional dimensions of the projection to constants?
+
+*/
+
 /// @brief 
 /// @tparam ObjT 
 /// @tparam U 
 /// @param extruded 
 /// @return 
-template< typename ObjT, typename U >
+template< typename ObjT, typename FromT, typename ToT >
 requires( not is_empty< ObjT > )
-auto boundary( Extrusion< ObjT, U > extruded )
+auto boundary( Extrusion< ObjT, FromT, ToT > extruded )
 { 
-    using extruded_space = extrude_space_t< space_of< ObjT >, U >;
+    auto base = project_at( extruded.object(), extruded.from() );
+    auto shell = extrude( boundary( extruded.object() ),
+        extruded.from(), extruded.to() );
+    auto cap = project_at( extruded.object(), extruded.to() );
 
-    MakeCompound< 
-        extrusion::base,
-        extrusion::shell,
-        extrusion::cap >::make(
-    /* base  */ project< extruded_space >( extruded.object() ),
-    /* shell */ extrude< U >( boundary( extruded.object(), extruded.parameter() )),
-    /* cap   */ translate( project< extruded_space >( extruded.object() ), 
-                    extruded_space::displacement( extruded.parameter() )));
+    return MakeCompound< 
+        extrusion::base, extrusion::shell, extrusion::cap >::make(
+        base,            shell,            cap );
 }
 
-// template< typename ObjT >
-// requires( not is_empty< ObjT > )
-// auto boundary( Component< extrusion_boundary::base, ObjT > base )
-// { return boundary(  ); }
+/// @brief boundary of a line segment
+template< typename FromT, typename ToT >
+auto boundary( Extrusion< Point, FromT, ToT > extruded )
+{ 
+    auto base = project_at( extruded.object(), extruded.from() );
+    auto cap = project_at( extruded.object(), extruded.to() );
 
-
-// template< typename ObjT >
-// requires( not is_empty< ObjT > )
-// Boundary< Padding< ObjT >> boundary( Padding< ObjT > padded )
-// { return { padded }; }
+    return MakeCompound< 
+        extrusion::base, extrusion::cap >::make(
+        base,            cap );
+}
 
 } // namespace geometry
 

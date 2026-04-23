@@ -5,10 +5,12 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+set(CMAKE_COLOR_MAKEFILE=ON)
 
 add_compile_options("-ftemplate-backtrace-limit=0")
 add_compile_options("-fdiagnostics-show-template-tree")
 add_compile_options("-fcolor-diagnostics")
+add_compile_options("-fansi-escape-codes")
 
 # add_compile_options("-fexperimental-library")
 # add_compile_options("-stdlib=libstdc++")

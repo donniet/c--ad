@@ -24,9 +24,8 @@ using collection_add_t = CollectionAdd< ObjT, CollectionT >::type;
 
 /// @brief an empty collection
 template< >
-struct Collection< >
+struct Collection< >: Object
 { 
-    using space_type = null_space;
     static constexpr size_t size() { return 0; }
 };
 
@@ -34,10 +33,12 @@ struct Collection< >
 /// @tparam First type of first object
 /// @tparam ...Rest type of remaining objects
 template< typename First, typename... Rest >
-requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
+requires((( First::dimensions() == Rest::dimensions() ) and ... ))
 struct Collection< First, Rest... >: Collection< Rest... >
 { 
-    using space_type = space_of< First >;
+    static constexpr size_t dimensions() { return First::dimensions(); }
+    static constexpr size_t parameters() { return First::parameters() + 
+        ( Rest::parameters() + ... ); }
     static constexpr size_t size() { return 1 + sizeof...( Rest ); }
 
     constexpr First const& first() const { return _first; }
@@ -47,9 +48,6 @@ struct Collection< First, Rest... >: Collection< Rest... >
     { return *this; }
     constexpr Collection< Rest... >& rest() 
     { return *this; }
-
-    // constexpr boundary_type boundary() const
-    // { return { First::boundary(), Rest::boundary()... }; }
 
     static string object_name() { return "collection__" + First::object_name() + 
         (( "_" + Rest::object_name() ) + ... ) + "__"; }
@@ -62,15 +60,14 @@ struct Collection< First, Rest... >: Collection< Rest... >
     { }
 
     constexpr Collection( Collection const& ) = default;
-    // constexpr Collection() = default;
+    // constexpr Collection() = default;    
 
     First _first;
 };
 
 template< typename... Objects >
-struct IsEmpty< Collection< Objects... >>
-{ static constexpr bool value = ( IsEmpty< Objects >::value and ... ); };
-
+struct IsEmpty< Collection< Objects... >>:
+    integral_constant< bool, ( IsEmpty< Objects >::value and ... )> { };
 
 template< typename... >
 struct FlattenCollections;
@@ -132,25 +129,6 @@ template< typename... Objects >
 Collection< Objects... > collection( Objects const&... objects )
 { return { objects... }; }
 
-
-namespace formats {
-
-using namespace geometry;
-
-// template< typename Out, typename T >
-// constexpr auto output( Out& file, T const& obj );
-
-template< typename OutT, typename CollectionT, size_t... Is >
-constexpr void output_collection_helper( OutT& out, CollectionT const& col, 
-    seq< Is... > )
-{ ( output( out, get< Is >( col )), ... ); }
-
-template< typename OutT, typename... Objects >
-requires( isgreater( sizeof...( Objects ), 0 ))
-constexpr void output( OutT& out, Collection< Objects... > const& col )
-{ output_collection_helper( out, col, make_seq< sizeof...( Objects )>{} ); }
-
-} // namespace formats
 } // namespace geometry
 
 namespace std {

@@ -12,6 +12,8 @@
 
 namespace tensors {
 
+using scalar_type = long double;
+
 // forward decl
 template< size_t... >
 struct Shape;
@@ -37,6 +39,9 @@ struct Shape< >
     constexpr size_t element() const { return 0; }
     constexpr operator size_t() const { return element(); }
     constexpr size_t first() const { return element(); }
+
+    constexpr size_t operator[]( size_t dim ) const
+    { return 0; }
 
     constexpr Shape insert( Shape here ) const
     { return {}; }
@@ -93,6 +98,13 @@ struct Shape< First, Rest... >: Shape< Rest... >
 
     constexpr size_t first() const 
     { return element() / Shape< Rest... >::size(); }
+
+    constexpr size_t operator[]( size_t dim ) const
+    {
+        if( dim == 0 ) 
+            return first();
+        return Shape< Rest... >::operator[]( dim - 1 );
+    }
 
     // TODO: figure out how to get rid of the static_cast
     template< typename... Indices >
@@ -368,6 +380,9 @@ consteval auto shape_insert_at_element( S shp )
 template< size_t I, shape S >
 struct ShapeElement;
 
+template<>
+struct ShapeElement< 0, Shape<> >: integral_constant< size_t, 0 > { };
+
 /// @brief extracts the first size from a shape
 /// @tparam First the first size of the shape
 /// @tparam ...Rest the remaining sizes
@@ -636,13 +651,21 @@ struct Tensor;
 
 /// @brief a null tensor
 template< >
-struct Tensor< Shape<> >
+struct Tensor< Shape< 0 >>
 {
     using shape_type = Shape<>;
     static constexpr size_t size() { return 0; }
+    static constexpr Tensor zero() { return {}; }
 };
 
-using null_tensor_t = Tensor< Shape< > >;
+using null_tensor_t = Tensor< Shape< 0 >>;
+
+/// @brief a uniformly typed tensor with run-time shape
+template< typename T >
+struct DynamicTensor
+{
+/* ... */
+};
 
 /// @brief a shaped array of arbitrary arithmetic types
 /// @tparam T the type of the first element of the tensor
@@ -668,6 +691,13 @@ struct Tensor< S, T, Ts... > : tuple< T, Ts... >
     template< typename OtherT, size_t... Is >
     constexpr tuple< T, Ts... > tuple_init_helper( OtherT const& other, seq< Is... > )
     { return make_tuple( static_cast< tuple_element_t< Is, tuple< T, Ts... >>>( get< Is >( other ))... ); }
+
+    template< size_t... Is >
+    static constexpr Tensor zero_helper( seq< Is... > )
+    { return { static_cast< tuple_element_t< Is, tuple< T, Ts... >>>( 0 )... }; }
+
+    static constexpr Tensor zero()
+    { return zero_helper( make_seq< size() >{} ); }
 
     template< typename... Us >
     constexpr Tensor& operator=( Tensor< shape_type, Us... > const& other )
@@ -710,11 +740,12 @@ struct Tensor< S, T, Ts... > : std::array< T, 1 + sizeof...( Ts )>
     static constexpr shape_type index( Indices... Is )
     { return { static_cast< size_t >( Is )... }; }
 
-    value_type& operator []( size_t i )
-    { return std::array< value_type, size() >::operator []( i ); }
+    template< size_t... Is >
+    static constexpr Tensor zero_helper( seq< Is... > )
+    { return { static_cast< T >( Is - Is )... }; }
 
-    value_type const& operator []( size_t i ) const
-    { return std::array< value_type, size() >::operator []( i ); }
+    static constexpr Tensor zero()
+    { return zero_helper( make_seq< size() >{} ); }
 
     template< typename OtherT, size_t... Is >
     constexpr std::array< value_type, size() >
@@ -833,33 +864,67 @@ constexpr bool is_tensor_v = IsTensor< T >::value;
 template< typename T >
 concept tensor = is_tensor_v< T >;
 
+namespace detail {
+
+template< typename TensorT, size_t... Is >
+TensorT zero_tensor_helper( seq< Is... > )
+{ return { static_cast< tensor_element_t< Is, TensorT >>( Is - Is )... }; }
+
+} // namespace detail
+
+template< shape S, typename T >
+requires( isgreater( S::size(), 1 ))
+constexpr uniform_tensor_t< S, T > zero_tensor()
+{ return detail::zero_tensor_helper< uniform_tensor_t< S, T >>( 
+    make_seq< S::size() >{} ); }
+
+template< shape S, typename... Ts >
+requires( S::size() == sizeof...( Ts ) )
+constexpr Tensor< S, Ts... > zero_tensor()
+{ return detail::zero_tensor_helper< Tensor< S, Ts... >>( 
+    make_seq< S::size() >{} ); }
+
+
 /// @brief the concept of a vector is a tensor with a single dimension
 /// @tparam T the type to test
 template< typename T >
 concept vector = ( is_tensor_v< T > and tensor_shape_t< T >::dimensions() <= 1 );
 
+template< size_t N, typename T >
+using uniform_vector_t = uniform_tensor_t< Shape< N >, T >;
+
+template< size_t N, typename T >
+requires( isgreater( N, 1 ))
+constexpr uniform_tensor_t< Shape< N >, T > zero_vector()
+{ return zero_tensor< Shape< N >, T >(); }
+
+template< size_t N, typename... Ts >
+requires( N == sizeof...( Ts ))
+constexpr Tensor< Shape< N >, Ts... > zero_vector()
+{ return zero_tensor< Shape< N >, Ts... >(); }
+
 namespace detail {
-template< vector V, typename T >
+template< vector, typename... >
 struct ExtendVector;
 
-template< size_t N, typename... Ts, typename T >
-struct ExtendVector< Tensor< Shape< N >, Ts... >, T >
+template< size_t N, typename... Ts, typename... Us >
+struct ExtendVector< Tensor< Shape< N >, Ts... >, Us... >
 {
     using vector_type = Tensor< Shape< N >, Ts... >;
-    using type = Tensor< Shape< N + 1 >, Ts..., T >;
+    using type = Tensor< Shape< N + sizeof...( Us ) >, Ts..., Us... >;
 
     template< size_t... Is >
-    static constexpr type make_helper( vector_type const& vec, T const& value, seq< Is... > )
-    { return { tensor_get< Is >( vec )..., value }; }
+    static constexpr type make_helper( vector_type const& vec, Us const&... values, seq< Is... > )
+    { return { tensor_get< Is >( vec )..., values... }; }
 
-    static constexpr type make( vector_type const& vec, T const& value )
-    { return make_helper( vec, value, make_seq< sizeof...( Ts )>{} ); }
+    static constexpr type make( vector_type const& vec, Us const&... values )
+    { return make_helper( vec, values..., make_seq< sizeof...( Ts )>{} ); }
 };
 
 } // namespace detail
 
-template< vector V, typename T >
-using extend_vector_t = detail::ExtendVector< V, T >::type;
+template< vector V, typename... Us >
+using extend_vector_t = detail::ExtendVector< V, Us... >::type;
 
 /// @brief adds a value to the end of a vector
 /// @tparam T the type of the value
@@ -867,9 +932,20 @@ using extend_vector_t = detail::ExtendVector< V, T >::type;
 /// @param vec the vector values
 /// @param value to be added
 /// @return a new vector with the value as the last element
-template< vector V, typename T >
-extend_vector_t< V, T > extend_vector( V const& vec, T const& value )
-{ return detail::ExtendVector< V, T >::make( vec, value ); }
+template< vector V, typename... Us >
+extend_vector_t< V, Us... > extend_vector( V const& vec, Us const&... values )
+{ return detail::ExtendVector< V, Us... >::make( vec, values... ); }
+
+template< typename T >
+concept matrix = ( is_tensor_v< T > and tensor_shape_t< T >::dimensions() == 2 );
+
+template< size_t Rows, size_t Cols, typename T >
+using uniform_matrix_t = uniform_tensor_t< Shape< Rows, Cols >, T >;
+
+namespace detail {
+
+
+} // namespace detail
 
 /// @brief trait to identify if the given tensor has shape S
 /// @tparam T the type of the tensor to test
@@ -1645,6 +1721,219 @@ struct IsSubShape< Shape< As... >, Shape< Bs... >>:
 
 template< shape A, shape B >
 constexpr bool is_sub_shape_v = IsSubShape< A, B >::value;
+
+/// @brief checks if two tensor types can be added together.
+template< typename T, typename U >
+concept is_compatible = tensor< T > and tensor< U > and requires( T t, U u )
+{ t + u; };
+
+
+namespace detail {
+
+template< size_t I, typename V >
+struct TranslationMatrixAugmentedElement
+{ 
+    using type = tensor_element_t< I, V >;
+    static constexpr type value( V translation )
+    { return tensor_get< I >( translation ); }
+};
+
+template< size_t I, size_t J, typename V >
+struct TranslationMatrixSquareElement
+{
+    using type = scalar_type;
+    static constexpr type value( V )
+    { return ( I == J ? 1. : 0. ); }
+};
+
+template< size_t Dim, size_t Elem, typename V >
+struct TranslationMatrixElement;
+
+template< size_t Dim, size_t Elem, typename V >
+requires( isless( Shape< Dim, Dim+1 >::from_element( Elem )[ 1 ], Dim ))
+struct TranslationMatrixElement< Dim, Elem, V >:
+    TranslationMatrixSquareElement< 
+        Shape< Dim, Dim+1 >::from_element( Elem )[ 0 ], 
+            Shape< Dim, Dim+1 >::from_element( Elem )[ 1 ], V >
+{ };
+
+template< size_t Dim, size_t Elem, typename V >
+requires( Shape< Dim, Dim+1 >::from_element( Elem )[ 1 ] == Dim )
+struct TranslationMatrixElement< Dim, Elem, V >:
+    TranslationMatrixAugmentedElement< 
+        Shape< Dim, Dim+1 >::from_element( Elem )[ 0 ], V >
+{ };
+
+template< typename V, typename Seq >
+struct TranslationMatrixHelper;
+
+template<>
+struct TranslationMatrixHelper< Tensor< Shape< 0 >>, seq< >>
+{
+    using vector_type = Tensor< Shape< 0 >>;
+    using type = Tensor< Shape< 1 >, scalar_type >;
+    static constexpr type make( vector_type )
+    { return { 0 }; }
+};
+
+template< size_t Dim, typename... Ts, size_t... Is >
+struct TranslationMatrixHelper< Tensor< Shape< Dim >, Ts... >, seq< Is... >>
+{
+    static constexpr size_t dimensions = Dim;
+    using vector_type = Tensor< Shape< Dim >, Ts... >;
+
+    using type = Tensor< Shape< dimensions, dimensions+1 >, 
+        typename TranslationMatrixElement< dimensions, Is, vector_type >
+            ::type... >;
+
+    static constexpr type make( vector_type translation )
+    { return { TranslationMatrixElement< dimensions, Is, vector_type >::value( 
+        translation )... }; }
+};
+
+template< vector V >
+struct TranslationMatrix:
+    TranslationMatrixHelper< V, 
+        make_seq< shape_element_v< 0, tensor_shape_t< V >> * 
+            ( shape_element_v< 0, tensor_shape_t< V >> + 1 )>> 
+{ };
+
+
+} // namespace detail
+
+template< typename VectorT >
+auto translation_matrix( VectorT offset )
+{ return detail::TranslationMatrix< VectorT >::make( offset ); };
+
+template< size_t Dim, typename T = scalar_type >
+auto zero_translation_matrix()
+{ return detail::TranslationMatrix< uniform_tensor_t< Shape< Dim >, T >>::make( 
+    zero_vector< Dim, T >()); };
+
+
+namespace detail {
+
+template< size_t N, size_t Axis0, size_t Axis1, typename AngleT >
+struct RotatePlaneDiagonalMatrixElement;
+
+template< size_t I, size_t J, size_t Axis0, size_t Axis1, typename AngleT >
+struct RotatePlaneOffDiagonalMatrixElement;
+
+// the ones along the diagonal
+template< size_t N, size_t Axis0, size_t Axis1, typename AngleT >
+requires( N != Axis0 and N != Axis1 )
+struct RotatePlaneDiagonalMatrixElement< N, Axis0, Axis1, AngleT >
+{
+    using type = scalar_type;
+    static constexpr type value( AngleT )
+    { return 1.l; }
+};
+
+// the zeros in the off-diagonal
+template< size_t I, size_t J, size_t Axis0, size_t Axis1, typename AngleT >
+requires( I != Axis1 and J != Axis0 )
+struct RotatePlaneOffDiagonalMatrixElement< I, J, Axis0, Axis1, AngleT >
+{
+    using type = scalar_type;
+    static constexpr type value( AngleT )
+    { return 0.l; }
+};
+
+// the cosine elements of the diagonal
+template< size_t N, size_t Axis0, size_t Axis1, typename AngleT >
+requires( N == Axis0 or N == Axis1 )
+struct RotatePlaneDiagonalMatrixElement< N, Axis0, Axis1, AngleT >
+{ 
+    using type = decltype( cos( AngleT{} ));
+    static constexpr type value( AngleT angle )
+    { return cos( angle ); }
+};
+
+// the negative sine element
+template< size_t I, size_t J, size_t Axis0, size_t Axis1, typename AngleT >
+requires( I == Axis0 and J == Axis1 )
+struct RotatePlaneOffDiagonalMatrixElement< I, J, Axis0, Axis1, AngleT >
+{
+    using type = decltype( -sin( AngleT{} ));
+    static constexpr type value( AngleT angle )
+    { return -sin( angle ); }
+};
+
+// the positive sine element
+template< size_t I, size_t J, size_t Axis0, size_t Axis1, typename AngleT >
+requires( I == Axis1 and J == Axis0 )
+struct RotatePlaneOffDiagonalMatrixElement< I, J, Axis0, Axis1, AngleT >
+{
+    using type = decltype( sin( AngleT{} ));
+    static constexpr type value( AngleT angle )
+    { return sin( angle ); }
+};
+
+template< size_t Elem, size_t Axis0, size_t Axis1, shape S, typename AngleT >
+struct RotatePlaneMatrixElement;
+
+// specialization along the diagonal
+template< size_t Elem, size_t Axis0, size_t Axis1, shape S, typename AngleT >
+requires( S::from_element( Elem )[ 0 ] == S::from_element( Elem )[ 1 ])
+struct RotatePlaneMatrixElement< Elem, Axis0, Axis1, S, AngleT >: 
+    RotatePlaneDiagonalMatrixElement< S::from_element( Elem )[ 0 ], 
+        Axis0, Axis1, AngleT > { };
+
+// specialization for the off-diagonal
+template< size_t Elem, size_t Axis0, size_t Axis1, shape S, typename AngleT >
+requires( S::from_element( Elem )[ 0 ] != S::from_element( Elem )[ 1 ])
+struct RotatePlaneMatrixElement< Elem, Axis0, Axis1, S, AngleT >: 
+    RotatePlaneOffDiagonalMatrixElement< 
+        S::from_element( Elem )[ 0 ], S::from_element( Elem )[ 1 ], 
+            Axis0, Axis1, AngleT > { };
+
+template< size_t Dim, size_t Axis0, size_t Axis1, typename AngleT, typename Seq >
+struct RotatePlaneMatrixHelper;
+
+template< size_t Dim, size_t Axis0, size_t Axis1, typename AngleT, size_t... Is >
+struct RotatePlaneMatrixHelper< Dim, Axis0, Axis1, AngleT, seq< Is... >>
+{
+    using shape_type = Shape< Dim, Dim >;
+    using angle_type = AngleT;
+    using type = Tensor< shape_type, 
+        typename RotatePlaneMatrixElement< Is, Axis0, Axis1, 
+            shape_type, angle_type >::type... >;
+
+    constexpr type make( angle_type angle )
+    { 
+        return { RotatePlaneMatrixElement< Is, Axis0, Axis1, shape_type, 
+            angle_type >::value( angle )... }; 
+    }
+};
+
+template< size_t Dim, size_t Axis0, size_t Axis1, typename AngleT >
+struct RotatePlaneMatrix: 
+    RotatePlaneMatrixHelper< Dim, Axis0, Axis1, AngleT, make_seq< Dim * Dim >> 
+{ };
+
+
+} // namespace detail
+
+
+template< size_t Dim, size_t Axis0, size_t Axis1, typename AngleT >
+using rotate_plane_matrix_t = 
+    detail::RotatePlaneMatrix< Dim, Axis0, Axis1, AngleT >::type;
+
+/// @brief creates a possibly lazily-executed rotation matrix of dimension Dim
+/// of the plane formed from Axis0 and Axis1
+/// @tparam AngleT type of the angle parameter (must be a scalar)
+/// @tparam Dim dimension of the matrix
+/// @tparam Axis0 axis to begin angle measurement from
+/// @tparam Axis1 second axis to identify the plane of rotation
+/// @param angle scalar angle value in radians
+/// @return 
+template< size_t Dim, size_t Axis0, size_t Axis1, typename AngleT >
+constexpr rotate_plane_matrix_t< Dim, Axis0, Axis1, AngleT > 
+rotate_plane_matrix( AngleT angle )
+{ return detail::RotatePlaneMatrix< Dim, Axis0, Axis1, AngleT >::make( angle ); }
+
+
+
 
 // template< tensor T, shape S >
 // requires( is_sub_shape_v< tensor_shape_t< T >, S > )

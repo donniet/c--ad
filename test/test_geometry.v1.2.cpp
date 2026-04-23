@@ -9,20 +9,21 @@ using namespace geometry;
 using namespace formats;
 
 auto segment()
-{ return extrude< Length >( Point{} ); }
+{ return extrude( Point{}, 0_m, 1_m ); }
 
 auto plane()
-{ return extrude< Length >( segment() ); }
+{ return extrude( segment() ); }
 
 auto box()
-{ return extrude< Length >( plane() ); }
+{ return extrude( plane() ); }
 
 auto mortise_and_tenon()
 {
-    auto stile = box();
-    auto stile_end = component< extrusion_boundary::cap >( stile );
+    // auto stile = box();
+    // auto stile_end = component< extrusion::cap >( stile );
     
-
+    // return stile;
+    return segment();
 }
 
 int main( int ac, char* av[] )

@@ -9,11 +9,13 @@ using ComponentList = std::tuple< Ts... >;
 // this can't make boundaries of line segments because the extruded component is
 // empty.  but why?  they should all be the same space_type
 template< typename ComponentsT, typename First, typename... Rest >
-requires(( is_same_v< space_of< First >, space_of< Rest >> and ... ))
+requires((( First::dimensions() == Rest::dimensions() ) and ... ) and 
+   (( First::parameters() == Rest::parameters() ) and ... ))
 struct Compound: tuple< First, Rest... >
 {
     using components_type = ComponentsT;
-    using space_type = space_of< First >;
+    static constexpr size_t dimensions() { return First::dimensions(); }
+    static constexpr size_t parameters() { return First::parameters(); }
 
     static string object_name() 
     { return "compound__" + First::object_name() + (( "-" + Rest::object_name() ) + ... ) + "__"; }
@@ -97,9 +99,9 @@ template< typename CompoundT >
 struct GetComponent< components::none, CompoundT >
 {
     using compound_type = CompoundT;
-    using space_type = space_of< compound_type >;
 
-    static constexpr Empty< space_type > get( compound_type const& )
+    static constexpr Empty< compound_type::dimensions > 
+    get( compound_type const& )
     { return { }; }
 };
 

@@ -22,22 +22,28 @@ struct Named
 ///
 
 template< typename ObjT, typename AttributeT >
-struct Attribution
+struct Attribution: Object
 {
     using object_type = ObjT;
-    using space_type = space_of< object_type >;
     using attribute_type = AttributeT;
+    static constexpr size_t dimensions() { return object_type::dimensions(); }
+    static constexpr size_t parameters() { return object_type::parameters(); }
 
     static string object_name() { return "attribution__" + 
-        AttributeT::object_name() + "__" + object_type::object_name(); }
+        attribute_type::object_name() + "__" + object_type::object_name(); }
 
-    object_type object;
-    attribute_type attribute;
+    object_type object() { return _object; }
+    attribute_type attribute() { return _attribute; }
+
+    object_type _object;
+    attribute_type _attribute;
 };
 
+/// @brief an attributed object is empty if the object is empty
+/// @tparam ObjT object type
+/// @tparam AttributeT attribute type
 template< typename ObjT, typename AttributeT >
-struct IsEmpty< Attribution< ObjT, AttributeT >>
-{ static constexpr bool value = IsEmpty< ObjT >::value; };
+struct IsEmpty< Attribution< ObjT, AttributeT >>: IsEmpty< ObjT > { };
 
 /// @brief tag an object with an attribute
 /// @tparam ObjectT object type

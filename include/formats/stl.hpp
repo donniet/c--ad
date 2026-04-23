@@ -8,6 +8,8 @@
 #include "units.hpp"
 #include "tensors.hpp"
 #include "geometry.hpp"
+#include "formats/output.hpp"
+#include "geometry/simplex.hpp"
 
 #include <iostream>
 #include <vector>
@@ -15,164 +17,83 @@
 #include <functional>
 #include <algorithm>
 
+namespace geometry{
 namespace formats {
 
 using namespace units;
 using namespace tensors;
-using namespace geometry;
 
+/// 
+/// 
 
 struct STLFile
 {
-    using vector_type = uniform_tensor_t< Shape< 3 >, Length >;
-    using matrix_type = uniform_tensor_t< Shape< 3, 3 >, Scalar >;
+    using vec2 = uniform_tensor_t< Shape< 2 >, Length >;
+    using vec3 = uniform_tensor_t< Shape< 3 >, Length >;
+    using vec4 = uniform_tensor_t< Shape< 4 >, Length >;
+    using chain_type = VertexChain< vec3 >;
+
+    using mat2 = uniform_tensor_t< Shape< 2, 2 >, Scalar >;
+    using mat3 = uniform_tensor_t< Shape< 3, 3 >, Scalar >;
+    using mat4 = uniform_tensor_t< Shape< 4, 4 >, Scalar >;
+    using mat3x4 = uniform_tensor_t< Shape< 3, 4 >, Scalar >;
+
+    using builder_type = simplex::Builder< Length >;
 
     struct Solid;
     struct Facet;
 
-    struct Vertex
-    {
-        Length& operator []( size_t n )
-        {
-            switch( n ) {
-            case 0: return x;
-            case 1: return y;
-            case 2: 
-            default:
-                return z;
-            }
-        }
-
-        vector_type as_vector() const
-        { return { x, y, z }; }
-
-        Vertex& operator =( vector_type const& vec )
-        {
-            x = tensor_get< 0 >( vec );
-            y = tensor_get< 1 >( vec );
-            z = tensor_get< 2 >( vec );
-            return *this;
-        }
-
-        Facet* facet() { return _facet; }
-        Facet const* facet() const { return _facet; }
-
-        Vertex( Facet* f, Length x, Length y, Length z ):
-            _facet{ f }, x{ x }, y{ y }, z{ z }
-        { }
-
-        Vertex( Facet* f, Vertex const& v ):
-            _facet{ f }, x{ v.x }, y{ v.y }, z{ v.z }
-        { }
-
-// private:
-        Vertex( Facet* f ): _facet{ f } { }
-
-        Facet* _facet;
-        Length x;
-        Length y;
-        Length z;
-        string comment;
-    };
+    using solid_iterator = std::vector< Solid >::iterator;
+    using facet_iterator = std::vector< Facet >::iterator; 
+    using chain_iterator = chain_type::iterator;
 
     // implemented using an outer loop of vertices
     struct Facet
     {
-        using iterator = std::list< Vertex >::iterator;
-        using const_iterator = std::list< Vertex >::const_iterator;
-        using reverse_iterator = std::list< Vertex >::reverse_iterator;
-
-        Vertex& front() { return vertices.front(); }
-        Vertex const& front() const { return vertices.front(); }
-        Vertex& back() { return vertices.back(); }
-        Vertex const& back() const { return vertices.back(); }
-        size_t size() { return vertices.size(); }
-        iterator begin() { return vertices.begin(); }
-        iterator end() { return vertices.end(); }
-        reverse_iterator rbegin() { return vertices.rbegin(); }
-        reverse_iterator rend() { return vertices.rend(); }
-
+        using vertex_type = vec3;
+        using value_type = vertex_type;
+        using iterator_type = vertex_type*;
+        using const_iterator_type = vertex_type const*;
+        
         void reverse_vertex_order()
-        { std::reverse( vertices.begin(), vertices.end() ); }
+        { std::swap( v[0], v[2] ); }
 
-        Vertex& add_vertex( Length x = 0_m, Length y = 0_m, Length z = 0_m )
-        { return vertices.emplace_back( this, x, y, z ); }
-        Vertex& add_vertex( Vertex const& v )
-        { return vertices.emplace_back( this, v ); }
+        iterator_type begin()
+        { return &v[0]; }
+        iterator_type end()
+        { return &v[0] + 3; }
 
-        iterator emplace( const_iterator here, 
-            Length x = 0_m, Length y = 0_m, Length z = 0_m )
-        { return vertices.emplace( here, this, x, y, z ); }
-        iterator emplace( const_iterator here, Vertex const& v )
-        { return vertices.emplace( here, this, v ); }
+        const_iterator_type begin() const
+        { return &v[0]; }
+        const_iterator_type end() const
+        { return &v[0] + 3; }
 
-        Solid* solid() { return _solid; }
-        Solid const* solid() const { return _solid; }
+        Facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
+            normal{ nx, ny, nz } { }
 
-        Facet( Solid* s, Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
-            _solid{ s }, normal{ this, nx, ny, nz } { }
-
-        Solid* _solid;
-        Vertex normal;
-        string comment;
-        std::list< Vertex > vertices;
+        vertex_type normal;
+        vertex_type v[3];
     };
 
-    struct Solid
+    struct Solid: std::vector< Facet >
     {
-        using iterator = std::vector< Facet >::iterator;
-        using reverse_iterator = std::vector< Facet >::reverse_iterator;
-
-        size_t size() { return facets.size(); }
-        iterator begin() { return facets.begin(); }
-        iterator end() { return facets.end(); }
-        reverse_iterator rbegin() { return facets.rbegin(); }
-        reverse_iterator rend() { return facets.rend(); }
-
         Facet& add_facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m )
-        { return facets.emplace_back( this, nx, ny, nz ); }
+        { return emplace_back( nx, ny, nz ); }
 
-        STLFile* stl_file() { return file; }
-        STLFile const* stl_file() const { return file; }
+        Solid( string const& name ): name{ solid_name( name ) } { }
 
-        Solid( STLFile* file, string const& name ): 
-            file{ file }, name{ solid_name( name ) } { }
-
-        STLFile* file;
         string name;
-        string comment;
-        std::vector< Facet > facets;
     };
 
-    struct Cursor 
-    { 
-        Facet* add_facet();
-        Vertex* add_vertex();
-        Solid* add_solid();
-
-        void push_orientation( vector_type ori );
-        void pop_orientation();
-
-        void push_transformation( matrix_type mat );
-        void pop_transformation();
-
-        void push_translation( vector_type trans );
-        void pop_translation();
-
-        void push_projection( Length at );
-        void pop_projection();
-
-        template< size_t I >
-        void push_injection();
-        void pop_injection();
+    struct Cursor
+    {
+        Cursor( STLFile* file ): file{ file } { }
 
         STLFile* file;
-        Facet* facet;
-        Vertex* vertex;
-        Solid* solid;
+        builder_type builder;
     };
 
-    Cursor cursor() { return Cursor{ .file = this }; }
+    Cursor cursor() { return Cursor{ this }; }
 
     string to_string() const;
 
@@ -188,10 +109,10 @@ struct STLFile
         return "; " + comment;
     }
 
-    Solid& add_solid( string name = "solid" )
-    { return solids.emplace_back( this, name ); }
+    solid_iterator add_solid( string name = "solid" )
+    { return solids.emplace( solids.end(), name ); }
 
-    Length& minimum_length( Length const& min_length )
+    Length& set_minimum_length( Length const& min_length )
     { return _minimum_length = min_length; }
 
     Length const& minimum_length() const
@@ -201,8 +122,8 @@ struct STLFile
     Length _minimum_length;
 };
 
-std::ostream& operator <<( std::ostream& os, STLFile::Vertex const& v )
-{ return os << meters( v.x ) << " " << meters( v.y ) << " " << meters( v.z ); }
+std::ostream& operator <<( std::ostream& os, STLFile::vec3 const& v )
+{ return os << meters( v[0] ) << " " << meters( v[1] ) << " " << meters( v[2] ); }
 
 template< typename ObjT >
 struct STL
@@ -210,44 +131,58 @@ struct STL
     using object_type = ObjT;
     using cursor_type = STLFile::Cursor;
 
-    /// @brief output a point
-    void output( cursor_type cursor, Point object ) const;
+    void output( cursor_type cursor, Point object ) const
+    { cursor.builder.push_vertex(); }
+
+    void output( cursor_type cursor, Extrusion< ObjT, Length, Length > ext ) const
+    { 
+        output( cursor, ext.object() );
+        cursor.builder.extrude( ext.from(), ext.to() ); 
+    }
+
+    template< size_t From, typename... Us >
+    static constexpr uniform_vector_t< From + sizeof...( Us ), Length > 
+    translation_vector_from( ProjectAt< From, Us... > proj )
+    { return proj( uniform_vector_t< From, Length >::zero() ); }
+
+    template< typename ObjU, size_t From, typename... Us >
+    requires(( is_same_v< Length, Us > and ... ))
+    void output( cursor_type cursor, Projection< ObjU, ProjectAt< From, Us... >> ext ) const
+    { 
+        output( cursor, ext.object() );
+        cursor.builder.translate( translation_vector_from( ext.transform() )); 
+    }
 
     /// output compounds and attributed objects
     template< typename ComponentsU, typename... Objs >
-    void output( cursor_type cursor, Compound< ComponentsU, Objs... > object ) const;
-    template< typename... Objs >
-    void output( cursor_type cursor, Collection< Objs... > object ) const;
-    template< typename ObjU, typename AttU >
-    void output( cursor_type cursor, Attribution< ObjU, AttU > object ) const;
-    template< typename ObjU >
-    void output( cursor_type cursor, Orientation< ObjU > object ) const;
-
-    // output a sub-component of an object
-    template< typename ElementU, typename ObjU >
-    void output( cursor_type cursor, Component< ElementU, ObjU > object ) const;
-
-    // output the boundary of an object
-    template< typename ObjU >
-    void output( cursor_type cursor, Boundary< ObjU > object ) const;
-    
-    // output an extrusion of an object
-    template< typename ObjU, typename U >
-    void output( cursor_type cursor, Extrusion< ObjU, U > object ) const;
-
-    // output the projection of an object to another space
-    template< typename ObjU, typename SpaceV >
-    void output( cursor_type cursor, Projection< ObjU, SpaceV > object ) const;
-
-    template< size_t I, size_t J, typename ObjU >
-    void output( cursor_type cursor, Revolution< I, J, ObjU > object ) const
-    {  
-
-    }
-    template< typename ObjU, typename ElementU, typename U >
-    void output( cursor_type cursor, Pad< Component< ElementU, ObjU >, U > object ) const
+    void output( cursor_type cursor, Compound< ComponentsU, Objs... > compound ) const
     {
+        auto output_compound_helper = [&]< size_t... Is >( seq< Is... > )
+        {( output( cursor, get_component< Is >( compound )), ... ); };
 
+        output_compound_helper( make_seq< sizeof...( Objs )>{} );
+        cursor.builder.combine( sizeof...( Objs ));
+    }
+
+    template< typename... Objs >
+    void output( cursor_type cursor, Collection< Objs... > col ) const
+    {
+        auto output_collection_helper = [&]< size_t... Is >( seq< Is... > )
+        {( output( cursor, get< Is >( col )), ... ); };
+
+        output_collection_helper( make_seq< sizeof...( Objs )>{} );
+        cursor.builder.combine( sizeof...( Objs ));
+    }
+    template< typename ObjU, typename AttU >
+    void output( cursor_type cursor, Attribution< ObjU, AttU > att ) const
+    { output( cursor, att.object() ); }
+
+    template< typename ObjU, size_t Rows, size_t Cols >
+    void output( cursor_type cursor,
+        Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Length >>> proj ) const
+    {
+        output( cursor, proj.object() );
+        cursor.builder.linear_transform( proj.transformation() );
     }
 
     std::ostream& write_to( std::ostream& os ) const;
@@ -270,491 +205,6 @@ struct STL
 };
 
 
-/// specializations of output method ///
-///
-
-template< typename ObjT >
-void STL< ObjT >::output( STLFile::Cursor cursor, Point object ) const
-{ cursor.add_vertex(); }
-
-template< typename ObjT, typename CompoundT, size_t... Is >
-void output_compound_helper( STL< ObjT >& stl, STLFile::Cursor cursor, 
-    CompoundT compound, seq< Is... > )
-{ ( stl.output( cursor, get_component< Is >( compound )), ... ); }
-
-template< typename ObjT >
-template< typename ComponentsU, typename... Objs >
-void STL< ObjT >::output( STLFile::Cursor cursor, Compound< ComponentsU, Objs... > object ) const
-{ output_compound_helper( *this, cursor, object, make_seq< sizeof...( Objs )>{} ); }
-
-template< typename ObjT >
-template< typename... Objs >
-void STL< ObjT >::output( STLFile::Cursor cursor, Collection< Objs... > object ) const
-{ output_compound_helper( *this, cursor, object, make_seq< sizeof...( Objs )>{} ); }
-
-template< typename ObjT >
-template< typename ObjU, typename AttU >
-void STL< ObjT >::output( STLFile::Cursor cursor, Attribution< ObjU, AttU > object ) const
-{ output( cursor, object.object ); }
-
-template< typename ObjT >
-template< typename ObjU >
-void STL< ObjT >::output( STLFile::Cursor cursor, Orientation< ObjU > object ) const
-{ 
-    cursor.push_orientation( object.orientation );;
-    output( cursor, object.object );
-    cursor.pop_orientation();
-}
-
-template< typename ObjT >
-template< typename ObjU, typename SpaceV >
-void STL< ObjT >::output( STLFile::Cursor cursor, Projection< ObjU, SpaceV > object ) const
-{ 
-    cursor.push_transformation( object.transform );
-    output( cursor, object.object );
-    cursor.pop_orientation();
-}
-
-template< typename ObjT >
-template< typename ObjU >
-void STL< ObjT >::output( STLFile::Cursor cursor, Translation< ObjU > object ) const
-{ 
-    cursor.push_translation( object.transl );
-    output( cursor, object.object );
-    cursor.pop_translation();
-}
-
-template< typename ObjT >
-template< typename ElementT, typename ObjU >
-void STL< ObjT >::output( STLFile::Cursor cursor, Component< ElementT, ObjU > object ) const
-{ output( cursor, get_component< ElementT >( object )); }
-
-// this is a pad
-template< typename ObjT >
-template< typename ObjU >
-void STL< ObjT >::output( STLFile::Cursor cursor, 
-    Boundary< // stl files can only output boundaries
-        Projection< Extrusion< // this is a pad
-            Component< ElementT, Boundary< ObjU >>>, 
-            space_of< ObjU >>> object ) const
-{ 
-
-}
-
-template< typename ObjT >
-template< typename ObjU >
-void STL< ObjT >::output( STLFile::Cursor cursor, Boundary< ObjU > object ) const
-{ }
-
-
-/// @brief outputing a point to an STL facet
-/// @param out facet to add a vertex to
-/// @param p point to add
-/// @return the vertex
-constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
-{ return out.add_vertex(); }
-
-/// @brief extrusion of a point
-template< size_t SelectedStep, typename ObjT, size_t Steps >
-constexpr STLFile::Facet& output( STLFile::Facet& out, 
-    ExtrusionStep< SelectedStep, Extrusion< ObjT, Length, Steps >> const& ext_step )
-{
-    using iterator = STLFile::Facet::iterator;
-    using extrusion_type = Extrusion< ObjT, Length, Steps >;
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-
-    extrusion_type const& extrusion = ext_step.extrusion();
-
-    // fetch the minimum length
-    Length min_length = out.solid()->stl_file()->minimum_length();
-
-    output( out, extrusion.object() );
-
-    if( out.size() == 1 )
-    {
-        // expects only a single vertex and adds a string of vertices
-        Length amount = {};
-        size_t step = 0;
-        for( Length const& step_value: extrusion.step_values() )
-        {
-            if( step++ < SelectedStep )
-            {
-                amount += step_value;
-                continue;
-            }
-
-            auto& v = out.front();
-            v[ dim ] = amount;
-            auto w = v;
-            w[ dim ] = amount + step_value;
-            out.add_vertex( w );
-            break;
-        }
-
-        return out;
-    }
-
-    // expects a string of vertices and creates triplets
-    Length amount = {};
-    size_t s = 0;
-
-    std::list< STLFile::Vertex > layer;
-    // transfer our string to the layer
-    layer.splice( layer.end(), out.vertices );
-
-    size_t step = 0;
-    for( Length const& step_value: extrusion.step_values() )
-    {
-        if( step++ < SelectedStep )
-        {
-            amount += step_value;
-            continue;
-        }
-
-        // amount += step_value;
-        iterator p1, p2;
-        p1 = p2 = layer.begin();
-        ++p2;
-
-        while( p2 != layer.end() )
-        {
-            auto v1 = *p1;
-            v1[ dim ] = amount;
-            auto v2 = *p2;
-            v2[ dim ] = amount;
-            auto v3 = *p1;
-            v3[ dim ] = amount + step_value;
-            auto v4 = *p2;
-            v4[ dim ] = amount + step_value;
-
-            // is it possible to be less than the minimum length?
-            if( not is_positive( min_length )) 
-            {
-                // v1-v2-v3
-                out.add_vertex( v1 );
-                out.add_vertex( v2 );
-                out.add_vertex( v3 );
-
-                // v4-v3-v2
-                out.add_vertex( v4 );
-                out.add_vertex( v3 );
-                out.add_vertex( v2 );
-            }
-            else
-            {
-                throw std::logic_error( "STL minimum length not implemented" );
-            }
-            p1 = p2;
-            ++p2;
-        }
-
-        break;
-    }
-
-    return out;
-
-}
-
-
-template< typename ObjT, size_t Steps >
-constexpr auto& output( STLFile& out, 
-    Extrusion< ObjT, Length, Steps > const& extrusion )
-{
-    auto& solid = out.add_solid( Extrusion< ObjT, Length, Steps >::object_name() );
-    return output( solid, extrusion );
-}
-
-template< typename ObjT, size_t Steps >
-constexpr STLFile::Facet& output( STLFile::Facet& out, 
-    Extrusion< ObjT, Length, Steps > const& extrusion )
-{
-    using iterator = STLFile::Facet::iterator;
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-
-    // create a temporary facet to output the sub-object to
-    STLFile::Facet temp{ out.solid() };
-
-    // gather the vertices
-    output( temp, extrusion.object() );
-
-    // fetch the minimum length
-    Length min_length = out.solid()->stl_file()->minimum_length();
-
-    if( temp.size() == 1 )
-    {
-        STLFile::Vertex v = temp.front();
-        out.add_vertex( v );
-        // expects only a single vertex and adds a string of vertices
-        Length amount = {};
-        for( Length const& step: extrusion.step_values() )
-        {
-            amount += step;
-            v[ dim ] = amount;
-            out.add_vertex( v );
-        }
-
-        return out;
-    }
-
-    // expects a string of vertices and creates triplets
-    Length amount = {};
-    size_t s = 0;
-
-    std::list< STLFile::Vertex >& layer = temp.vertices;
-
-    for( Length const& step: extrusion.step_values() )
-    {
-        amount += step;
-        iterator p1, p2;
-        p1 = p2 = layer.begin();
-        ++p2;
-
-        while( p2 != layer.end() )
-        {
-            auto v1 = *p1;
-            auto v2 = *p2;
-            auto v3 = *p1;
-            v3[ dim ] = amount;
-            auto v4 = *p2;
-            v4[ dim ] = amount;
-
-            // is it possible to be less than the minimum length?
-            if( not is_positive( min_length )) 
-            {
-                // v1-v2-v3
-                out.add_vertex( v1 );
-                out.add_vertex( v2 );
-                out.add_vertex( v3 );
-
-                // v4-v3-v2
-                out.add_vertex( v4 );
-                out.add_vertex( v3 );
-                out.add_vertex( v2 );
-            }
-            else
-            {
-                throw std::logic_error( "STL minimum length not implemented" );
-            }
-            p1 = p2;
-            ++p2;
-        }
-
-        // move layer one step forward
-        // for( auto& v: layer )
-        //     v[ dim ] = amount;
-    }
-
-    return out;
-}
-
-/// @brief output an extrusion to a facet
-/// @tparam ObjT 
-/// @param out 
-/// @param object 
-/// @return 
-template< typename ObjT >
-constexpr auto& output( STLFile::Facet& out, 
-    Projection< ObjT, Length > const& object )
-{
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-    size_t verts = out.size();
-    // output the projected object
-    output( out, object.object());
-    verts = out.size() - verts;
-    for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-        (*j)[ dim ] = object.amount();
-    return out;
-}
-
-template< typename CompoundT, size_t... Is >
-constexpr auto& output_compound_helper( STLFile::Facet& out, CompoundT const& compound,
-    seq< Is... > )
-{ return ( output( out, get_component< Is >( compound )), ... ); }
-
-template< typename CompoundT, size_t... Is >
-constexpr auto& output_compound_helper( STLFile::Solid& out, CompoundT const& compound,
-    seq< Is... > )
-{ return ( output( out, get_component< Is >( compound )), ... ); }
-
-template< typename CompoundT, size_t... Is >
-constexpr auto& output_compound_helper( STLFile& out, CompoundT const& compound,
-    seq< Is... > )
-{ return ( output( out, get_component< Is >( compound )), ... ); }
-
-template< typename ComponentsT, typename... Objects >
-constexpr auto& output( STLFile::Facet& facet, 
-    Compound< ComponentsT, Objects... > const& compound )
-{ return output_compound_helper( facet, compound, 
-        make_seq< sizeof...( Objects )>{} ); }
-
-template< typename ComponentsT, typename... Objects >
-constexpr auto& output( STLFile::Solid& solid, 
-    Compound< ComponentsT, Objects... > const& compound )
-{ return output_compound_helper( solid, compound, 
-        make_seq< sizeof...( Objects )>{} ); }
-
-template< typename ComponentsT, typename... Objects >
-constexpr auto& output( STLFile& out, 
-    Compound< ComponentsT, Objects... > const& compound )
-{ 
-    // auto& solid = out.add_solid( "compound" );
-    return output_compound_helper( out, compound, 
-        make_seq< sizeof...( Objects )>{} ); 
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, 
-    LinearTransformation< ObjT > const& transformed )
-{ 
-    output( out, transformed.object() );
-    for( auto& solid: out.solids )
-        for( auto& facet: solid.facets )
-            for( auto& v: facet.vertices )
-                v = matmul( transformed.transformation(), v.as_vector() );
-    return out;
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, Translation< ObjT > const& translated )
-{ 
-    output( out, translated.object() );
-    for( auto& solid: out.solids )
-        for( auto& facet: solid.facets )
-            for( auto& v: facet.vertices )
-                v = ( translated.translation() + v.as_vector() );
-    return out;
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile::Solid& solid, 
-    LinearTransformation< ObjT > const& transformed )
-{ 
-    output( solid, transformed.object() );
-    for( auto& facet: solid.facets )
-        for( auto& v: facet.vertices )
-            v = matmul( transformed.transformation(), v.as_vector() );
-    return solid;
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile::Facet& out,
-    LinearTransformation< ObjT > const& transformed )
-{
-    size_t verts = out.size();
-    output( out, transformed.object() );
-    verts = out.size() - verts;
-    for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-        *j = matmul( transformed.transformation(), j->as_vector());
-
-    return out;
-}
-
-/// @brief outputing an orientation to a facet is duplicative since we already
-/// identified the normal vector
-/// TODO: what if we hane't set a normal vector yet?  
-/// @param out facet to add a vertex to
-/// @param p 
-/// @return the vertex
-template< typename ObjT >
-constexpr auto& output( STLFile::Facet& out, Orientation< ObjT > const& object )
-{ return output( out, object.object() ); }
-
-template< typename SpaceT >
-constexpr auto& output( STLFile::Facet& out, Empty< SpaceT > const& object )
-{ return out; }
-
-// extrusion of a segment
-template< typename ObjT, size_t Steps >
-// requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto& output( STLFile::Solid& out, Extrusion< ObjT, Length, Steps > const& object )
-{ return output( out.add_facet(), object ); }
-
-template< typename ObjT >
-// requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto& output( STLFile::Solid& out, Projection< ObjT, Length > const& object )
-{ return output( out.add_facet(), object ); }
-
-template< typename CollectionT, size_t... Is >
-constexpr auto& output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
-    seq< Is... > )
-{ return ( output( out, get< Is >( col )), ... ); }
-
-// template< typename CollectionT, size_t... Is >
-// constexpr auto& output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
-//     seq< Is... > )
-// { return ( output( out, get< Is >( col )), ... ); }
-
-template< typename... Objects >
-constexpr auto& output( STLFile& out, Collection< Objects... > const& col )
-{ return output_collection_helper( out.add_solid( Collection< Objects... >::object_name() ), col, 
-    make_seq< sizeof...( Objects )>{} ); } 
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, Extrusion< ObjT, Length > const& obj )
-{ return output( out.add_solid( Extrusion< ObjT, Length >::object_name() ), obj ); } 
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, Projection< ObjT, Length > const& obj )
-{ return output( out.add_solid( Projection< ObjT, Length >::object_name() ), obj ); } 
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, Attribution< ObjT, Named > const& obj )
-{ 
-    auto& s = out.add_solid( obj.attribute().name() );
-    return output( s, obj.object() ); 
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile& out, Orientation< ObjT > const& object )
-{
-    auto& solid = out.add_solid( Orientation< ObjT >::object_name() );
-    return output( solid, object );
-}
-
-template< typename ObjT >
-constexpr auto& output( STLFile::Solid& out, Orientation< ObjT > const& object )
-{ 
-    auto v = object.orientation();
-    STLFile::Facet& facet = out.add_facet( tensor_get< 0 >( v ), 
-        tensor_get< 1 >( v ), tensor_get< 2 >( v ));
-    output( facet, object.object() );
-
-    // check if the triangle order matches the orientation
-    if( facet.vertices.size() < 3 )
-        return out;
-
-    auto n = facet.normal.as_vector();
-
-    auto i = facet.vertices.begin();
-    auto const& v0 = (i++)->as_vector();
-    auto const& v1 = (i++)->as_vector();
-    auto const& v2 = i->as_vector();
-
-    auto x1 = v1 - v0;
-    auto x2 = v2 - v0;
-    
-    if( is_positive( dot( cross( x1, x2 ), n )))
-        facet.reverse_vertex_order();
-    
-    return out;
-}
-
-// template< >
-// constexpr auto& output( STLFile::Facet& out, 
-//     Projected< Projected< Projected< Point, Length >, Length >, Length > const& p )
-// { 
-//     out.add_vertex( p.object().object().amount(), 
-//         p.object().amount(), p.amount() );
-// }
-
-// extrusion of a point 
-// template< unit U >
-// constexpr auto& output( STLFile::Facet& out, Extrusion< Point, U > const& object )
-// { 
-//     out.add_vertex();
-//     out.add_vertex( object.amount() );
-// }
-
 /// @brief output a string representing this STLFile. 
 /// NOTE: this is for debug purposes.  Use the STL class to output an STL 
 /// file format
@@ -767,24 +217,24 @@ string STLFile::to_string() const
     for( auto const& solid: solids )
     {
         ret += "\t\t.name = \"" + solid.name + "\";\n";
-        ret += "\t\t.comment = \"" + solid.comment + "\";\n";
+        // ret += "\t\t.comment = \"" + solid.comment + "\";\n";
         ret += "\t\t.facets = {\n";
 
-        for( auto const& facet: solid.facets )
+        for( auto const& facet: solid )
         {
             ret += "\t\t\t.normal = {" 
-                + std::to_string( facet.normal.x ) + ", " 
-                + std::to_string( facet.normal.y ) + ", " 
-                + std::to_string( facet.normal.z ) + " };\n";
-            ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
+                + std::to_string( facet.normal[0] ) + ", " 
+                + std::to_string( facet.normal[1] ) + ", " 
+                + std::to_string( facet.normal[2] ) + " };\n";
+            // ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
             ret += "\t\t\t.vertices = {\n";
 
-            for( auto const& vertex: facet.vertices )
+            for( auto const& vertex: facet )
             {
                 ret += "\t\t\t\t{ " 
-                    + std::to_string( vertex.x ) + ", " 
-                    + std::to_string( vertex.y ) + ", "
-                    + std::to_string( vertex.z ) + " };\n";
+                    + std::to_string( vertex[0] ) + ", " 
+                    + std::to_string( vertex[1] ) + ", "
+                    + std::to_string( vertex[2] ) + " };\n";
             }
 
             ret += "\t\t\t};\n";
@@ -801,7 +251,7 @@ template< typename ObjT >
 std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
 {
     STLFile out;
-    out.minimum_length( _minimum_length );
+    out.set_minimum_length( _minimum_length );
 
     // stls are the boundary of a solid object
     output( out.cursor(), boundary( object() ));
@@ -810,11 +260,11 @@ std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
     {
         os << "solid " << solid.name << "\n";
 
-        for( auto const& facet : solid.facets )
+        for( auto const& facet : solid )
         {
             // TODO: should each facet just have 3 vertices?
-            auto i = facet.vertices.begin();
-            while( i != facet.vertices.end() )
+            auto i = facet.begin();
+            while( i != facet.end() )
             {
                 // we should always have three...
                 auto v0 = *i++;
@@ -846,6 +296,7 @@ std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 { return stl.write_to( os ); }
 
 } // namespace formats
+} // namespace geometry
 
 
 #endif // __STL_HPP__

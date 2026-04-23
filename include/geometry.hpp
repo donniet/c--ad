@@ -5,7 +5,6 @@
 #include "geometry/collection.hpp"
 #include "geometry/compound.hpp"
 #include "geometry/attribute.hpp"
-#include "geometry/linear_transform.hpp"
 #include "geometry/translate.hpp"
 #include "geometry/project.hpp"
 #include "geometry/orient.hpp"
@@ -24,48 +23,10 @@ namespace geometry {
 /// @brief extrude a surface element from an object and return a compound
 /// @tparam ObjectT 
 /// @tparam SurfaceElementT 
-template< typename ObjectT >
-struct Padding
-{
-    using object_type = ObjectT;
-    using space_type = space_of< object_type >;
-    using vector_type = space_type::vector_type;
-
-    static string object_name() 
-    { return "padding_" + object_type::object_name(); }
-
-    object_type object;
-    vector_type direction;
-};
-
-template< size_t I, size_t J, typename ObjT >
-requires( I != J and isleess( I, dimensions_of_v< space_of< ObjT >> and isless( J, dimensions_of_v< space_of< ObjT >> )))
-struct Revolution
-{
-    static constexpr size_t first_axis = I;
-    static constexpr size_t second_axis = J;
-    using object_type = ObjT;
-
-    static string object_name()
-    { return "revolve_" + std::to_string( I ) + "_" + std::to_string( J ) + "_" + object_type::object_name(); }
-
-    object_type object;
-    long double angle;
-};
 
 //////////////
 // operations
 
-
-template< typename ObjT >
-requires( is_empty< ObjT > )
-Empty< space_of< ObjT >> pad( ObjT const& )
-{ return { }; }
-
-template< typename ObjT >
-requires( not is_empty< ObjT > )
-Padding< ObjT > pad( ObjT const& object )
-{ return { object }; }
 
 
 /////////////////////////////
@@ -201,16 +162,6 @@ struct padding_boundary {
 
 /// IsEmpty specializations ///
 ///
-
-template< typename ObjT >
-struct IsEmpty< Padding< ObjT >>
-{ static constexpr bool value = IsEmpty< ObjT >::value; };
-
-
-
-
-
-
 
 
 } // namespace geometry

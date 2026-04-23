@@ -14,6 +14,8 @@
 #include <any>
 
 using std::size_t;
+using size_diff_t = std::ptrdiff_t;
+
 using std::integral_constant;
 using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t, 
     std::make_tuple;
@@ -24,6 +26,51 @@ using std::isless, std::isgreater;
 using std::array;
 using std::function;
 using std::any, std::make_any, std::any_cast;
+
+////////////////
+/// Simple Stack
+///
+template< typename T >
+struct stack_of: protected std::vector< T >
+{
+    constexpr void push( T&& value ) 
+    { std::vector< T >::push_back( std::move(value) ); }
+
+    constexpr void push( T const& value ) 
+    { std::vector< T >::push_back( value ); }
+
+    constexpr T const& top() const
+    { return std::vector< T >::back(); }
+
+    constexpr T pop()
+    {
+        T ret = top();
+        std::vector< T >::pop_back();
+        return ret;
+    }
+
+    using value_type = T;
+    using iterator = std::vector< T >::iterator;
+    using reverse_iterator = std::vector< T >::reverse_iterator;
+    using const_iterator = std::vector< T >::const_iterator;
+    using const_reverse_iterator = std::vector< T >::const_reverse_iterator;
+
+    using std::vector< T >::begin;
+    using std::vector< T >::end;
+    using std::vector< T >::rbegin;
+    using std::vector< T >::rend;
+    using std::vector< T >::cbegin;
+    using std::vector< T >::cend;
+    using std::vector< T >::size;
+    using std::vector< T >::clear;
+
+    constexpr stack_of& operator=( stack_of const& ) = default;
+
+    constexpr stack_of() = default;
+    constexpr stack_of( stack_of const& ) = default;
+    constexpr stack_of( stack_of&& ) = default;
+};
+
 
 /////////////////////
 /// Sequence Helpers
