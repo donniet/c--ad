@@ -221,18 +221,43 @@ struct unit_format_type
 constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
 {
     std::stringstream name;
+    bool has_divisor = false;
 
     auto powers = factor( uid );
     for( int i = 1; i < total_units; ++i )
     {
+        if( powers[i] < 0 )
+        {
+            has_divisor = true;
+            continue;
+        }
+        
         if( powers[i] == 0 )
             continue;
         
         name << " " << base_unit_names[i];
         if( powers[i] == 1 )
             continue;
-        
+
+    
         name << "^" << powers[i];
+    }
+
+    if( not has_divisor )
+        return name.str();
+
+    name << "/";
+
+    for( int i = 1; i < total_units; ++i )
+    {
+        if( powers[i] >= 0 )
+            continue;
+
+        name << " " << base_unit_names[i];
+        if( powers[i] == -1 )
+            continue;
+    
+        name << "^" << -powers[i];
     }
 
     return name.str();
@@ -1836,7 +1861,12 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
 
 using Information = base_unit< information_unit_id, long double >;
 
+std::ostream& operator <<( std::ostream& os, unit_id_type const& id )
+{ return os << unit_id_name( id ); }
 
+template< unit_id_type Id, arithmetic T >
+std::ostream& operator <<( std::ostream& os, base_unit< Id, T > const& u )
+{ return os << u.get_value() << Id; }
 
 } // namespace units
 

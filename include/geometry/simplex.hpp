@@ -7,6 +7,10 @@
 #include <vector>
 #include <ranges>
 #include <algorithm>
+#include <initializer_list>
+#include <iostream>
+#include <iterator>
+#include <algorithm>
 
 namespace geometry {
 namespace simplex {
@@ -14,6 +18,9 @@ namespace simplex {
 template< typename U >
 struct Vertex: std::vector< U >
 {
+    using value_type = U;
+    using container_type = std::vector< U >;
+    
     constexpr bool operator ==( Vertex const& vec ) const;
     constexpr bool operator !=( Vertex const& vec ) const;
     constexpr Vertex& operator+=( Vertex const& );
@@ -28,7 +35,7 @@ struct Vertex: std::vector< U >
             *i += *j;
 
         for( ; j != std::ranges::end( vec ); ++j )
-            extend( *j );
+            container_type::push_back( *j );
 
         return *this;
     }
@@ -40,11 +47,19 @@ struct Vertex: std::vector< U >
     using std::vector< U >::begin;
     using std::vector< U >::end;
 
-    constexpr void extend( U&& value )
-    { std::vector< U >::push_back( std::move( value )); }
+    constexpr Vertex extend( U&& value ) const
+    { 
+        Vertex ret = *this;
+        ret.push_back( value );
+        return ret;
+    }
 
-    constexpr void extend( U const& value )
-    { std::vector< U >::push_back( std::move( value )); }
+    constexpr Vertex extend( U const& value ) const
+    { 
+        Vertex ret = *this;
+        ret.push_back( value );
+        return ret;
+    }
 
     using std::vector< U >::size;
 
@@ -53,6 +68,9 @@ struct Vertex: std::vector< U >
     { return ( I < size() ? std::vector< U >::at( I ) : static_cast< U >( 1 )); }
 
     Vertex( size_t dim ): std::vector< U >{ dim, static_cast< U >( 0 )} { }
+    Vertex(): container_type{} { }
+    Vertex( std::initializer_list< value_type >&& coords ):
+        container_type{ coords } { }
 };
 
 /// @brief a mesh with a different name and arbirary dimensions, but a consistent
@@ -62,8 +80,21 @@ template< typename U >
 struct Simplex: std::vector< Vertex< U >>
 {
     using vertex_type = Vertex< U >;
+    using value_type = vertex_type;
+    using container_type = std::vector< vertex_type >;
 
     bool operator ()( vertex_type const& point ) const;
+
+    constexpr Simplex& operator =( Simplex const& other )
+    {
+        container_type::operator =( other );
+        return *this;
+    }
+
+    constexpr Simplex(): container_type{} { }
+    constexpr Simplex( Simplex const& other ): container_type{ other } { }
+    constexpr Simplex( std::initializer_list< vertex_type >&& vertex_list ):
+        container_type{ vertex_list } { }
 };
 
 template< typename U >
@@ -71,6 +102,7 @@ struct Complex: std::vector< Simplex< U >>
 {
     using vertex_type = Vertex< U >;
     using simplex_type = Simplex< U >;
+    using value_type = simplex_type;
     using container_type = std::vector< simplex_type >;
     
     template< std::ranges::input_range R >
@@ -79,6 +111,18 @@ struct Complex: std::vector< Simplex< U >>
         std::ranges::end( rng )); }
 
     bool operator ()( vertex_type const& point ) const;
+
+    constexpr Complex& operator =( Complex const& other )
+    {  
+        container_type::operator =( other );
+        return *this;
+    }
+
+    constexpr Complex( std::initializer_list< simplex_type >&& simplex_list ):
+        container_type{ simplex_list } { }
+    constexpr Complex( Complex const& other ):
+        container_type{ other } { }
+    constexpr Complex(): container_type{} { }
 
 };
 
@@ -101,8 +145,17 @@ struct Builder
     const_iterator begin() const { return shape_stack.begin(); }
     const_iterator end() const { return shape_stack.end(); }
 
+    value_type const& result() const
+    { return shape_stack.top(); }
+
     void push_vertex( size_t dim = 0 )
-    { shape_stack.push( {{ simplex_type{{ vertex_type{ dim } }}}} ); }
+    { 
+        vertex_type v{ dim };
+        simplex_type s{{ v }};
+        complex_type c{{ s }};
+
+        shape_stack.push( c ); 
+    }
 
     void combine( size_t count )
     {
@@ -171,16 +224,18 @@ private:
     {
         if( s.size() == 0 )
             throw std::logic_error( "cannot extrude an empty simplex" );
-        
-        auto s0_0 = s[0].extend( from );
-        auto s0_1 = s[0].extend( to );
+
+        auto s0 = s[0];
+        auto s0_0 = s0.extend( from );
+        auto s0_1 = s0.extend( to );
 
         // are we extruding a single point?
         if( s.size() == 1 )
             return {{ s0_0, s0_1 }};
 
-        auto s1_0 = s[1].extend( from );
-        auto s1_1 = s[1].extend( to );
+        auto s1 = s[1];
+        auto s1_0 = s1.extend( from );
+        auto s1_1 = s1.extend( to );
 
         // are we extruding a line segment
         if( s.size() == 2 ) 
@@ -191,11 +246,37 @@ private:
             " supported at this time." );
     }
 
-
     stack_of< complex_type > shape_stack;
 };
 
-} // namespace geometry 
+template< typename U >
+std::ostream& operator <<( std::ostream& os, Vertex< U > const& vert )
+{  
+    os << "(";
+    std::copy( vert.begin(), vert.end(), std::ostream_iterator< U >( os, " " ));
+    return os << ")";
+}
+
+template< typename U >
+std::ostream& operator <<( std::ostream& os, Simplex< U > const& facet )
+{  
+    os << "{";
+    std::copy( facet.begin(), facet.end(), 
+        std::ostream_iterator< Vertex< U >>( os, " " ));
+    return os << "}";
+}
+
+template< typename U >
+std::ostream& operator <<( std::ostream& os, Complex< U > const& complex )
+{  
+    os << "[\n";
+    std::copy( complex.begin(), complex.end(), 
+        std::ostream_iterator< Simplex< U >>( os, "\n" ));
+    return os << "]";
+}
+
 } // namespace simplex 
+} // namespace geometry 
+
 
 #endif

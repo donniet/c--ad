@@ -34,7 +34,7 @@ template< typename T >
 struct stack_of: protected std::vector< T >
 {
     constexpr void push( T&& value ) 
-    { std::vector< T >::push_back( std::move(value) ); }
+    { std::vector< T >::push_back( value ); }
 
     constexpr void push( T const& value ) 
     { std::vector< T >::push_back( value ); }
@@ -44,6 +44,9 @@ struct stack_of: protected std::vector< T >
 
     constexpr T pop()
     {
+        if( size() == 0 )
+            throw std::logic_error( "stack is empty" );
+            
         T ret = top();
         std::vector< T >::pop_back();
         return ret;

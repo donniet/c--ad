@@ -12,10 +12,10 @@ auto segment()
 { return extrude( Point{}, 0_m, 1_m ); }
 
 auto plane()
-{ return extrude( segment() ); }
+{ return extrude( segment(), 0_m, 1_m ); }
 
 auto box()
-{ return extrude( plane() ); }
+{ return extrude( plane(), 0_m, 1_m ); }
 
 auto mortise_and_tenon()
 {
@@ -23,7 +23,7 @@ auto mortise_and_tenon()
     // auto stile_end = component< extrusion::cap >( stile );
     
     // return stile;
-    return segment();
+    return box();
 }
 
 int main( int ac, char* av[] )

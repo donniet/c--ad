@@ -22,6 +22,7 @@ namespace formats {
 
 using namespace units;
 using namespace tensors;
+using namespace geometry::simplex;
 
 /// 
 /// 
@@ -54,6 +55,16 @@ struct STLFile
         using value_type = vertex_type;
         using iterator_type = vertex_type*;
         using const_iterator_type = vertex_type const*;
+
+        static Facet from_simplex( Simplex< Length > const& simp )
+        {
+            Facet ret;
+            int i = 0;
+            for( Vertex< Length > const& vert: simp )
+                ret.v[ i++ ]= vec3{ vert[0], vert[1], vert[2] };
+
+            return ret;
+        }
         
         void reverse_vertex_order()
         { std::swap( v[0], v[2] ); }
@@ -79,22 +90,18 @@ struct STLFile
     {
         Facet& add_facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m )
         { return emplace_back( nx, ny, nz ); }
+        Facet& add_facet( Facet const& facet )
+        { return emplace_back( facet ); }
+
+        static Solid from_complex( Complex< Length > const& plex );
 
         Solid( string const& name ): name{ solid_name( name ) } { }
+        Solid(): name{ } { }
 
         string name;
     };
 
-    struct Cursor
-    {
-        Cursor( STLFile* file ): file{ file } { }
-
-        STLFile* file;
-        builder_type builder;
-    };
-
-    Cursor cursor() { return Cursor{ this }; }
-
+    void collect( builder_type const& builder );
     string to_string() const;
 
     // TODO: format the string name for use as a solid name in STL
@@ -111,6 +118,10 @@ struct STLFile
 
     solid_iterator add_solid( string name = "solid" )
     { return solids.emplace( solids.end(), name ); }
+
+    solid_iterator add_solid( Solid&& solid )
+    { return solids.emplace( solids.end(), solid ); }
+
 
     Length& set_minimum_length( Length const& min_length )
     { return _minimum_length = min_length; }
@@ -129,15 +140,16 @@ template< typename ObjT >
 struct STL
 {
     using object_type = ObjT;
-    using cursor_type = STLFile::Cursor;
+    using builder_type = STLFile::builder_type;
 
-    void output( cursor_type cursor, Point object ) const
-    { cursor.builder.push_vertex(); }
+    void output( builder_type& builder, Point object ) const
+    { builder.push_vertex(); }
 
-    void output( cursor_type cursor, Extrusion< ObjT, Length, Length > ext ) const
+    template< typename ObjU >
+    void output( builder_type& builder, Extrusion< ObjU, Length, Length > ext ) const
     { 
-        output( cursor, ext.object() );
-        cursor.builder.extrude( ext.from(), ext.to() ); 
+        output( builder, ext.object() );
+        builder.extrude( ext.from(), ext.to() ); 
     }
 
     template< size_t From, typename... Us >
@@ -147,42 +159,43 @@ struct STL
 
     template< typename ObjU, size_t From, typename... Us >
     requires(( is_same_v< Length, Us > and ... ))
-    void output( cursor_type cursor, Projection< ObjU, ProjectAt< From, Us... >> ext ) const
+    void output( builder_type& builder, Projection< ObjU, ProjectAt< From, Us... >> ext ) const
     { 
-        output( cursor, ext.object() );
-        cursor.builder.translate( translation_vector_from( ext.transform() )); 
+        output( builder, ext.object() );
+        builder.translate( translation_vector_from( ext.transform() )); 
     }
 
     /// output compounds and attributed objects
     template< typename ComponentsU, typename... Objs >
-    void output( cursor_type cursor, Compound< ComponentsU, Objs... > compound ) const
+    void output( builder_type& builder, Compound< ComponentsU, Objs... > compound ) const
     {
         auto output_compound_helper = [&]< size_t... Is >( seq< Is... > )
-        {( output( cursor, get_component< Is >( compound )), ... ); };
+        {( output( builder, get_component< Is >( compound )), ... ); };
 
         output_compound_helper( make_seq< sizeof...( Objs )>{} );
-        cursor.builder.combine( sizeof...( Objs ));
+        builder.combine( sizeof...( Objs ));
     }
 
     template< typename... Objs >
-    void output( cursor_type cursor, Collection< Objs... > col ) const
+    void output( builder_type& builder, Collection< Objs... > col ) const
     {
         auto output_collection_helper = [&]< size_t... Is >( seq< Is... > )
-        {( output( cursor, get< Is >( col )), ... ); };
+        {( output( builder, get< Is >( col )), ... ); };
 
         output_collection_helper( make_seq< sizeof...( Objs )>{} );
-        cursor.builder.combine( sizeof...( Objs ));
+        builder.combine( sizeof...( Objs ));
     }
+
     template< typename ObjU, typename AttU >
-    void output( cursor_type cursor, Attribution< ObjU, AttU > att ) const
-    { output( cursor, att.object() ); }
+    void output( builder_type& builder, Attribution< ObjU, AttU > att ) const
+    { output( builder, att.object() ); }
 
     template< typename ObjU, size_t Rows, size_t Cols >
-    void output( cursor_type cursor,
+    void output( builder_type& builder,
         Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Length >>> proj ) const
     {
-        output( cursor, proj.object() );
-        cursor.builder.linear_transform( proj.transformation() );
+        output( builder, proj.object() );
+        builder.linear_transform( proj.transformation() );
     }
 
     std::ostream& write_to( std::ostream& os ) const;
@@ -247,6 +260,23 @@ string STLFile::to_string() const
     return ret;
 }
 
+void STLFile::collect( STLFile::builder_type const& builder )
+{
+    for( Complex< Length > const& plex: builder )
+        add_solid( Solid::from_complex( plex ));
+}
+
+STLFile::Solid STLFile::Solid::from_complex( Complex< Length > const& plex )
+{
+    Solid ret;
+
+    // TODO: turn a complex into an STL Solid
+    for( Simplex< Length > const& simp: plex )
+        ret.add_facet( Facet::from_simplex( simp ));
+
+    return ret;
+}
+
 template< typename ObjT >
 std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
 {
@@ -254,7 +284,13 @@ std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
     out.set_minimum_length( _minimum_length );
 
     // stls are the boundary of a solid object
-    output( out.cursor(), boundary( object() ));
+    auto builder = STLFile::builder_type{};
+    output( builder, boundary( object() ));
+
+    // DEBUG
+    std::cerr << "SIMPLEX: " << builder.result() << std::endl;
+
+    out.collect( builder );
 
     for( auto const& solid : out.solids )
     {

@@ -2,6 +2,8 @@
 #define __GEOMETRY_EXTRUSION_HPP__
 
 #include "geometry/space.hpp"
+#include "geometry/compound.hpp"
+#include "geometry/collection.hpp"
 
 namespace geometry { 
 
@@ -16,7 +18,7 @@ struct Extrusion: Object
     { return object_type::dimensions() + 1; }
 
     static constexpr size_t parameters() 
-    { object_type::parameters() + 1; };
+    { return object_type::parameters() + 1; };
 
     static constexpr string object_name()
     { return "extrusion_" + object_type::object_name(); }
@@ -49,6 +51,18 @@ requires( not is_empty< ObjT >)
 constexpr Extrusion< ObjT, FromT, ToT > extrude( ObjT object, 
     FromT from = static_cast< FromT >( 0 ), ToT to = static_cast< ToT >( 1 ))
 { return { object, from, to }; }
+
+template< typename ComponentsT, typename... Objs, 
+    typename FromT, typename ToT, size_t... Is >
+auto extrude_compound_helper( Compound< ComponentsT, Objs... > compound, 
+    seq< Is... >, FromT from, ToT to )
+{ return MakeCompound< tuple_element_t< Is, ComponentsT >... >::make( 
+    extrude( get< Is >( compound ), from, to )... ); }
+
+template< typename ComponentsT, typename... Objs, typename FromT, typename ToT >
+auto extrude( Compound< ComponentsT, Objs... > compound, 
+    FromT from = static_cast< FromT >( 0 ), ToT to = static_cast< ToT >( 1 ))
+{ return extrude_compound_helper( compound, make_seq< sizeof...( Objs )>{}, from, to ); }
 
 template< typename CollectionT, typename FromT, typename ToT, size_t... Is >
 auto extrude_collection_helper( CollectionT col, seq< Is... >, FromT from, ToT to )
