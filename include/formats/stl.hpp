@@ -288,7 +288,7 @@ std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
     output( builder, boundary( object() ));
 
     // DEBUG
-    std::cerr << "SIMPLEX: " << builder.result() << std::endl;
+    // std::cerr << "SIMPLEX: " << builder.result() << std::endl;
 
     out.collect( builder );
 
