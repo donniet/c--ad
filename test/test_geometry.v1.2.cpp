@@ -8,14 +8,14 @@ using namespace units;
 using namespace geometry;
 using namespace formats;
 
-auto segment()
-{ return extrude( Point{}, 0_m, 1_m ); }
+auto segment( Length width )
+{ return extrude( Point{}, 0_m, width ); }
 
-auto plane()
-{ return extrude( segment(), 0_m, 1_m ); }
+auto plane( Length width, Length height )
+{ return extrude( segment( width ), 0_m, height); }
 
-auto box()
-{ return extrude( plane(), 0_m, 1_m ); }
+auto box( Length width, Length height, Length depth )
+{ return extrude( plane( width, height ), 0_m, depth ); }
 
 auto mortise_and_tenon()
 {
@@ -23,7 +23,7 @@ auto mortise_and_tenon()
     // auto stile_end = component< extrusion::cap >( stile );
     
     // return stile;
-    return box();
+    return box( 2_m, 3_m, 5_m );
 }
 
 int main( int ac, char* av[] )
