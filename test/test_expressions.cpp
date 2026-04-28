@@ -23,8 +23,8 @@ int main( int ac, char* av[] )
         var< Length      >( "l" ),
         var< Velocity    >( "v" ),
         var< Scalar      >( "a" ),
-        var< Length      >( "z" ),
-        var< Length      >( "w" ));
+        var< Length      >( "w" ),
+        var< Length      >( "z" ));
 
     auto [ x, y, l, v, a, z, w ] = vars.all();
 
@@ -108,8 +108,17 @@ int main( int ac, char* av[] )
     solver( para );
     println( "solved: para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
 
-
     auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+
+    // verify the dependent_variables_t trait works
+    static_assert( 
+        ( z.index < w.index and is_same_v< 
+            tuple< decltype( z ), decltype( w )>,
+            dependent_variables_t< decltype( para2 )>> ) or 
+        ( w.index < z.index and is_same_v< 
+            tuple< decltype( w ), decltype( z )>,
+            dependent_variables_t< decltype( para2 )>> ));
+
     auto solver2 = gradient_descent( w, z );
     solver2[ maximum_iterations ] = 1000;
     solver2[ learning_rate ] = 1e-2;

@@ -1,8 +1,9 @@
 #ifndef __GEOMETRY_SIMPLEX_HPP__
 #define __GEOMETRY_SIMPLEX_HPP__
 
-#include "tensors.hpp"
 #include "utility.hpp"
+#include "tensors.hpp"
+#include "expressions.hpp"
 
 #include <vector>
 #include <ranges>
@@ -11,6 +12,7 @@
 #include <iostream>
 #include <iterator>
 #include <algorithm>
+#include <memory>
 
 namespace geometry {
 namespace simplex {
@@ -91,10 +93,82 @@ struct Simplex: std::vector< Vertex< U >>
         return *this;
     }
 
+    Simplex project_at( U here ) const
+    {
+        Simplex ret;
+        for( Vertex const& v: *this )
+            ret.push_back( v.extend( here ));
+        return ret;
+    }
+
     constexpr Simplex(): container_type{} { }
     constexpr Simplex( Simplex const& other ): container_type{ other } { }
     constexpr Simplex( std::initializer_list< vertex_type >&& vertex_list ):
         container_type{ vertex_list } { }
+};
+
+/// @brief base class for any vertex manipulation method
+/// @tparam U 
+template< typename U >
+struct VertexTransformer
+{
+    using vertex_type = Vertex< U >;
+
+    size_t from_dimensions() const { return _from; }
+    size_t to_dimensions() const { return _to; }
+
+    virtual vertex_type transform( vertex_type const& vert ) const = 0;
+
+    VertexTransformer( size_t from, size_t to ): _from{ from }, _to{ to } { }
+
+    virtual ~VertexTransformer() { }
+
+protected:
+    void set_from_dimensions( size_t from ) { _from = from; }
+    void set_to_dimensions( size_t to ) { _to = to; }
+
+private:
+    size_t _from, _to;
+};
+
+template< size_t N, typename U >
+struct VertexTranslator: virtual VertexTransformer< U >
+{
+    using vector_type = uniform_vector_t< N, U >;
+
+    VertexTranslator( size_t from = N ): VertexTransformer< U >{ from, N }, 
+        _offset{} { }
+    VertexTranslator( size_t from, vector_type const& vect ): 
+        VertexTransformer< U >{ from, N }, _offset{ vect } { }
+
+    virtual ~VertexTranslator() { }
+
+    vector_type _offset;
+};
+
+template< size_t Rows, size_t Cols, typename U >
+struct VertexMatrixMultiply: virtual VertexTransformer< U >
+{
+    using matrix_type = uniform_matrix_t< Rows, Cols, U >;
+
+    VertexMatrixMultiply(): VertexTransformer< U >{ Cols, Rows } { }
+    VertexMatrixMultiply( matrix_type const& mat ):
+        VertexTransformer< U >{ Cols, Rows }, _matrix{ mat } { }
+
+    virtual ~VertexMatrixMultiply() { }
+
+    uniform_matrix_t< Rows, Cols, U > _matrix;
+};
+
+template< typename U >
+struct SimplexSpecification
+{
+    using simplex_type = Simplex< U >;
+
+    U maximum_extrusion( simplex_type const& simp, U from, U to )
+    {
+
+    }
 };
 
 template< typename U >
@@ -148,7 +222,8 @@ struct Builder
     value_type const& result() const
     { return shape_stack.top(); }
 
-    void push_vertex( size_t dim = 0 )
+    template< typename... Specs >
+    void push_vertex( size_t dim = 0, Specs... specs )
     { 
         vertex_type v{ dim };
         simplex_type s{{ v }};
@@ -168,8 +243,8 @@ struct Builder
         shape_stack.push( combined );
     }
 
-    template< size_t From, size_t To, typename ScalarT >
-    void linear_transform( uniform_matrix_t< From, To, ScalarT > const& mat )
+    template< size_t From, size_t To, typename ScalarT, typename... Specs >
+    void linear_transform( uniform_matrix_t< From, To, ScalarT > const& mat, Specs... specs )
     {
         complex_type shape = shape_stack.pop();
 
@@ -180,8 +255,8 @@ struct Builder
         shape_stack.push( shape );
     }
 
-    template< typename VectorT >
-    void translate( VectorT const& offset )
+    template< typename VectorT, typename... Specs >
+    void translate( VectorT const& offset, Specs... specs )
     { 
         complex_type shape = shape_stack.pop();
 
@@ -192,35 +267,61 @@ struct Builder
         shape_stack.push( shape );
     }
 
-    void translate( null_tensor_t const& offset )
+    template< typename... Specs >
+    void translate( null_tensor_t const&, Specs... )
     { }
 
-    void extrude( U from, U to, size_t steps = 1 )
+    template< typename... Specs >
+    void extrude( U from, U to, Specs... specs )
     {  
         complex_type shape = shape_stack.pop();
-        complex_type shape_ex;
+        size_t count = 0;
+        for( ; from < to ; ++count )
+        {
+            U step = maximum_extrusion_step( shape, from, to, specs... );
+            shape_stack.push( extrude_complex( shape, from, step ));
+            from = step;
+        }
+        combine( count );
+    }
 
-        auto from_step = [from, to, steps]( size_t step ) -> U
-        { 
-            long double s = (long double)step/(long double)steps;
-            return from * ( 1.0l - s ) + to * s;
-        };
-        auto to_step = [from, to, steps]( size_t step ) -> U
-        { 
-            long double s = (long double)( step + 1 )/(long double)steps;
-            return from * ( 1.0l - s ) + to * s;
-        };
+    template< typename SpecT, size_t Rows, size_t Cols >
+    auto adjust_spec_linear( SpecT spec, uniform_matrix_t< Rows, Cols, Scalar > const& mat )
+    {
         
-        for( simplex_type& simp: shape )
-            for( size_t step = 0; step < steps; ++step )
-                shape_ex.append_range( 
-                    extrude_simplex( simp, from_step( step ), to_step( step )));
+    }
 
-        shape_stack.push( shape_ex );
+    template< typename SpecT, size_t N >
+    auto adjust_spec_translate( SpecT spec, uniform_vector_t< N, U > const& mat )
+    {
+
     }
 
 private:
-    complex_type extrude_simplex( simplex_type const& s, U from, U to )
+    template< typename... Specs >
+    U maximum_extrusion_step( complex_type const& plex, U from, U to, 
+        Specs... specs )
+    {
+        U step = to;
+        for( simplex_type const& simp: plex )
+            step = maximum_extrusion_step( simp, from, step, specs... );
+        return step;
+    }
+
+    template< typename... Specs >
+    U maximum_extrusion_step( simplex_type const& simp, U from, U to, 
+        Specs... specs )
+    { return min_of( specs.maximum_extrusion( simp, from, to )); }
+
+    static complex_type extrude_complex( complex_type const& c, U from, U to )
+    { 
+        complex_type ret;
+        for( simplex_type const& s: c )
+            ret.push_back( extrude_simplex( s, from, to ));
+        return ret;
+    }
+
+    static complex_type extrude_simplex( simplex_type const& s, U from, U to )
     {
         if( s.size() == 0 )
             throw std::logic_error( "cannot extrude an empty simplex" );
@@ -241,6 +342,20 @@ private:
         if( s.size() == 2 ) 
             return {{ s0_0, s0_1, s1_1 },
                     { s0_0, s1_1, s1_0 }};
+
+        auto s2 = s[2];
+        auto s2_0 = s2.extend( from );
+        auto s2_1 = s2.extend( to );
+
+        // are we extruding a plane
+        // TODO:
+        //  s0_0, s1_0, s2_0
+        //  
+        // 
+        //  s0_1, s1_1, s2_1
+        // if( s.size() == 3 )
+        //     return {{ s0_0, s0_1, s1_1, s2_1 },
+        //             { s0_0, s1_1, }}
         
         throw std::logic_error( "extrusions above a simplex of degree 2 are not"
             " supported at this time." );

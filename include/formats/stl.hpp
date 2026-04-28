@@ -10,6 +10,7 @@
 #include "geometry.hpp"
 #include "formats/output.hpp"
 #include "geometry/simplex.hpp"
+#include "geometry/processors.hpp"
 
 #include <iostream>
 #include <vector>
@@ -23,6 +24,7 @@ namespace formats {
 using namespace units;
 using namespace tensors;
 using namespace geometry::simplex;
+using std::optional;
 
 /// 
 /// 
@@ -122,19 +124,19 @@ struct STLFile
     solid_iterator add_solid( Solid&& solid )
     { return solids.emplace( solids.end(), solid ); }
 
+    // Length& set_minimum_length( Length const& min_length )
+    // { return _minimum_length = min_length; }
 
-    Length& set_minimum_length( Length const& min_length )
-    { return _minimum_length = min_length; }
-
-    Length const& minimum_length() const
-    { return _minimum_length; }
+    // Length const& minimum_length() const
+    // { return _minimum_length; }
 
     std::vector< Solid > solids;
-    Length _minimum_length;
+    // Length _minimum_length;
 };
 
 std::ostream& operator <<( std::ostream& os, STLFile::vec3 const& v )
-{ return os << meters( v[0] ) << " " << meters( v[1] ) << " " << meters( v[2] ); }
+{ return os << meters( v[0] ) << " " << meters( v[1] ) << " " 
+            << meters( v[2] ); }
 
 template< typename ObjT >
 struct STL
@@ -142,14 +144,17 @@ struct STL
     using object_type = ObjT;
     using builder_type = STLFile::builder_type;
 
-    void output( builder_type& builder, Point object ) const
-    { builder.push_vertex(); }
+    template< typename... Specs >
+    void output( builder_type& builder, Point point, Specs... specs ) const
+    { builder.push_vertex( specs... ); }
 
-    template< typename ObjU >
-    void output( builder_type& builder, Extrusion< ObjU, Length, Length > ext ) const
+    template< typename ObjU, typename... Specs >
+    void output( builder_type& builder, Extrusion< ObjU, Length, Length > ext, 
+        Specs... specs ) const
     { 
-        output( builder, ext.object() );
-        builder.extrude( ext.from(), ext.to() ); 
+        output( builder, ext.object(), specs... );
+
+        builder.extrude( ext.from(), ext.to(), specs... ); 
     }
 
     template< size_t From, typename... Us >
@@ -157,45 +162,58 @@ struct STL
     translation_vector_from( ProjectAt< From, Us... > proj )
     { return proj( uniform_vector_t< From, Length >::zero() ); }
 
-    template< typename ObjU, size_t From, typename... Us >
+    template< typename ObjU, size_t From, typename... Us, typename... Specs >
     requires(( is_same_v< Length, Us > and ... ))
-    void output( builder_type& builder, Projection< ObjU, ProjectAt< From, Us... >> ext ) const
+    void output( builder_type& builder, 
+        Projection< ObjU, ProjectAt< From, Us... >> trans, 
+        Specs... specs ) const
     { 
-        output( builder, ext.object() );
-        builder.translate( translation_vector_from( ext.transform() )); 
+        output( builder, trans.object(), 
+            builder_type::adjust_spec_translate( specs, 
+                trans.transform().offset() )... );
+                
+        builder.translate( translation_vector_from( trans.transform() ), 
+            specs... ); 
     }
 
     /// output compounds and attributed objects
-    template< typename ComponentsU, typename... Objs >
-    void output( builder_type& builder, Compound< ComponentsU, Objs... > compound ) const
+    template< typename ComponentsU, typename... Objs, typename... Specs >
+    void output( builder_type& builder, 
+        Compound< ComponentsU, Objs... > compound, Specs... specs ) const
     {
         auto output_compound_helper = [&]< size_t... Is >( seq< Is... > )
-        {( output( builder, get_component< Is >( compound )), ... ); };
+        {( output( builder, get_component< Is >( compound ), specs... ), 
+            ... ); };
 
         output_compound_helper( make_seq< sizeof...( Objs )>{} );
         builder.combine( sizeof...( Objs ));
     }
 
-    template< typename... Objs >
-    void output( builder_type& builder, Collection< Objs... > col ) const
+    template< typename... Objs, typename... Specs >
+    void output( builder_type& builder, Collection< Objs... > col, 
+        Specs... specs ) const
     {
         auto output_collection_helper = [&]< size_t... Is >( seq< Is... > )
-        {( output( builder, get< Is >( col )), ... ); };
+        {( output( builder, get< Is >( col ), specs... ), ... ); };
 
         output_collection_helper( make_seq< sizeof...( Objs )>{} );
         builder.combine( sizeof...( Objs ));
     }
 
-    template< typename ObjU, typename AttU >
-    void output( builder_type& builder, Attribution< ObjU, AttU > att ) const
-    { output( builder, att.object() ); }
+    // TODO: let attributes manipulate specs
+    template< typename ObjU, typename AttU, typename... Specs >
+    void output( builder_type& builder, Attribution< ObjU, AttU > att, 
+        Specs... specs ) const
+    { output( builder, att.object(), specs... ); }
 
-    template< typename ObjU, size_t Rows, size_t Cols >
+    template< typename ObjU, size_t Rows, size_t Cols, typename... Specs >
     void output( builder_type& builder,
-        Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Length >>> proj ) const
+        Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Scalar >>> proj, 
+        Specs... specs ) const
     {
-        output( builder, proj.object() );
-        builder.linear_transform( proj.transformation() );
+        output( builder, proj.object(), builder_type::adjust_spec_linear( specs, 
+            proj.transformation().matrix())... );
+        builder.linear_transform( proj.transformation(), specs... );
     }
 
     std::ostream& write_to( std::ostream& os ) const;
@@ -208,13 +226,35 @@ struct STL
         _minimum_length = minimum_length;
         return *this;
     }
+    constexpr Length minimum_length() const
+    { return _minimum_length.value(); }
+
+    constexpr STL& with_chordal_tolerance( Length const& chordal_tolerance )
+    {
+        _chordal_tolerance = chordal_tolerance;
+        return *this;
+    }
+    constexpr Length chordal_tolerance() const
+    { return _chordal_tolerance; }
+
+    constexpr STL& with_angular_tolerance( Scalar const& angular_tolerance )
+    {
+        _angular_tolerance = angular_tolerance;
+        return *this;
+    }
+    constexpr Scalar angular_tolerance() const
+    { return _angular_tolerance; }
 
     constexpr STL( object_type const& object, string name = "object" ): 
-        _object{ object }, _name{ name }, _minimum_length{ /* 0 */ } { }
+        _object{ object }, _name{ name }, _minimum_length{ },
+        _chordal_tolerance{ 0.1_mm }, _angular_tolerance{ 1_deg } 
+    { }
 
     object_type _object;
     string _name;
-    Length _minimum_length;
+    optional< Length > _minimum_length;
+    Length _chordal_tolerance;
+    Scalar _angular_tolerance;
 };
 
 
@@ -277,11 +317,11 @@ STLFile::Solid STLFile::Solid::from_complex( Complex< Length > const& plex )
     return ret;
 }
 
-template< typename ObjT >
-std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
+template< typename ObjT, typename SpecProcessorT >
+std::ostream& STL< ObjT, SpecProcessorT >::write_to( std::ostream& os ) const
 {
     STLFile out;
-    out.set_minimum_length( _minimum_length );
+    // out.set_minimum_length( _minimum_length );
 
     // stls are the boundary of a solid object
     auto builder = STLFile::builder_type{};
@@ -327,8 +367,8 @@ std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
 /// @param os ostream instance
 /// @param stl the STL object wrapper
 /// @return the ostream operator
-template< typename ObjT >
-std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
+template< typename ObjT, typename SpecProcessorT >
+std::ostream& operator <<( std::ostream& os, STL< ObjT, SpecProcessorT > const& stl )
 { return stl.write_to( os ); }
 
 } // namespace formats

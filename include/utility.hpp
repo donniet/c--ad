@@ -415,6 +415,28 @@ constexpr ContainerT remove_nth( size_t N, ContainerT const& list )
     return ret;
 }
 
+template< typename T, typename... Ts >
+requires(( is_same_v< T, Ts > and ... ))
+constexpr T min_of( T first, Ts... rest )
+{
+    if constexpr( sizeof...( Ts ) == 0 )
+        return first;
+
+    T rest_min = min_of( rest... );
+    return first <= rest_min ? first : rest_min;
+}
+
+template< typename T, typename... Ts >
+requires(( is_same_v< T, Ts > and ... ))
+constexpr T max_of( T first, Ts... rest )
+{
+    if constexpr( sizeof...( Ts ) == 0 )
+        return first;
+
+    T rest_max = max_of( rest... );
+    return first >= rest_max ? first : rest_max;
+}
+
 /// @brief determines if the values passed are equal even if they are different
 /// types
 /// @tparam ...Ts the types of the parameters
@@ -506,6 +528,7 @@ struct sequence_at_helper< index, seq< I, Is... >>
 template< size_t I, size_t... Is >
 struct sequence_at_helper< 0, seq< I, Is... >>
 { static constexpr size_t value = I; };
+
 } // namespace detail
 
 /// @brief value of the sequence at a given index
@@ -514,6 +537,122 @@ struct sequence_at_helper< 0, seq< I, Is... >>
 template< size_t index, typename Seq >
 static constexpr size_t sequence_at = 
     detail::sequence_at_helper< index, Seq >::value;
+
+namespace detail {
+
+template< typename SeqT, typename SeqU >
+struct ConcatSeq;
+
+template< size_t... Is, size_t... Js >
+struct ConcatSeq< seq< Is... >, seq< Js... >>
+{ using type = seq< Is..., Js... >; };
+
+template< typename Seq >
+struct MinimumSequenceElement;
+
+template< size_t I >
+struct MinimumSequenceElement< seq< I >>
+{ static constexpr size_t value = I; };
+
+template< size_t I, size_t... Is >
+requires( isgreater( sizeof...( Is ), 0 ))
+struct MinimumSequenceElement< seq< I, Is... >>
+{ static constexpr size_t value = (( I <= Is ) and ... ) ? I : 
+    MinimumSequenceElement< seq< Is... >>::value; };
+
+template< size_t I, typename Seq >
+struct RemoveSequenceElement;
+        
+template< size_t I >
+struct RemoveSequenceElement< I, seq< >>
+{ using type = seq< >; };
+
+template< size_t I, size_t J, size_t... Js >
+requires( I == J )
+struct RemoveSequenceElement< I, seq< J, Js... >>
+{ using type = RemoveSequenceElement< I, seq< Js... >>::type; };
+
+template< size_t I, size_t J, size_t... Js >
+requires( I != J )
+struct RemoveSequenceElement< I, seq< J, Js... >>
+{ using type = ConcatSeq< seq< J >, 
+    typename RemoveSequenceElement< I, seq< Js... >>::type >::type; };
+
+template< typename Seq >
+struct SortUniqueSequence;
+
+template< >
+struct SortUniqueSequence< seq< >>
+{ using type = seq< >; };
+
+template< size_t I >
+struct SortUniqueSequence< seq< I >>
+{ using type = seq< I >; };
+
+template< size_t... Is >
+requires( isgreater( sizeof...( Is ), 0 ))
+struct SortUniqueSequence< seq< Is... >>
+{ 
+protected:
+    static constexpr size_t min_element = 
+        MinimumSequenceElement< seq< Is... >>::value;
+
+public:
+    using type = ConcatSeq< seq< min_element >, 
+        typename SortUniqueSequence< typename RemoveSequenceElement< 
+            min_element, seq< Is... >>::type >::type >::type;
+};
+
+static_assert( is_same_v< seq< >, SortUniqueSequence< seq< >>::type > );
+static_assert( is_same_v< seq< 1 >, SortUniqueSequence< seq< 1 >>::type > );
+static_assert( is_same_v< seq< 1, 2 >, SortUniqueSequence< seq< 1, 2 >>::type > );
+static_assert( is_same_v< seq< 1, 2 >, SortUniqueSequence< seq< 1, 1, 2 >>::type > );
+static_assert( is_same_v< seq< 1, 2 >, SortUniqueSequence< seq< 1, 2, 1 >>::type > );
+static_assert( is_same_v< seq< 1, 2, 3 >, SortUniqueSequence< seq< 3, 2, 1 >>::type > );
+static_assert( is_same_v< seq< 1, 2, 3 >, 
+    SortUniqueSequence< seq< 3, 2, 3, 3, 2, 2, 1, 1, 1, 2, 3, 3 >>::type > );
+
+template< typename... Seqs >
+struct MergeUniqueSortedSequences;
+
+template< size_t... Is >
+struct MergeUniqueSortedSequences< seq< Is... >>
+{ using type = seq< Is... >; };
+
+template< size_t... Js >
+struct MergeUniqueSortedSequences< seq< Js... >, seq< >>
+{ using type = seq< Js... >; };
+
+template< size_t... Js >
+struct MergeUniqueSortedSequences< seq< >, seq< Js... >>
+{ using type = seq< Js... >; };
+
+template< size_t I, size_t... Is, size_t J, size_t... Js >
+requires( isless( I, J ))
+struct MergeUniqueSortedSequences< seq< I, Is... >, seq< J, Js... >>
+{ using type = ConcatSeq< seq< I >, typename MergeUniqueSortedSequences< 
+    seq< Is... >, seq< J, Js... >>::type >::type; };
+
+template< size_t I, size_t... Is, size_t J, size_t... Js >
+requires( not isless( I, J ))
+struct MergeUniqueSortedSequences< seq< I, Is... >, seq< J, Js... >>
+{ using type = ConcatSeq< seq< J >, typename MergeUniqueSortedSequences< 
+    seq< I, Is... >, seq< Js... >>::type >::type; };
+
+template< typename First, typename... Rest >
+requires( isgreater( sizeof...( Rest ), 1 ))
+struct MergeUniqueSortedSequences< First, Rest... >
+{ using type = MergeUniqueSortedSequences< First, 
+        typename MergeUniqueSortedSequences< Rest... >::type >::type; };
+
+} // namespace detail
+
+template< typename Seq >
+using sort_unique_seq = detail::SortUniqueSequence< Seq >::type;
+
+template< typename... Seqs >
+using merge_unique_sorted_seq = 
+    detail::MergeUniqueSortedSequences< Seqs... >::type;
 
 ////////////////////
 /// Tuple Helpers

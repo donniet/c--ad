@@ -2,8 +2,11 @@
 #define __GEOMETRY_PROJECT_HPP__
 
 #include "geometry/space.hpp"
+#include "expressions.hpp"
 
 namespace geometry {
+
+using namespace expressions;
 
 /// @brief projects the object directly at coordinates
 /// @tparam ...Us 
@@ -46,7 +49,41 @@ struct Linear
     constexpr auto operator()( V point )
     { return matmul( _matrix, point ); }
 
+    matrix_type const& matrix() const
+    { return _matrix; }
+
     matrix_type _matrix;
+};
+
+/// @brief wraps a differentiable expression as a geometry transform
+/// NOTE: the expression must contain a single vector-typed variable at index 0
+/// TODO: enforce the above with a constraint
+/// @tparam ExprT 
+template< expression ExprT >
+requires tensors::vector< result_t< ExprT >>
+struct Differentiable
+{
+    using expression_type = ExprT;
+    using result_type = result_t< expression_type >;
+    // using input_type = expression_variable_t< 0, ExprT >;
+    // static constexpr size_t from_dimensions = shape_element_v< 0, shape_of_t< input_type >>;
+    static constexpr to_dimensions = shape_element_v< 0, 
+        shape_of_t< result_type >>;
+
+    template< vector V >
+    constexpr auto operator ()( V point )
+    { 
+        auto vars = declare_variables( var< V >( "point" ));
+        auto [ point_variable ] = vars.all();
+
+        point_variable = point;
+        return eval( _expr );
+    }
+
+    expression_type const& expression() const
+    { return _expr; }
+
+    expression_type _expr;
 };
 
 /// @brief projects an object from its space to another space using a linear

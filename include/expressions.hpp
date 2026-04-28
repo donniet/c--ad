@@ -80,11 +80,17 @@ struct Variable: ExpressionTag
     }
     Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
-    constexpr Variable() = default;
+    constexpr Variable(): _ptr{ nullptr }, _name{} { }
 
     T* _ptr;
     string _name;
 };
+
+namespace details {
+
+} // namespace details
+
+
 
 template< size_t... Is >
 array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
@@ -151,7 +157,7 @@ variables_tuple_t< Ts... > variables_tuple( tuple< Ts... >& tup,
 { return variables_tuple_helper( tup, names, make_seq< sizeof...( Ts )>{} ); }
 
 template< typename... Ts >
-array< string, sizeof...( Ts ) > default_variable_names( string base = "var" )
+array< string, sizeof...( Ts )> default_variable_names( string base = "var" )
 {
     array< string, sizeof...( Ts )> ret;
     for( size_t i = 0; i < sizeof...( Ts ); ++i )
@@ -356,12 +362,129 @@ constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l
 constexpr constant< bool, true > constant_true = constant< bool, true >{};
 constexpr constant< bool, false > constant_false = constant< bool, false >{};
 
+namespace details {
+
+template< typename... Exprs >
+struct DependentVariableIDs;
+
+template< >
+struct DependentVariableIDs< >
+{ using type = seq< >; };
+
+template< size_t I, typename T >
+struct DependentVariableIDs< Variable< I, T >>
+{ using type = seq< I >; };
+
+template< typename T >
+struct DependentVariableIDs< StaticValue< T >>
+{ using type = seq< >; };
+
+template< typename T, T Value >
+struct DependentVariableIDs< Constant< T, Value >>
+{ using type = seq< >; };
+
+template< typename ExprT >
+struct DependentVariableIDs< ExprT >
+{ 
+    using argument_types = ExprT::argument_types;
+
+    template< typename Seq >
+    struct helper;
+
+    template< size_t... Is >
+    struct helper< seq< Is... >>
+    { using type = merge_unique_sorted_seq< typename DependentVariableIDs< 
+        tuple_element_t< Is, argument_types >>::type... >; };
+
+    using type = helper< make_seq< tuple_size_v< argument_types >>>::type; 
+};
+
+template< typename... Exprs >
+requires( isgreater( sizeof...( Exprs ), 1 ))
+struct DependentVariableIDs< Exprs... >
+{ using type = merge_unique_sorted_seq< 
+    typename DependentVariableIDs< Exprs >::type... >; };
+
+template< size_t I, typename ExprT >
+struct VariableType
+{ 
+protected:
+    template< typename Seq >
+    struct helper;
+
+    template< >
+    struct helper< seq< >>
+    { using type = void; };
+
+    template< size_t J >
+    struct helper< seq< J >>
+    { using type = VariableType< I, 
+        tuple_element_t< J, typename ExprT::argument_types >>::type; };
+
+    template< size_t J, size_t... Js >
+    requires( isgreater( sizeof...( Js ), 0 ))
+    struct helper< seq< J, Js... >>
+    { 
+        using jth = VariableType< I, tuple_element_t< J, 
+            typename ExprT::argument_types >>::type;
+
+        using type = std::conditional_t< not is_same_v< void, jth >, jth,
+            typename helper< seq< Js...>>::type >;
+    };
+
+public:
+    using type = helper< make_seq< tuple_size_v< 
+        typename ExprT::argument_types >>>::type;
+};
+
+template< size_t I, size_t J, typename T >
+requires( I == J )
+struct VariableType< I, Variable< J, T >>
+{ using type = T; };
+
+template< size_t I, size_t J, typename T >
+requires( I != J )
+struct VariableType< I, Variable< J, T >>
+{ using type = void; };
+
+template< size_t I, typename T >
+struct VariableType< I, StaticValue< T >>
+{ using type = void; };
+
+template< size_t I, typename T, T Value >
+struct VariableType< I, Constant< T, Value >>
+{ using type = void; };
+
+template< typename ExprT >
+struct DependentVariables
+{
+protected:
+    using variable_ids = DependentVariableIDs< ExprT >::type;
+
+    template< typename Seq >
+    struct helper;
+
+    template< size_t... Is >
+    struct helper< seq< Is... >>
+    { using type = tuple< Variable< Is,
+        typename VariableType< Is, ExprT >::type >... >; };
+
+public:
+    using type = helper< variable_ids >::type;
+};
+
+} // namespace details
+
+template< typename ExprT >
+using dependent_variables_t = details::DependentVariables< ExprT >::type;
+
 /// @brief negation expression
 /// @tparam T the negated type
 ///
 template< typename T >
 struct Negation: ExpressionTag
 { 
+    using argument_types = tuple< T >;
     using result_type = decltype( -result_t< T >{} );
 
     constexpr T arg() const { return _arg; }
@@ -381,6 +504,7 @@ struct Negation: ExpressionTag
 template< typename T, typename U >
 struct Sum: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -403,6 +527,7 @@ struct Sum: ExpressionTag
 template< typename T, typename U >
 struct Difference: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} - result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -425,6 +550,7 @@ struct Difference: ExpressionTag
 template< typename T, typename U >
 struct Product: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -447,6 +573,7 @@ struct Product: ExpressionTag
 template< typename T, typename U >
 struct Quotient: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
 
     constexpr T numerator_arg() const { return _numerator; }
@@ -469,6 +596,7 @@ struct Quotient: ExpressionTag
 template< typename T >
 struct SquareRoot: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::sqrt( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -488,6 +616,7 @@ struct SquareRoot: ExpressionTag
 template< int Exp, typename T >
 struct Power: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -506,6 +635,7 @@ struct Power: ExpressionTag
 template< typename T >
 struct Sine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::sin( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -524,6 +654,7 @@ struct Sine: ExpressionTag
 template< typename T >
 struct Cosine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::cos( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -542,6 +673,7 @@ struct Cosine: ExpressionTag
 template< typename T >
 struct Tangent: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::tan( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -560,6 +692,7 @@ struct Tangent: ExpressionTag
 template< typename T >
 struct Arcsine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::asin( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -578,6 +711,7 @@ struct Arcsine: ExpressionTag
 template< typename T >
 struct Arccosine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::acos( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -596,6 +730,7 @@ struct Arccosine: ExpressionTag
 template< typename T >
 struct Arctangent: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::atan( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -615,6 +750,7 @@ struct Arctangent: ExpressionTag
 template< typename T, typename U >
 struct Arctangent2: ExpressionTag
 { 
+    using argument_types = tuple< T >;
     // we use the result_type of a fraction here to factor units properly
     // this assumes that std::atan2 doesn't change the unit. hopefully it stays
     // true that trig functions operate only on scalars and this won't be an 
@@ -653,6 +789,7 @@ struct Element: tuple_element_t< I, ArrayT >
 template< typename T, typename U >
 struct Equals: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = bool;
 
     constexpr T left_arg() const { return _left; }
@@ -675,6 +812,7 @@ struct Equals: ExpressionTag
 template< typename T, typename U >
 struct Conjunction: ExpressionTag
 {
+    using argument_types = tuple< T, U >;
     using result_type = bool;
 
     constexpr T left_arg() const { return _left; }
@@ -697,6 +835,7 @@ struct Conjunction: ExpressionTag
 template< typename T, typename U >
 struct Disjunction: ExpressionTag
 {
+    using argument_types = tuple< T, U >;
     using result_type = bool;
 
     constexpr T left_arg() const { return _left; }
@@ -719,6 +858,7 @@ struct Disjunction: ExpressionTag
 template< typename T >
 struct Compliment: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = bool;
 
     constexpr T arg() const { return _arg; }
@@ -1049,10 +1189,6 @@ struct Jacobian
     tuple< Diffs... > diffs;
 };
 
-/// @brief type-erased expression container
-/// @tparam result_type 
-template< typename result_type >
-struct Expression;
 
 } // namespace expressions
 
@@ -1066,9 +1202,10 @@ constexpr auto sqrt( ExprT const& expr )
 
 namespace expressions {
 
-/**
- * Solvers
- */
+///////////
+/// Solvers
+///
+
 
 struct MaximumIterations: optional< size_t >
 { 
