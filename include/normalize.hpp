@@ -419,6 +419,53 @@ public:
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
+/////////////////////
+/// Double Compliment
+///
+/// @brief De Morgan's Law of conjunctions
+template< template< typename... > class SumOf, 
+          template< typename... > class ProductOf, 
+          template< typename > class ComplimentOf, 
+          typename T >
+class Normalizer< SumOf, ProductOf, ComplimentOf,
+/* Expression */  ComplimentOf< ComplimentOf< T >>>
+{
+    template< typename U >
+    using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, U >;
+
+    using reference_type = T;
+    using reference_normalizer = normalizer_t< reference_type >;
+
+public:
+    using expression_type = ComplimentOf< ComplimentOf< T >>;
+    static constexpr size_t terms_size = reference_normalizer::terms_size;
+
+    template< size_t I >
+    using TermElementSize = reference_normalizer::
+        template TermElementSize< I >;
+
+private:
+    static constexpr reference_type reference_value( expression_type expr )
+    { return std::get< 0 >( std::get< 0 >( expr )); }
+
+public:
+    template< size_t I, size_t K >
+    struct TermElement {
+    private:
+        using reference_term_element = 
+            reference_normalizer::template TermElement< I, K >;
+
+    public:
+        using type = reference_term_element::type;
+        static constexpr type value( expression_type expr )
+        { return reference_term_element::value( reference_value( expr )); }
+    };
+
+    using type = reference_normalizer::type;
+    static constexpr type value( expression_type expr )
+    { return reference_normalizer::value( reference_value( expr )); }
+};
+
 ////////////////////
 /// De Morgan's Laws
 /// 
@@ -444,12 +491,12 @@ public:
     using TermElementSize = reference_normalizer::
         template TermElementSize< I >;
 
+private:
     template< size_t... Js >
     static constexpr reference_type reference_value_helper( 
         expression_type expr, seq< Js... > )
     { return {{ std::get< Js >( std::get< 0 >( expr ))}... }; }
 
-private:
     static constexpr reference_type reference_value( expression_type expr )
     { return reference_value_helper( expr, make_seq< sizeof...( Ts )>{} ); }
 

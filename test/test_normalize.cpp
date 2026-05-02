@@ -84,31 +84,48 @@ template< typename T >
 constexpr Not< T > not_( T t )
 { return { t }; }
 
-template< typename T >
-constexpr T not_( Not< T > t )
-{ return t; }
+// template< typename T >
+// constexpr T not_( Not< T > t )
+// { return t; }
 
 int main( int ac, char* av[] )
 {
     // type tests
     static_assert( is_same_v< dnf_result_t< bool >, bool > );
     static_assert( is_same_v< dnf_result_t< b0 >, b0 > );
-    static_assert( is_same_v< dnf_result_t< And<And<b0,b1>,b2>>, 
+    static_assert( is_same_v< dnf_result_t< 
+        And<And<b0,b1>,b2>>, 
         And< b0, b1, b2 >> );
-    static_assert( is_same_v< dnf_result_t< Or<b0,Or<b1,b2>>>,
+    static_assert( is_same_v< dnf_result_t< 
+        Or<b0,Or<b1,b2>>>,
         Or< b0,b1,b2 >> );
-    static_assert( is_same_v< dnf_result_t< And<Or<b0,b1>,b2>>,
+    static_assert( is_same_v< dnf_result_t< 
+        Or<b0,Or<b1,Not<b2>>>>,
+        Or< b0,b1,Not<b2>>> );
+    static_assert( is_same_v< dnf_result_t< 
+        Not< Or<b0,Or<b1,b2>>> >,
+        And< Not<b0>, Not<b1>, Not<b2> >> );
+    static_assert( is_same_v< dnf_result_t< 
+        Not< Or<b0,Or<b1,Not<b2>>>> >,
+        And< Not<b0>, Not<b1>, b2 >> );
+    static_assert( is_same_v< dnf_result_t< 
+        And<Or<b0,b1>,b2>>,
         Or< And<b0,b2>, And<b1,b2>>> );
-    static_assert( is_same_v< dnf_result_t< Or< And<b0,b1>, Or<b2,b3>>>,
+    static_assert( is_same_v< dnf_result_t< 
+        Or< And<b0,b1>, Or<b2,b3>>>,
         Or< And< b0,b1 >, b2, b3 >> );
-    static_assert( is_same_v< dnf_result_t< And< Or< b0,b1 >, Or< b2,b3,b4 > >>,
+    static_assert( is_same_v< dnf_result_t< 
+        And< Or< b0,b1 >, Or< b2,b3,b4 > >>,
         Or< And< b0,b2 >, And< b1,b2 >, 
             And< b0,b3 >, And< b1,b3 >, 
             And< b0,b4 >, And< b1,b4 >>> );
-    static_assert( is_same_v< dnf_result_t< And< Or< b0,b1,b2 >, Or< b3,b4 > >>,
+    static_assert( is_same_v< dnf_result_t< 
+        And< Or< b0,b1,b2 >, Or< b3,b4 > >>, 
         Or< And< b0,b3 >, And< b1,b3 >, And< b2,b3 >, 
             And< b0,b4 >, And< b1,b4 >, And< b2,b4 >>> );
 
+
+    // ensuring test methods behave as expected
     static_assert( and_( true, true ));
     static_assert( not and_( true, false ));
     static_assert( or_( true, false ));
