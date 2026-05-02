@@ -287,14 +287,18 @@ using commute_or_t = Commutator< Or, T >::type;
 // static_assert( is_same_v< And<bool,bool,bool,bool,bool,bool,bool,bool>, 
 //     commute_and_t< And<And<And<bool,bool>,And<bool,bool>>,And<And<bool,bool>,And<bool,bool>>> >> );
 
-enum normalize_operation
-{ Leaf, Sum, Product };
-
 template< template< typename... > class S, template< typename... > class P, typename T >
 class Normalizer;
 
 template< template< typename... > class S, template< typename... > class P, typename T >
 using normalized_t = Normalizer< S, P, T >::type;
+
+template< 
+    template< typename... > class S, 
+    template< typename... > class P, 
+    typename T >
+normalized_t< S, P, T > normalize( T expr )
+{ return Normalizer< S, P, T >::value( expr ); }
 
 /*
 (a + b)*(c + de + f)*g*(h+i)
@@ -537,7 +541,8 @@ public:
 
     /// @brief the Kth element of the Ith term of the normalization
     template< size_t I, size_t K >
-    struct TermElement: TermElementHelper< I, K, make_seq< sizeof...( Ts )>> { };
+    struct TermElement: 
+        TermElementHelper< I, K, make_seq< sizeof...( Ts )>> { };
 
     template< size_t I, size_t K >
     using term_element_t = TermElement< I, K >::type;
@@ -597,11 +602,26 @@ public:
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
+struct b0 { }; struct b1 { }; struct b2 { }; struct b3 { }; struct b4 { }; 
+struct b5 { }; struct b6 { }; struct b7 { }; struct b8 { }; struct b9 { };
+
 static_assert( is_same_v< normalized_t< Or, And, bool >, bool > );
-static_assert( is_same_v< normalized_t< Or, And, And<And<bool,bool>,bool>>, 
-    And< bool, bool, bool >> );
-static_assert( is_same_v< normalized_t< Or, And, Or<bool,Or<bool,bool>>>,
-    Or< bool,bool,bool >> );
+static_assert( is_same_v< normalized_t< Or, And, b0 >, b0 > );
+static_assert( is_same_v< normalized_t< Or, And, And<And<b0,b1>,b2>>, 
+    And< b0, b1, b2 >> );
+static_assert( is_same_v< normalized_t< Or, And, Or<b0,Or<b1,b2>>>,
+    Or< b0,b1,b2 >> );
+static_assert( is_same_v< normalized_t< Or, And, And<Or<b0,b1>,b2>>,
+    Or< And<b0,b2>, And<b1,b2>>> );
+static_assert( is_same_v< normalized_t< Or, And, Or< And<b0,b1>, Or<b2,b3>>>,
+    Or< And< b0,b1 >, b2, b3 >> );
+static_assert( is_same_v< normalized_t< Or, And, And< Or< b0,b1 >, Or< b2,b3,b4 > >>,
+    Or< And< b0,b2 >, And< b1,b2 >, 
+        And< b0,b3 >, And< b1,b3 >, 
+        And< b0,b4 >, And< b1,b4 >>> );
+static_assert( is_same_v< normalized_t< Or, And, And< Or< b0,b1,b2 >, Or< b3,b4 > >>,
+    Or< And< b0,b3 >, And< b1,b3 >, And< b2,b3 >, 
+        And< b0,b4 >, And< b1,b4 >, And< b2,b4 >>> );
 
 template< typename... Ts >
 constexpr And< Ts... > and_( Ts... ts )
