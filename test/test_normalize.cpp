@@ -11,6 +11,9 @@
 
 int main( int ac, char* av[] )
 {
+    using namespace expressions::normalization;
+    using namespace expressions::normalization::test;
+
     static_assert( and_( true, true ));
     static_assert( not and_( true, false ));
     static_assert( or_( true, false ));
@@ -23,8 +26,13 @@ int main( int ac, char* av[] )
     // ~(~F|~T)&~F
     // (F&T)&~F == F
 
-    constexpr auto a = not_( or_( not_( and_( false, true )), false ));
-    constexpr auto an = normalize< Or, And >( a );
+    constexpr auto a = or_( and_( false, true ), false );
+    constexpr auto an = normalize< Or, And, Not >( a );
+    static_assert( (bool)an == (bool)a );
+
+    constexpr auto b = not_( or_( and_( false, true ), false ));
+    constexpr auto bn = normalize< Or, And, Not >( b );
+    static_assert( (bool)bn == (bool)b );
 
 
 
