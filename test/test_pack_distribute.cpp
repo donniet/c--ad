@@ -302,44 +302,159 @@ acgh+acgi + adegh+adegi + afgh+afgi +
 bcgh+bcgi + bdegh+bdegi + bfgh+bfgi
 */
 
+/// @brief leaf case for the normalizer (ie: not a sum or a product)
+/// @tparam T 
 template< template< typename... > class S, template< typename... > class P, typename T >
 class Normalizer {
 public: 
+    // treat this as having a single term
     static constexpr size_t terms_size = 1;
 
+    // and a single element
     template< size_t I >
-    struct TermElementSize: integral_constant< size_t, 1 > { };
+    struct TermElementSize;
+    
+    template< > 
+    struct TermElementSize< 0 >: integral_constant< size_t, 1 > { };
 
+    // and the type of this single element is T
     template< size_t I, size_t K >
-    struct TermElement
-    { using type = T; };
+    struct TermElement;
 
-    template< size_t I >
-    struct Term;
+    template< >
+    struct TermElement< 0, 0 >
+    { 
+        using type = T; 
+        static constexpr type value( T expr )
+        { return expr; }
+    };
+
+    using type = T;
+    // TODO: const& ?
+    static constexpr type value( T expr )
+    { return expr; }
 };
 
 template< template< typename... > class S, template< typename... > class P, typename... Ts >
 class Normalizer< S, P, S< Ts... >> {
 public:
-    template< size_t J >
-    static constexpr size_t term_size = 
-        Normalizer< S, P, Ts...[J] >::terms_size;
+    // I, Is => indices to additive terms of the normalization
+    // J, Js => indices to the Ts... product element types
+    // K, Ks => indices to the product elements of a term in this normalization
 
     static constexpr size_t terms_size = 
         ( Normalizer< S, P, Ts >::terms_size + ... );
         
+    template< size_t J >
+    using subnormalizer = Normalizer< S, P, Ts...[J] >;
+
     template< size_t I, typename Seq >
+    struct TermElementSizeHelper;
+
+    template< size_t I, size_t J, size_t... Js >
+    requires( isless( I, subnormalizer< J >::terms_size ))
+    struct TermElementSizeHelper< I, seq< J, Js... >>: 
+        integral_constant< size_t, subnormalizer< J >::
+            template TermElementSize< I >::value > { };
+        
+    template< size_t I, size_t J, size_t... Js >
+    requires( not isless( I, subnormalizer< J >::terms_size ))
+    struct TermElementSizeHelper< I, seq< J, Js... >>: 
+        TermElementSizeHelper< I - subnormalizer< J >::terms_size, seq< Js... >>
+    { };
+
+    template< size_t I >
+    struct TermElementSize: 
+        TermElementSizeHelper< I, make_seq< sizeof...( Ts )>> { };
+
+    template< size_t I >
+    static constexpr size_t term_element_size = TermElementSize< I >::value;
+
+    /// @brief examines each Ts... (indexed by Seq) until we find the Kth
+    /// product element of the Ith additive term of the normalized expression
+    template< size_t I, size_t K, typename Seq >
+    struct TermElementHelper;
+
+    /// @brief case where Ts...[J] contains the Ith term
+    template< size_t I, size_t K, size_t J, size_t... Js >
+    requires( isless( I, subnormalizer< J >::terms_size ))
+    struct TermElementHelper< I, K, seq< J, Js... >>
+    { 
+        using type = subnormalizer< J >::template TermElement< I, K >::type; 
+        static constexpr type value( S< Ts... > expr )
+        { return subnormalizer< J >::template TermElement< I, K >::value( 
+            std::get< J >( expr )); }
+    };
+
+    /// @brief case where Ts...[J] contains the Ith term
+    template< size_t I, size_t K, size_t J, size_t... Js >
+    requires( not isless( I, subnormalizer< J >::terms_size ))
+    struct TermElementHelper< I, K, seq< J, Js... >>:
+        TermElementHelper< I - subnormalizer< J >::terms_size, K, seq< Js... >>
+    { };
+
+    /// @brief the Kth element of the Ith term of the normalization
+    template< size_t I, size_t K >
+    struct TermElement: TermElementHelper< I, K, make_seq< sizeof...( Ts )>> 
+    { };
+
+    template< size_t I, size_t K >
+    using term_element_t = TermElement< I, K >::type;
+
+    template< size_t, typename >
     struct TermHelper;
 
-    template< size_t I, size_t... Is >
-    struct TermHelper< I, seq< Is... >>
-    {
-        
+    /// @brief represents the Ith term of a sum of products in the result. terms
+    /// are products (P<...>) of things that are not Sums (S<...>)
+    /// @tparam I is the term index (0 <= I <= terms_size)
+    /// @tparam ...Js is an index sequence to the Ts... elements of P<...>
+    template< size_t I, size_t... Ks >
+    struct TermHelper< I, seq< Ks... >>
+    { 
+        using type = P< term_element_t< I, Ks >... >; 
+        static constexpr type value( S< Ts... > expr )
+        { return { TermElement< I, Ks >::value( expr )... }; }
     };
 
     template< size_t I >
-    struct Term: TermHelper< I, make_seq< sizeof...( Ts )>> { };
+    struct Term;
 
+    template< size_t I >
+    requires( isgreater( term_element_size< I >, 1 ))
+    struct Term< I >: TermHelper< I, make_seq< term_element_size< I >>> { };
+
+    template< size_t I >
+    requires( term_element_size< I > == 1 )
+    struct Term< I >
+    { 
+        using type = term_element_t< I, 0 >; 
+        static constexpr type value( S< Ts... > expr )
+        { return TermElement< I, 0 >::value( expr ); }
+    };
+
+    template< typename Seq >
+    struct Helper;
+
+    template< >
+    struct Helper< seq< 0 >>
+    {
+        using type = Term< 0 >::type;
+        static constexpr type value( S< Ts... > expr )
+        { return Term< 0 >::value( expr ); }
+    };
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    // final type is a sum of the term types
+    { 
+        using type = S< typename Term< Is >::type... >; 
+        static constexpr type value( S< Ts... > expr )
+        { return { Term< Is >::value( expr )... }; }
+    };
+
+    using type = Helper< make_seq< terms_size >>::type;
+    static constexpr type value( S< Ts... > expr )
+    { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
 template< template< typename... > class S, template< typename... > class P, 
@@ -354,11 +469,11 @@ public:
         ( Normalizer< S, P, Ts >::terms_size * ... );
 
     template< size_t J >
-    using element_normalizer = Normalizer< S, P, Ts...[J] >;
+    using subnormalizer = Normalizer< S, P, Ts...[J] >;
 
     template< size_t J >
     struct ElementDivisor: integral_constant< size_t, 
-        element_normalizer< J - 1 >::terms_size * 
+        subnormalizer< J - 1 >::terms_size * 
             ElementDivisor< J - 1 >::value > { };
 
     template< >
@@ -371,7 +486,7 @@ public:
     /// element of the product P<Ts...>
     template< size_t J, size_t I >
     static constexpr size_t subterm = I / divisor< J > % 
-        Normalizer< S, P, Ts...[J] >::terms_size;
+        subnormalizer< J >::terms_size;
 
     template< size_t I, typename Seq >
     struct TermElementSizeHelper;
@@ -390,7 +505,7 @@ public:
 
     template< size_t J, size_t I >
     static constexpr size_t subterm_element_size = 
-        element_normalizer< J >::
+        subnormalizer< J >::
             template TermElementSize< subterm< J, I >>::value;
 
     /// @brief examines each Ts... (indexed by Seq) until we find the Kth
@@ -402,8 +517,14 @@ public:
     template< size_t I, size_t K, size_t J, size_t... Js >
     requires( isless( K, subterm_element_size< J, I >))
     struct TermElementHelper< I, K, seq< J, Js... >>
-    { using type = element_normalizer< J >::template TermElement< 
-        subterm< J, I >, K >::type; };
+    { 
+        using type = subnormalizer< J >::
+            template TermElement< subterm< J, I >, K >::type; 
+        static constexpr type value( P< Ts... > expr )
+        { return subnormalizer< J >::
+            template TermElement< subterm< J, I >, K >::
+                value( std::get< J >( expr )); }
+    };
 
     /// @brief case where Ts...[J] does not contribute enough elements to the
     /// Ith term.  We subtract the number of elements Ts...[J] contributes and
@@ -430,23 +551,57 @@ public:
     /// @tparam ...Js is an index sequence to the Ts... elements of P<...>
     template< size_t I, size_t... Ks >
     struct TermHelper< I, seq< Ks... >>
-    { using type = P< term_element_t< I, Ks >... >; };
+    { 
+        using type = P< term_element_t< I, Ks >... >; 
+        static constexpr type value( P< Ts... > expr )
+        { return { TermElement< I, Ks >::value( expr )... }; }
+    };
 
     template< size_t I >
-    struct Term: TermHelper< I, make_seq< term_element_size< I >>> { };
+    struct Term;
+
+    template< size_t I >
+    requires( isgreater( term_element_size< I >, 1 ))
+    struct Term< I >: TermHelper< I, make_seq< term_element_size< I >>> { };
+
+    template< size_t I >
+    requires( term_element_size< I > == 1 )
+    struct Term< I >
+    { 
+        using type = term_element_t< I, 0 >; 
+        static constexpr type value( P< Ts... > expr )
+        { return TermElement< I, 0 >::value( expr ); }
+    };
 
     template< typename Seq >
     struct Helper;
 
+    template< >
+    struct Helper< seq< 0 >>
+    {
+        using type = Term< 0 >::type;
+        static constexpr type value( P< Ts... > expr )
+        { return Term< 0 >::value( expr ); }
+    };
+
     template< size_t... Is >
     struct Helper< seq< Is... >>
-    { using type = S< typename Term< Is >::type... >; };
+    { 
+        using type = S< typename Term< Is >::type... >; 
+        static constexpr type value( P< Ts... > expr )
+        { return { Term< Is >::value( expr )... }; }
+    };
 
     using type = Helper< make_seq< terms_size >>::type;
+    static constexpr type value( P< Ts... > expr )
+    { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
+static_assert( is_same_v< normalized_t< Or, And, bool >, bool > );
 static_assert( is_same_v< normalized_t< Or, And, And<And<bool,bool>,bool>>, 
-    Or< And< bool, bool, bool >>> );
+    And< bool, bool, bool >> );
+static_assert( is_same_v< normalized_t< Or, And, Or<bool,Or<bool,bool>>>,
+    Or< bool,bool,bool >> );
 
 template< typename... Ts >
 constexpr And< Ts... > and_( Ts... ts )
