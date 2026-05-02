@@ -70,6 +70,12 @@ struct Variable: ExpressionTag
     T eval() const
     { return *_ptr; }
 
+    // NOTE: this is for advanced use.  It re-wires the underlying
+    // pointer to a new value.  Since an expression may have many instances
+    // of the same variable this could make expressions inconsistent.
+    void realize( T& storage )
+    { _ptr = &storage; }
+
     Variable& operator=( Variable const& ) = delete;
     template< typename U >
     requires( std::is_convertible_v< T, U > )
@@ -80,7 +86,9 @@ struct Variable: ExpressionTag
     }
     Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
-    constexpr Variable(): _ptr{ nullptr }, _name{} { }
+
+    constexpr Variable(): 
+        _ptr{ nullptr }, _name{} { }
 
     T* _ptr;
     string _name;
@@ -807,49 +815,55 @@ struct Equals: ExpressionTag
 };
 
 /// @brief logical and expression
-/// @tparam T 
-/// @tparam U 
-template< typename T, typename U >
+/// @tparam Ts... 
+template< typename... Ts >
 struct Conjunction: ExpressionTag
 {
-    using argument_types = tuple< T, U >;
+    using argument_types = tuple< Ts... >;
+    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
     using result_type = bool;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const
+    { return std::get< I >( _args ); }
+
+    template< size_t... Is >
+    constexpr result_type eval_helper( seq< Is... > ) const
+    { return ( expressions::eval( arg< Is >()) and ... ); }
 
     constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) and expressions::eval( right_arg() ); }
+    { return eval_helper( make_seq< arguments_size() >{} ); }
 
-    constexpr Conjunction( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+    constexpr Conjunction( Ts... ts ): _args{ ts... } { } 
     constexpr Conjunction() = default;
     
-    T _left;
-    U _right;
+    argument_types _args;
 };
 
 /// @brief logical or expression
-/// @tparam T 
-/// @tparam U 
-template< typename T, typename U >
+/// @tparam Ts...
+template< typename... Ts >
 struct Disjunction: ExpressionTag
 {
-    using argument_types = tuple< T, U >;
+    using argument_types = tuple< Ts... >;
+    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
     using result_type = bool;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const
+    { return std::get< I >( _args ); }
+
+    template< size_t... Is >
+    constexpr result_type eval_helper( seq< Is... > ) const
+    { return ( expressions::eval( arg< Is >()) or ... ); }
 
     constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) or expressions::eval( right_arg() ); }
+    { return eval_helper( make_seq< arguments_size() >{} ); }
 
-    constexpr Disjunction( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+    constexpr Disjunction( Ts... ts ): _args{ ts... } { } 
     constexpr Disjunction() = default;
     
-    T _left;
-    U _right;
+    argument_types _args;
 };
 
 /// @brief logical not expression
@@ -872,10 +886,350 @@ struct Compliment: ExpressionTag
     T _arg;
 };
 
+template< typename ExprT >
+struct IsBooleanExpression: 
+    integral_constant< bool, is_same_v< result_t< ExprT >, bool >> { };
 
-/**
- * OPERATORS
- */
+template< typename ExprT >
+struct IsConjunction: integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsConjunction< Conjunction< Exprs... >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsDisjunction: integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsDisjunction< Disjunction< Exprs... >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsCompliment: integral_constant< bool, false > { };
+
+template< typename ExprT >
+struct IsCompliment< Compliment< ExprT >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsCanonicalTerminus: integral_constant< bool, 
+    not IsConjunction< ExprT >::value and
+    not IsDisjunction< ExprT >::value and
+    not IsCompliment< ExprT >::value > { };
+
+template< typename ExprT >
+struct IsCanonicalComplimentedTerminus: integral_constant< bool, false > { };
+
+template< typename ExprT >
+struct IsCanonicalComplimentedTerminus< Compliment< ExprT >>: 
+    integral_constant< bool, IsCanonicalTerminus< ExprT >::value > { };
+
+template< typename ExprT >
+struct IsCanonicalConjunctiveTerminus: 
+    integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsCanonicalConjunctiveTerminus< Conjunction< Exprs... >>:
+    integral_constant< bool, (
+        ( IsCanonicalTerminus< Exprs >::value or 
+          IsCanonicalComplimentedTerminus< Exprs >::value ) and ... )> { };
+
+template< typename ExprT >
+struct IsCanonicalDisjunctiveTerminus: 
+    integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsCanonicalDisjunctiveTerminus< Disjunction< Exprs... >>:
+    integral_constant< bool, (
+        ( IsCanonicalTerminus< Exprs >::value or 
+          IsCanonicalComplimentedTerminus< Exprs >::value or 
+          IsCanonicalConjunctiveTerminus< Exprs >::value ) and ... )> { };
+
+template< typename ExprT >
+struct IsCanonical: integral_constant< bool, 
+    IsCanonicalTerminus< ExprT >::value or
+    IsCanonicalComplimentedTerminus< ExprT >::value or
+    IsCanonicalConjunctiveTerminus< ExprT >::value or
+    IsCanonicalDisjunctiveTerminus< ExprT >::value > { };
+
+
+template< typename ExprT >
+constexpr bool is_boolean_expression_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_conjunction_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_disjunction_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_compliment_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
+
+/// @brief restructures a boolean expression into 
+/// disjunction-of-conjunctions-of-negations format
+/// @tparam  
+template< typename ExprT >
+struct CanonicalExpression;
+
+template< typename ExprT >
+requires( IsCanonical< ExprT >::value )
+struct CanonicalExpression< ExprT >
+{ using type = ExprT; };
+
+/// first we push the compliments down through disjunctions and conjunctions
+/// using demorgan's laws.  Then distribute conjunctions through disjunctions
+/// 
+
+template< typename ExprT >
+struct PushCompliments
+{
+protected:
+    template< typename U >
+    struct pusher
+    { using type = U; };
+
+    template< bool Value >
+    struct pusher< Compliment< Constant< bool, Value >>>
+    { using type = Constant< bool, not Value >; };
+
+    template< typename U >
+    struct pusher< Compliment< Compliment< U >>>
+    { using type = pusher< U >::type; };
+
+    template< typename... Us >
+    struct pusher< Compliment< Disjunction< Us... >>>
+    { using type = Conjunction< typename pusher< Compliment< Us >>::type... >; };
+
+    template< typename... Us >
+    struct pusher< Compliment< Conjunction< Us... >>>
+    { using type = Disjunction< typename pusher< Compliment< Us >>::type... >; };
+
+public:
+    using type = pusher< ExprT >::type;
+};
+
+namespace test {
+
+using compf = constant< bool, false >;
+using compt = constant< bool, true >;
+using comp0 = Compliment< constant< bool, false >>;
+using comp1 = Compliment< comp0 >;
+using comp2 = Compliment< Disjunction< compf, compt >>;
+using comp3 = Compliment< Conjunction< compf, compt >>;
+
+static_assert( is_same_v< typename PushCompliments< comp0 >::type, compt > );
+static_assert( is_same_v< typename PushCompliments< comp1 >::type, compf > );
+static_assert( is_same_v< typename PushCompliments< comp2 >::type, 
+    Conjunction< compt, compf >> );
+static_assert( is_same_v< typename PushCompliments< comp3 >::type, 
+    Disjunction< compt, compf >> );
+} // namespace test
+
+// template< typename ExprT >
+// struct DistributeConjunctions {
+// protected:
+//     template< typename ConjT, typename Seq >
+//     struct helper;
+
+//     template< typename... Os, typename... As, size_t... Is >
+//     struct helper< Conjunction< Disjunction< Os... >, As... >, seq< Is... >>
+//     { using type = Disjunction< typename distributor< 
+//         Conjunction< Os...[Is], As... >>::type... >; };
+
+
+//     template< typename U >
+//     struct commutator
+//     { using type = U; };
+
+//     template< typename... As, typename... Bs >
+//     struct commutator< Conjunction< Conjunction< As... >, Bs... >>
+//     { using type = commutator< Conjunction< As..., Bs... >>::type; };
+
+//     template< typename A, typename... As >
+//     struct commutator< Conjunction< A, As... >>
+//     { using type = commutator< Conjunction< A, 
+//         commutator< Conjunction<  As..., Bs... >>::type; };
+
+//     template< typename... As, typename... Bs >
+//     struct commutator< Disjunction< Disjunction< As... >, Bs... >>
+//     { using type = commutator< Disjunction< As..., Bs... >>::type; };
+
+//     template< typename U >
+//     struct distributor
+//     { using type = U; };
+
+
+//     /// (( O or Os... ) and As... )
+//     /// (( O and As... ) or ( Os...[0] and As... ) or ( Os...[1] and As... ) or ... )
+//     ///
+//     template< typename... Os, typename... As >
+//     struct distributor< Conjunction< Disjunction< Os... >, As... >>
+//     { using type = helper< Conjunction< Disjunction< Os... >, As... >, 
+//         make_seq< sizeof...( Os ) >>::type; };
+
+//     template< typename A, typename... As >
+//     struct distributor< Conjunction< A, As... >>
+//     { using type = commutator< Conjunction< A, 
+//         typename distributor< Conjunction< As... >::type >::type; };
+
+// public:
+//     using type = distributor< ExprT >::type;
+// };
+
+// namespace test {
+
+// using stat = StaticValue< bool >;
+
+// using conj0 = Conjunction< stat, stat >;
+// using conj1 = Conjunction< Disjunction< stat, compt >, compf >;
+// using conj2 = Conjunction< compf, Disjunction< stat, compt >>;
+
+// static_assert( is_same_v< typename DistributeConjunctions< conj0 >::type, conj0 > );
+// static_assert( is_same_v< typename DistributeConjunctions< conj1 >::type, 
+//     Disjunction< Conjunction< stat, compf >, Conjunction< compt, compf >>> );
+// // static_assert( is_same_v< typename DistributeConjunctions< conj2 >::type, 
+// //     Disjunction< Conjunction< compf, stat >, Conjunction< compf, compt >>> );
+
+// } // namespace test
+
+namespace test {
+    using stat = StaticValue< bool >;
+} // namespace test
+
+/// @brief converts the boolean logic expression into disjunctive normal form
+/// @tparam ExprT 
+namespace canonical {
+    // replace parameter packs with binary operations
+    template< typename A >
+    struct preprocess
+    { using type = A; };
+
+    template< typename A >
+    struct preprocess< Negation< A >>
+    { using type = Negation< typename preprocess< A >::type >; };
+
+    template< typename A, typename B >
+    struct preprocess< Conjunction< A, B >>
+    { using type = Conjunction< typename preprocess< A >::type, 
+        typename preprocess< B >::type >; };
+
+    template< typename A, typename B >
+    struct preprocess< Disjunction< A, B >>
+    { using type = Disjunction< typename preprocess< A >::type, 
+        typename preprocess< B >::type >; };
+
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ))
+    struct preprocess< Conjunction< First, Rest... >>
+    { using type = Conjunction< typename preprocess< First >::type, 
+        typename preprocess< Conjunction< Rest... >>::type >; };
+
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ))
+    struct preprocess< Disjunction< First, Rest... >>
+    { using type = Disjunction< typename preprocess< First >::type, 
+        typename preprocess< Disjunction< Rest... >>::type >; };
+
+    // tests to make sure preprocessor is working right
+    static_assert( is_same_v< Conjunction< test::stat, Conjunction< test::stat, test::stat >>,
+        typename preprocess< Conjunction< test::stat, test::stat, test::stat >>::type > );
+
+    // using preprocessed_type = preprocess< ExprT >::type;
+
+    // demorgans laws and double negatives
+    template< typename A >
+    struct dem
+    { using type = A; };
+
+    template< typename A >
+    struct dem< Compliment< Compliment< A >>>
+    { using type = dem< A >::type; };
+
+    template< typename A, typename B >
+    struct dem< Compliment< Disjunction< A, B >>>
+    { using type = Conjunction< typename dem< Compliment< A >>::type, 
+        typename dem< Compliment< B >>::type >; };
+
+    template< typename A, typename B >
+    struct dem< Compliment< Conjunction< A, B >>>
+    { using type = Disjunction< typename dem< Compliment< A >>::type, 
+        typename dem< Compliment< B >>::type >; };
+
+    // using demorgans_type = dem< preprocessed_type >::type;
+
+    // testing demorgans laws
+    // ~(A & B) == ~A | ~B
+    static_assert( is_same_v< Disjunction< Compliment< test::stat >, Compliment< test::stat >>,
+        typename dem< Compliment< Conjunction< test::stat, test::stat >>>::type > );
+
+    // ~(A | B) == ~A & ~B
+    static_assert( is_same_v< Conjunction< Compliment< test::stat >, Compliment< test::stat >>,
+        typename dem< Compliment< Disjunction< test::stat, test::stat >>>::type > );
+
+    // ~(A & ~B) == ~A | B
+    static_assert( is_same_v< Disjunction< Compliment< test::stat >, test::stat >,
+        typename dem< Compliment< Conjunction< test::stat, Compliment< test::stat >>>>::type > );
+
+
+    // distribution
+    template< typename A >
+    struct dist
+    { using type = A; };
+
+    template< typename A, typename B, typename C >
+    struct dist< Conjunction< Disjunction< A, B >, C >>
+    { using type = Disjunction< typename dist< Conjunction< A, C >>::type, 
+        typename dist< Conjunction< B, C >>::type >; };
+
+    template< typename A, typename B, typename C >
+    struct dist< Conjunction< A, Disjunction< B, C >>>
+    { using type = Disjunction< typename dist< Conjunction< A, B >>::type, 
+        typename dist< Conjunction< A, C >>::type >; };
+
+    template< typename A, typename B, typename C, typename D >
+    struct dist< Conjunction< Disjunction< A, B >, Disjunction< C, D >>>
+    { using type = Disjunction< 
+        Disjunction< 
+            typename dist< Conjunction< A, C >>::type, 
+            typename dist< Conjunction< A, D >>::type>,
+        Disjunction<
+            typename dist< Conjunction< B, C >>::type, 
+            typename dist< Conjunction< B, D >>::type>>; };
+
+    // using distributed_type = dist< demorgans_type >::type;
+
+    // postprocess by bringing all conjunctions and disjunctions back to 
+    // parameter packs
+    
+    // our final structure will be 
+    // Disjunction< Conjunction< Negation<A>... >... >
+    template< typename T >
+    struct rotate_right
+    { using type = T; };
+    
+    template< typename A, typename B, typename C >
+    struct rotate_right< Disjunction< Disjunction< A, B >, C >>
+    { using type = rotate_right< Disjunction< 
+        typename rotate_right< A >::type, 
+        typename rotate_right< Disjunction< B, C >>::type >::type; };
+
+
+} // namespace canonical
+
+/// @brief compliment of a compliment is the original expression
+/// @tparam ExprT 
+template< typename ExprT >
+requires( IsCanonicalTerminus< ExprT >::value )
+struct CanonicalExpression< Compliment< Compliment< ExprT >>>
+{ using type = CanonicalExpression< ExprT >::type; };
+
+
+/////////////
+/// Operators
+///
 
 // negation
 template< expression T >
@@ -1206,6 +1560,10 @@ namespace expressions {
 /// Solvers
 ///
 
+/// @brief trait to list the combination of 
+/// @tparam ExprT 
+template< typename ExprT >
+struct BooleanSatisfaction;
 
 struct MaximumIterations: optional< size_t >
 { 
@@ -1460,7 +1818,7 @@ struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}and{})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}and{})", expr.template arg<0>(), expr.template arg<1>() );
         return formatter< std::string >::format( str, ctx );
     }
 };
