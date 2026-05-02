@@ -8,6 +8,9 @@
 #include "units.hpp"
 #include "tensors.hpp"
 #include "geometry.hpp"
+#include "formats/output.hpp"
+#include "geometry/simplex.hpp"
+#include "geometry/processors.hpp"
 
 #include <iostream>
 #include <vector>
@@ -15,164 +18,93 @@
 #include <functional>
 #include <algorithm>
 
+namespace geometry{
 namespace formats {
 
 using namespace units;
 using namespace tensors;
-using namespace geometry;
+using namespace geometry::simplex;
+using std::optional;
 
+/// 
+/// 
 
 struct STLFile
 {
-    using vector_type = Tensor< Shape< 3 >, Length, Length, Length >;
+    using vec2 = uniform_tensor_t< Shape< 2 >, Length >;
+    using vec3 = uniform_tensor_t< Shape< 3 >, Length >;
+    using vec4 = uniform_tensor_t< Shape< 4 >, Length >;
+    using chain_type = VertexChain< vec3 >;
+
+    using mat2 = uniform_tensor_t< Shape< 2, 2 >, Scalar >;
+    using mat3 = uniform_tensor_t< Shape< 3, 3 >, Scalar >;
+    using mat4 = uniform_tensor_t< Shape< 4, 4 >, Scalar >;
+    using mat3x4 = uniform_tensor_t< Shape< 3, 4 >, Scalar >;
+
+    using builder_type = simplex::Builder< Length >;
 
     struct Solid;
     struct Facet;
 
-    struct Vertex
-    {
-        Length& operator []( size_t n )
-        {
-            switch( n ) {
-            case 0: return x;
-            case 1: return y;
-            case 2: 
-            default:
-                return z;
-            }
-        }
-
-        vector_type as_vector() const
-        { return { x, y, z }; }
-
-        Facet* facet() { return _facet; }
-        Facet const* facet() const { return _facet; }
-
-        Vertex( Facet* f, Length x, Length y, Length z ):
-            _facet{ f }, x{ x }, y{ y }, z{ z }
-        { }
-
-        Vertex( Facet* f, Vertex const& v ):
-            _facet{ f }, x{ v.x }, y{ v.y }, z{ v.z }
-        { }
-
-        Facet* _facet;
-        Length x;
-        Length y;
-        Length z;
-        string comment;
-    };
+    using solid_iterator = std::vector< Solid >::iterator;
+    using facet_iterator = std::vector< Facet >::iterator; 
+    using chain_iterator = chain_type::iterator;
 
     // implemented using an outer loop of vertices
     struct Facet
     {
-        using iterator = std::list< Vertex >::iterator;
-        using const_iterator = std::list< Vertex >::const_iterator;
-        using reverse_iterator = std::list< Vertex >::reverse_iterator;
+        using vertex_type = vec3;
+        using value_type = vertex_type;
+        using iterator_type = vertex_type*;
+        using const_iterator_type = vertex_type const*;
 
-        Vertex& front() { return vertices.front(); }
-        Vertex const& front() const { return vertices.front(); }
-        Vertex& back() { return vertices.back(); }
-        Vertex const& back() const { return vertices.back(); }
-        size_t size() { return vertices.size(); }
-        iterator begin() { return vertices.begin(); }
-        iterator end() { return vertices.end(); }
-        reverse_iterator rbegin() { return vertices.rbegin(); }
-        reverse_iterator rend() { return vertices.rend(); }
-
-        void reverse_vertex_order()
-        { std::reverse( vertices.begin(), vertices.end() ); }
-
-        Vertex& add_vertex( Length x = 0_m, Length y = 0_m, Length z = 0_m )
-        { return vertices.emplace_back( this, x, y, z ); }
-        Vertex& add_vertex( Vertex const& v )
-        { return vertices.emplace_back( this, v ); }
-
-        iterator emplace( const_iterator here, 
-            Length x = 0_m, Length y = 0_m, Length z = 0_m )
-        { return vertices.emplace( here, this, x, y, z ); }
-        iterator emplace( const_iterator here, Vertex const& v )
-        { return vertices.emplace( here, this, v ); }
-
-        Solid* solid() { return _solid; }
-        Solid const* solid() const { return _solid; }
-
-        Facet( Solid* s, Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
-            _solid{ s }, normal{ this, nx, ny, nz } { }
-
-        Solid* _solid;
-        Vertex normal;
-        string comment;
-        std::list< Vertex > vertices;
-    };
-
-    struct Solid
-    {
-        using iterator = std::vector< Facet >::iterator;
-        using reverse_iterator = std::vector< Facet >::reverse_iterator;
-
-        size_t size() { return facets.size(); }
-        iterator begin() { return facets.begin(); }
-        iterator end() { return facets.end(); }
-        reverse_iterator rbegin() { return facets.rbegin(); }
-        reverse_iterator rend() { return facets.rend(); }
-
-        Facet& add_facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m )
-        { return facets.emplace_back( this, nx, ny, nz ); }
-
-        STLFile* stl_file() { return file; }
-        STLFile const* stl_file() const { return file; }
-
-        Solid( STLFile* file, string const& name ): 
-            file{ file }, name{ solid_name( name ) } { }
-
-        STLFile* file;
-        string name;
-        string comment;
-        std::vector< Facet > facets;
-    };
-
-    /// @brief output a string representing this STLFile. 
-    /// NOTE: this is for debug purposes.  Use the STL class to output an STL 
-    /// file format
-    /// @return a string containing the solids, facets and vertices of this STLFile
-    string to_string() const
-    {
-        string ret = "{\n";
-        ret += "\t.solids = {\n";
-
-        for( auto const& solid: solids )
+        static Facet from_simplex( Simplex< Length > const& simp )
         {
-            ret += "\t\t.name = \"" + solid.name + "\";\n";
-            ret += "\t\t.comment = \"" + solid.comment + "\";\n";
-            ret += "\t\t.facets = {\n";
+            Facet ret;
+            int i = 0;
+            for( Vertex< Length > const& vert: simp )
+                ret.v[ i++ ]= vec3{ vert[0], vert[1], vert[2] };
 
-            for( auto const& facet: solid.facets )
-            {
-                ret += "\t\t\t.normal = {" 
-                    + std::to_string( facet.normal.x ) + ", " 
-                    + std::to_string( facet.normal.y ) + ", " 
-                    + std::to_string( facet.normal.z ) + " };\n";
-                ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
-                ret += "\t\t\t.vertices = {\n";
-
-                for( auto const& vertex: facet.vertices )
-                {
-                    ret += "\t\t\t\t{ " 
-                        + std::to_string( vertex.x ) + ", " 
-                        + std::to_string( vertex.y ) + ", "
-                        + std::to_string( vertex.z ) + " };\n";
-                }
-
-                ret += "\t\t\t};\n";
-            }
-
-            ret += "\t\t}\n"
-                   "\t};\n";
+            return ret;
         }
-        ret += "}\n";
-        return ret;
-    }
+        
+        void reverse_vertex_order()
+        { std::swap( v[0], v[2] ); }
+
+        iterator_type begin()
+        { return &v[0]; }
+        iterator_type end()
+        { return &v[0] + 3; }
+
+        const_iterator_type begin() const
+        { return &v[0]; }
+        const_iterator_type end() const
+        { return &v[0] + 3; }
+
+        Facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m ):
+            normal{ nx, ny, nz } { }
+
+        vertex_type normal;
+        vertex_type v[3];
+    };
+
+    struct Solid: std::vector< Facet >
+    {
+        Facet& add_facet( Length nx = 0_m, Length ny = 0_m, Length nz = 0_m )
+        { return emplace_back( nx, ny, nz ); }
+        Facet& add_facet( Facet const& facet )
+        { return emplace_back( facet ); }
+
+        static Solid from_complex( Complex< Length > const& plex );
+
+        Solid( string const& name ): name{ solid_name( name ) } { }
+        Solid(): name{ } { }
+
+        string name;
+    };
+
+    void collect( builder_type const& builder );
+    string to_string() const;
 
     // TODO: format the string name for use as a solid name in STL
     static string solid_name( string const& name )
@@ -186,64 +118,105 @@ struct STLFile
         return "; " + comment;
     }
 
-    Solid& add_solid( string name = "solid" )
-    { return solids.emplace_back( this, name ); }
+    solid_iterator add_solid( string name = "solid" )
+    { return solids.emplace( solids.end(), name ); }
 
-    Length& minimum_length( Length const& min_length )
-    { return _minimum_length = min_length; }
+    solid_iterator add_solid( Solid&& solid )
+    { return solids.emplace( solids.end(), solid ); }
 
-    Length const& minimum_length() const
-    { return _minimum_length; }
+    // Length& set_minimum_length( Length const& min_length )
+    // { return _minimum_length = min_length; }
+
+    // Length const& minimum_length() const
+    // { return _minimum_length; }
 
     std::vector< Solid > solids;
-    Length _minimum_length;
+    // Length _minimum_length;
 };
 
-std::ostream& operator <<( std::ostream& os, STLFile::Vertex const& v )
-{ return os << meters( v.x ) << " " << meters( v.y ) << " " << meters( v.z ); }
+std::ostream& operator <<( std::ostream& os, STLFile::vec3 const& v )
+{ return os << meters( v[0] ) << " " << meters( v[1] ) << " " 
+            << meters( v[2] ); }
 
 template< typename ObjT >
 struct STL
 {
     using object_type = ObjT;
+    using builder_type = STLFile::builder_type;
 
-    std::ostream& write_to( std::ostream& os ) const
-    {
-        STLFile out;
-        out.minimum_length( _minimum_length );
+    template< typename... Specs >
+    void output( builder_type& builder, Point point, Specs... specs ) const
+    { builder.push_vertex( specs... ); }
 
-        // stls are the boundary of a solid object
-        output( out, boundary( object() ));
+    template< typename ObjU, typename... Specs >
+    void output( builder_type& builder, Extrusion< ObjU, Length, Length > ext, 
+        Specs... specs ) const
+    { 
+        output( builder, ext.object(), specs... );
 
-        for( auto const& solid : out.solids )
-        {
-            os << "solid " << solid.name << "\n";
-
-            for( auto const& facet : solid.facets )
-            {
-                // TODO: should each facet just have 3 vertices?
-                auto i = facet.vertices.begin();
-                while( i != facet.vertices.end() )
-                {
-                    // we should always have three...
-                    auto v0 = *i++;
-                    auto v1 = *i++;
-                    auto v2 = *i++;
-
-                    os << "facet normal " << facet.normal << "\n"
-                       << "\touter loop\n"
-                       << "\t\tvertex " << v0 << "\n"
-                       << "\t\tvertex " << v1 << "\n"
-                       << "\t\tvertex " << v2 << "\n"
-                       << "\tendloop\n"
-                       << "enfacet\n";
-                }
-            }
-            os << "endsolid " << solid.name << "\n";
-        }
-
-        return os;
+        builder.extrude( ext.from(), ext.to(), specs... ); 
     }
+
+    template< size_t From, typename... Us >
+    static constexpr uniform_vector_t< From + sizeof...( Us ), Length > 
+    translation_vector_from( ProjectAt< From, Us... > proj )
+    { return proj( uniform_vector_t< From, Length >::zero() ); }
+
+    template< typename ObjU, size_t From, typename... Us, typename... Specs >
+    requires(( is_same_v< Length, Us > and ... ))
+    void output( builder_type& builder, 
+        Projection< ObjU, ProjectAt< From, Us... >> trans, 
+        Specs... specs ) const
+    { 
+        output( builder, trans.object(), 
+            builder_type::adjust_spec_translate( specs, 
+                trans.transform().offset() )... );
+                
+        builder.translate( translation_vector_from( trans.transform() ), 
+            specs... ); 
+    }
+
+    /// output compounds and attributed objects
+    template< typename ComponentsU, typename... Objs, typename... Specs >
+    void output( builder_type& builder, 
+        Compound< ComponentsU, Objs... > compound, Specs... specs ) const
+    {
+        auto output_compound_helper = [&]< size_t... Is >( seq< Is... > )
+        {( output( builder, get_component< Is >( compound ), specs... ), 
+            ... ); };
+
+        output_compound_helper( make_seq< sizeof...( Objs )>{} );
+        builder.combine( sizeof...( Objs ));
+    }
+
+    template< typename... Objs, typename... Specs >
+    void output( builder_type& builder, Collection< Objs... > col, 
+        Specs... specs ) const
+    {
+        auto output_collection_helper = [&]< size_t... Is >( seq< Is... > )
+        {( output( builder, get< Is >( col ), specs... ), ... ); };
+
+        output_collection_helper( make_seq< sizeof...( Objs )>{} );
+        builder.combine( sizeof...( Objs ));
+    }
+
+    // TODO: let attributes manipulate specs
+    template< typename ObjU, typename AttU, typename... Specs >
+    void output( builder_type& builder, Attribution< ObjU, AttU > att, 
+        Specs... specs ) const
+    { output( builder, att.object(), specs... ); }
+
+    template< typename ObjU, size_t Rows, size_t Cols, typename... Specs >
+    void output( builder_type& builder,
+        Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Scalar >>> proj, 
+        Specs... specs ) const
+    {
+        output( builder, proj.object(), builder_type::adjust_spec_linear( specs, 
+            proj.transformation().matrix())... );
+        builder.linear_transform( proj.transformation(), specs... );
+    }
+
+    std::ostream& write_to( std::ostream& os ) const;
 
     constexpr object_type const& object() const 
     { return _object; }
@@ -253,228 +226,153 @@ struct STL
         _minimum_length = minimum_length;
         return *this;
     }
+    constexpr Length minimum_length() const
+    { return _minimum_length.value(); }
+
+    constexpr STL& with_chordal_tolerance( Length const& chordal_tolerance )
+    {
+        _chordal_tolerance = chordal_tolerance;
+        return *this;
+    }
+    constexpr Length chordal_tolerance() const
+    { return _chordal_tolerance; }
+
+    constexpr STL& with_angular_tolerance( Scalar const& angular_tolerance )
+    {
+        _angular_tolerance = angular_tolerance;
+        return *this;
+    }
+    constexpr Scalar angular_tolerance() const
+    { return _angular_tolerance; }
 
     constexpr STL( object_type const& object, string name = "object" ): 
-        _object{ object }, _name{ name }, _minimum_length{ /* 0 */ } { }
+        _object{ object }, _name{ name }, _minimum_length{ },
+        _chordal_tolerance{ 0.1_mm }, _angular_tolerance{ 1_deg } 
+    { }
 
     object_type _object;
     string _name;
-    Length _minimum_length;
+    optional< Length > _minimum_length;
+    Length _chordal_tolerance;
+    Scalar _angular_tolerance;
 };
+
+
+/// @brief output a string representing this STLFile. 
+/// NOTE: this is for debug purposes.  Use the STL class to output an STL 
+/// file format
+/// @return a string containing the solids, facets and vertices of this STLFile
+string STLFile::to_string() const
+{
+    string ret = "{\n";
+    ret += "\t.solids = {\n";
+
+    for( auto const& solid: solids )
+    {
+        ret += "\t\t.name = \"" + solid.name + "\";\n";
+        // ret += "\t\t.comment = \"" + solid.comment + "\";\n";
+        ret += "\t\t.facets = {\n";
+
+        for( auto const& facet: solid )
+        {
+            ret += "\t\t\t.normal = {" 
+                + std::to_string( facet.normal[0] ) + ", " 
+                + std::to_string( facet.normal[1] ) + ", " 
+                + std::to_string( facet.normal[2] ) + " };\n";
+            // ret += "\t\t\t.comment = \"" + facet.comment + "\";\n";
+            ret += "\t\t\t.vertices = {\n";
+
+            for( auto const& vertex: facet )
+            {
+                ret += "\t\t\t\t{ " 
+                    + std::to_string( vertex[0] ) + ", " 
+                    + std::to_string( vertex[1] ) + ", "
+                    + std::to_string( vertex[2] ) + " };\n";
+            }
+
+            ret += "\t\t\t};\n";
+        }
+
+        ret += "\t\t}\n"
+                "\t};\n";
+    }
+    ret += "}\n";
+    return ret;
+}
+
+void STLFile::collect( STLFile::builder_type const& builder )
+{
+    for( Complex< Length > const& plex: builder )
+        add_solid( Solid::from_complex( plex ));
+}
+
+STLFile::Solid STLFile::Solid::from_complex( Complex< Length > const& plex )
+{
+    Solid ret;
+
+    // TODO: turn a complex into an STL Solid
+    for( Simplex< Length > const& simp: plex )
+        ret.add_facet( Facet::from_simplex( simp ));
+
+    return ret;
+}
+
+template< typename ObjT, typename SpecProcessorT >
+std::ostream& STL< ObjT, SpecProcessorT >::write_to( std::ostream& os ) const
+{
+    STLFile out;
+    // out.set_minimum_length( _minimum_length );
+
+    // stls are the boundary of a solid object
+    auto builder = STLFile::builder_type{};
+    output( builder, boundary( object() ));
+
+    // DEBUG
+    // std::cerr << "SIMPLEX: " << builder.result() << std::endl;
+
+    out.collect( builder );
+
+    for( auto const& solid : out.solids )
+    {
+        os << "solid " << solid.name << "\n";
+
+        for( auto const& facet : solid )
+        {
+            // TODO: should each facet just have 3 vertices?
+            auto i = facet.begin();
+            while( i != facet.end() )
+            {
+                // we should always have three...
+                auto v0 = *i++;
+                auto v1 = *i++;
+                auto v2 = *i++;
+
+                os << "facet normal " << facet.normal << "\n"
+                    << "\touter loop\n"
+                    << "\t\tvertex " << v0 << "\n"
+                    << "\t\tvertex " << v1 << "\n"
+                    << "\t\tvertex " << v2 << "\n"
+                    << "\tendloop\n"
+                    << "enfacet\n";
+            }
+        }
+        os << "endsolid " << solid.name << "\n";
+    }
+
+    return os;
+}
 
 /// @brief ostream operator
 /// @tparam ObjT solid object type
 /// @param os ostream instance
 /// @param stl the STL object wrapper
 /// @return the ostream operator
-template< typename ObjT >
-std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
+template< typename ObjT, typename SpecProcessorT >
+std::ostream& operator <<( std::ostream& os, STL< ObjT, SpecProcessorT > const& stl )
 { return stl.write_to( os ); }
 
-/// @brief outputing a point to an STL facet
-/// @param out facet to add a vertex to
-/// @param p point to add
-/// @return the vertex
-constexpr STLFile::Vertex& output( STLFile::Facet& out, Point const& p )
-{ return out.add_vertex(); }
-
-/// @brief extrusion of a point
-template< typename ObjT, size_t Steps >
-constexpr STLFile::Facet& output( STLFile::Facet& out, 
-    Extrusion< ObjT, Length, Steps > const& extrusion )
-{
-    using iterator = STLFile::Facet::iterator;
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-
-    // gather the vertex
-    output( out, extrusion.object() );
-
-    // fetch the minimum length
-    Length min_length = out.solid()->stl_file()->minimum_length();
-
-    if( out.size() == 1 )
-    {
-        // expects only a single vertex and adds a string of vertices
-        Length amount = {};
-        for( Length const& step: extrusion.step_values() )
-        {
-            amount += step;
-            auto v = out.front();
-            v[ dim ] = amount;
-            out.add_vertex( v );
-        }
-
-        return out;
-    }
-
-    // expects a string of vertices and creates triplets
-    Length amount = {};
-    size_t s = 0;
-
-    std::list< STLFile::Vertex > layer;
-    // transfer our string to the layer
-    layer.splice( layer.end(), out.vertices );
-
-    for( Length const& step: extrusion.step_values() )
-    {
-        amount += step;
-        iterator p1, p2;
-        p1 = p2 = layer.begin();
-        ++p2;
-
-        while( p2 != layer.end() )
-        {
-            auto v1 = *p1;
-            auto v2 = *p2;
-            auto v3 = *p1;
-            v3[ dim ] = amount;
-            auto v4 = *p2;
-            v4[ dim ] = amount;
-
-            // is it possible to be less than the minimum length?
-            if( not is_positive( min_length )) 
-            {
-                // v1-v2-v3
-                out.add_vertex( v1 );
-                out.add_vertex( v2 );
-                out.add_vertex( v3 );
-
-                // v4-v3-v2
-                out.add_vertex( v4 );
-                out.add_vertex( v3 );
-                out.add_vertex( v2 );
-            }
-            else
-            {
-                throw std::logic_error( "STL minimum length not implemented" );
-            }
-            p1 = p2;
-            ++p2;
-        }
-
-        // move layer one step forward
-        for( auto& v: layer )
-            v[ dim ] = amount;
-    }
-
-    return out;
-}
-
-/// @brief output an extrusion to a facet
-/// @tparam ObjT 
-/// @param out 
-/// @param object 
-/// @return 
-template< typename ObjT >
-constexpr auto output( STLFile::Facet& out, 
-    Projection< ObjT, Length > const& object )
-{
-    static constexpr size_t dim = dimensions_of_v< space_of< ObjT >>;
-    size_t verts = out.size();
-    // output the projected object
-    output( out, object.object());
-    verts = out.size() - verts;
-    for( auto j = out.rbegin(); verts > 0; --verts, ++j )
-        (*j)[ dim ] = object.amount();
-}
-
-/// @brief outputing an orientation to a facet is duplicative since we already
-/// identified the normal vector
-/// TODO: what if we hane't set a normal vector yet?  
-/// @param out facet to add a vertex to
-/// @param p 
-/// @return the vertex
-template< typename ObjT >
-constexpr auto output( STLFile::Facet& out, Orientation< ObjT > const& object )
-{ return output( out, object.object() ); }
-
-// extrusion of a segment
-template< typename ObjT >
-// requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto output( STLFile::Solid& out, Extrusion< ObjT, Length > const& object )
-{ return output( out.add_facet(), object ); }
-
-template< typename ObjT >
-// requires( isless( space_of< ObjT >::dimensions(), 3 ))
-constexpr auto output( STLFile::Solid& out, Projection< ObjT, Length > const& object )
-{ return output( out.add_facet(), object ); }
-
-template< typename CollectionT, size_t... Is >
-constexpr auto output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
-    seq< Is... > )
-{ return ( output( out, get< Is >( col )), ... ); }
-
-// template< typename CollectionT, size_t... Is >
-// constexpr auto output_collection_helper( STLFile::Solid& out, CollectionT const& col, 
-//     seq< Is... > )
-// { return ( output( out, get< Is >( col )), ... ); }
-
-template< typename... Objects >
-constexpr auto output( STLFile& out, Collection< Objects... > const& col )
-{ return output_collection_helper( out.add_solid( "collection"), col, 
-    make_seq< sizeof...( Objects )>{} ); } 
-
-template< typename ObjT >
-constexpr auto output( STLFile& out, Extrusion< ObjT, Length > const& obj )
-{ return output( out.add_solid( "extrusion" ), obj ); } 
-
-template< typename ObjT >
-constexpr auto output( STLFile& out, Projection< ObjT, Length > const& obj )
-{ return output( out.add_solid( "projection" ), obj ); } 
-
-template< typename ObjT >
-constexpr auto output( STLFile& out, Attribution< ObjT, Named > const& obj )
-{ 
-    auto& s = out.add_solid( obj.attribute().name() );
-    return output( s, obj.object() ); 
-}
-
-template< typename ObjT >
-constexpr auto output( STLFile::Solid& out, Orientation< ObjT > const& object )
-{ 
-    auto v = object.orientation();
-    STLFile::Facet& facet = out.add_facet( tensor_get< 0 >( v ), 
-        tensor_get< 1 >( v ), tensor_get< 2 >( v ));
-    output( facet, object.object() );
-
-    // check if the triangle order matches the orientation
-    if( facet.vertices.size() < 3 )
-        return out;
-
-    auto n = facet.normal.as_vector();
-
-    auto i = facet.vertices.begin();
-    auto const& v0 = (i++)->as_vector();
-    auto const& v1 = (i++)->as_vector();
-    auto const& v2 = i->as_vector();
-
-    auto x1 = v1 - v0;
-    auto x2 = v2 - v0;
-    
-    if( is_positive( dot( cross( x1, x2 ), n )))
-        facet.reverse_vertex_order();
-    
-    return out;
-}
-
-// template< >
-// constexpr auto output( STLFile::Facet& out, 
-//     Projected< Projected< Projected< Point, Length >, Length >, Length > const& p )
-// { 
-//     out.add_vertex( p.object().object().amount(), 
-//         p.object().amount(), p.amount() );
-// }
-
-// extrusion of a point 
-// template< unit U >
-// constexpr auto output( STLFile::Facet& out, Extrusion< Point, U > const& object )
-// { 
-//     out.add_vertex();
-//     out.add_vertex( object.amount() );
-// }
-
-
 } // namespace formats
+} // namespace geometry
 
 
 #endif // __STL_HPP__

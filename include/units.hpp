@@ -221,23 +221,51 @@ struct unit_format_type
 constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
 {
     std::stringstream name;
+    bool has_divisor = false;
 
     auto powers = factor( uid );
     for( int i = 1; i < total_units; ++i )
     {
+        if( powers[i] < 0 )
+        {
+            has_divisor = true;
+            continue;
+        }
+        
         if( powers[i] == 0 )
             continue;
         
         name << " " << base_unit_names[i];
         if( powers[i] == 1 )
             continue;
-        
+
+    
         name << "^" << powers[i];
+    }
+
+    if( not has_divisor )
+        return name.str();
+
+    name << "/";
+
+    for( int i = 1; i < total_units; ++i )
+    {
+        if( powers[i] >= 0 )
+            continue;
+
+        name << " " << base_unit_names[i];
+        if( powers[i] == -1 )
+            continue;
+    
+        name << "^" << -powers[i];
     }
 
     return name.str();
 }
 
+/// @brief the base type for all units
+/// @tparam Id is the identifier of this unit
+/// @tparam T is an arithmetic type that stores the value
 template< unit_id_type Id, arithmetic T >
 struct base_unit
 {
@@ -263,6 +291,11 @@ struct base_unit
     scalar_type value;
 };
 
+/// @brief specialization of base_unit for scalars.  This is helpful because 
+/// generally we want casting to and from units to be explicit, but with scalars
+/// it's nice and harmless for casting and construction from the arithmetic
+/// value type to be implicit.
+/// @tparam T the arithmetic type of the value of this scalar
 template< arithmetic T >
 struct base_unit< scalar_unit_id, T >
 {
@@ -1828,7 +1861,12 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
 
 using Information = base_unit< information_unit_id, long double >;
 
+std::ostream& operator <<( std::ostream& os, unit_id_type const& id )
+{ return os << unit_id_name( id ); }
 
+template< unit_id_type Id, arithmetic T >
+std::ostream& operator <<( std::ostream& os, base_unit< Id, T > const& u )
+{ return os << u.get_value() << Id; }
 
 } // namespace units
 
@@ -1845,7 +1883,7 @@ constexpr string to_string( U const& u )
 { return to_string( u.get_value() ); }
 
 template< units::unit U >
-requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
+// requires( units::is_square_unit_id( units::unit_traits< U >::unit_id ))
 constexpr units::unit_square_root_t< U > sqrt( U u )
 { return units::unit_square_root_t< U >{ sqrt( u.get_value()) }; }
 

@@ -8,35 +8,27 @@ using namespace units;
 using namespace geometry;
 using namespace formats;
 
+auto segment( Length width )
+{ return extrude( Point{}, 0_m, width ); }
+
+auto plane( Length width, Length height )
+{ return extrude( segment( width ), 0_m, height); }
+
+auto box( Length width, Length height, Length depth )
+{ return extrude( plane( width, height ), 0_m, depth ); }
 
 auto mortise_and_tenon()
 {
-    // auto tenon_layout = Grid< 3, 3 >{};
-    // auto mortise_layout = Grid< 3, 3 >{};
-
-    // auto rail_end = component< Box::Top >( rail );
-    // auto stile_inside = component< Rectangle::Bottom >( stile );
-
-    // auto tenon = pad( component< grid_cell< 1, 1 >>( 
-    //     tenon_layout( rail_end )));
-    // auto mortise = pad( component< grid_cell< 1, 1 >>( 
-    //     mortise_layout ( stile_inside )));
-
-    // return box( 1_m, 1_ft, 3_in );
-
-    auto rect = extrude( segment( 5_m ), 2_m, 2_m );
-
-    return extrude( rect, 2_m, 1_m, 1_in );
+    // auto stile = box();
+    // auto stile_end = component< extrusion::cap >( stile );
+    
+    // return stile;
+    return box( 2_m, 3_m, 5_m );
 }
 
 int main( int ac, char* av[] )
 {
     auto obj = mortise_and_tenon();
-
-    // STLFile file;
-    // output( file, extrude( segment( 5_m ), 3_m, 2_m ) );
-    // output( file, boundary( obj ));
-    // std::cout << file.to_string() << std::endl;
 
     std::cout << STL{ obj } << std::endl;
 

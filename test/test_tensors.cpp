@@ -4,16 +4,46 @@
 #include <stdexcept>
 #include <cassert>
 
-int main( int ac, char* av[] )
-{
-    // using std::cout, std::cerr, std::endl;
-    using std::println;
-    using namespace tensors;
-    using std::is_same_v;
+/*
+TODO: test something like this:
+tensors::contract<0UL, 1UL, 
+    tensors::Tensor<tensors::Shape<2, 2, 3>, 
+        long double, long double, long double, 
+        long double, long double, long double, 
 
-    /**
-     * Contraction tests
-     */
+        Length, Length, Length, 
+        Length, Length, Length>>
+ */
+
+using std::is_same_v;
+using std::println;
+
+using namespace tensors;
+
+// forward decl.
+void test_contraction();
+void test_subtensor();
+void test_multiplication();
+void test_transpose();
+void test_determinant();
+void test_cofactor();
+void test_inverse();
+
+int main( int ac, char* av[] )
+{  
+    test_contraction();
+    test_subtensor();
+    test_multiplication();
+    test_transpose();
+    test_determinant();
+    test_cofactor();
+    test_inverse();
+
+    return EXIT_SUCCESS;
+}
+
+void test_contraction()
+{
     auto t1 = make_tensor< Shape< 1, 1, 6 >>( 
         0., 1., 2., 3., 4., 5. );
     auto t2 = make_tensor< Shape< 1, 1, 6 >>(
@@ -42,10 +72,15 @@ int main( int ac, char* av[] )
 
     auto t6 = contract< 0, 1 >( t5 );
     assert( t6 == make_tensor< Shape<>>( 15. ));
+}
 
-    /**
-     * Sub Tensor Tests
-     */
+void test_subtensor()
+{
+    auto t5 = make_tensor< Shape< 3,3 >>( 
+        1., 2., 3.,
+        4., 5., 6.,
+        7., 8., 9. );
+
     auto s1 = subtensor< seq< 1, 1 >>( t5 ); 
     assert(( s1 == make_tensor< Shape< 2, 2 >>( 
         1., 3., 
@@ -57,10 +92,10 @@ int main( int ac, char* av[] )
     auto a1 = make_tensor< Shape< 2, 2 >>( 2., 3., 5., 7. );
     auto a2 = make_tensor< Shape< 2, 2 >>( 7., 5., 3., 2. );
     assert(( a1 + a2 == make_tensor< Shape<2,2>>( 9., 8., 8., 9. )));
+}
 
-//     /**
-//      * Multiplication Tests
-//      */
+void test_multiplication()
+{
     auto m5 = make_tensor<Shape<1,2>>( 5., 6. );
     auto m6 = make_tensor<Shape<2,1>>( 7., 8. );
 
@@ -78,10 +113,14 @@ int main( int ac, char* av[] )
         6. * 7., 6. * 8. );
 
     assert( u5 * u6 == u5u6 );
+}
 
-//     /**
-//      * Transpose tests
-//      */
+void test_transpose()
+{
+    auto u5u6 = make_tensor< Shape< 2,2 >>(
+        5. * 7., 5. * 8.,
+        6. * 7., 6. * 8. );
+
     auto u5u6_t = make_tensor< Shape< 2,2>>(
         35., 42.,
         40., 48. );
@@ -93,11 +132,21 @@ int main( int ac, char* av[] )
         2., 5., 8.,
         3., 6., 9. );
 
+    auto t5 = make_tensor< Shape< 3,3 >>( 
+        1., 2., 3.,
+        4., 5., 6.,
+        7., 8., 9. );
+
     assert(( transpose< 0, 1 >( t5 ) == t5_t ));
-    
-    /**
-     * Determinant tests
-     */
+}
+
+void test_determinant()
+{
+    auto t5 = make_tensor< Shape< 3,3 >>( 
+        1., 2., 3.,
+        4., 5., 6.,
+        7., 8., 9. );
+
     assert( det( t5 ) == 1*5*9 - 1*8*6 - 4*2*9 + 4*8*3 + 7*2*6 - 7*5*3 );
 
     auto d2 = make_tensor< Shape< 2, 2 >>(
@@ -105,10 +154,14 @@ int main( int ac, char* av[] )
         2., 3. );
 
     assert( det( d2 ) == 3*3 - 2*2 );
+}
 
-    /**
-     * Cofactor tests
-     */
+void test_cofactor()
+{
+    auto d2 = make_tensor< Shape< 2, 2 >>(
+        3., 2.,
+        2., 3. );
+
     auto cofactor_d2 = make_tensor< Shape< 2, 2 >>(
         3., -2., 
         -2., 3. );
@@ -118,11 +171,11 @@ int main( int ac, char* av[] )
     // println( "d2_co:\n{} {}\n{} {}", get< 0 >( d2_co ), get< 1 >( d2_co ), 
     //     get< 2 >( d2_co ), get< 3 >( d2_co ));
     assert( cofactor( d2 ) == cofactor_d2 );
-    
+}
 
-    /**
-     * Inverse tests
-     */
+void test_inverse()
+{
+
     auto i2 = make_tensor< Shape< 2, 2 >>(
         5., 4.,
         3., 4. );
@@ -150,8 +203,4 @@ int main( int ac, char* av[] )
     assert(( matmul( i2, inverse( i2 )) == make_tensor< Shape< 2, 2 >>( 
         1., 0.,
         0., 1. )));
-
-    
-
-    return EXIT_SUCCESS;
 }

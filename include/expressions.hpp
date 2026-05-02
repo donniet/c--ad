@@ -1,7 +1,7 @@
 #ifndef __EXPRESSIONS_HPP__
 #define __EXPRESSIONS_HPP__
 
-#include "tensor.hpp"
+#include "tensors.hpp"
 #include "utility.hpp"
 
 #include <cmath>
@@ -28,7 +28,7 @@ using std::map, std::set;
 using std::any, std::any_cast;
 using std::optional;
 
-using namespace tensor;
+using namespace tensors;
 
 /// @brief base class of any expression
 ///
@@ -70,6 +70,12 @@ struct Variable: ExpressionTag
     T eval() const
     { return *_ptr; }
 
+    // NOTE: this is for advanced use.  It re-wires the underlying
+    // pointer to a new value.  Since an expression may have many instances
+    // of the same variable this could make expressions inconsistent.
+    void realize( T& storage )
+    { _ptr = &storage; }
+
     Variable& operator=( Variable const& ) = delete;
     template< typename U >
     requires( std::is_convertible_v< T, U > )
@@ -80,11 +86,19 @@ struct Variable: ExpressionTag
     }
     Variable( T* ptr, string name ): 
         _ptr{ ptr }, _name{ name } {}
-    constexpr Variable() = default;
+
+    constexpr Variable(): 
+        _ptr{ nullptr }, _name{} { }
 
     T* _ptr;
     string _name;
 };
+
+namespace details {
+
+} // namespace details
+
+
 
 template< size_t... Is >
 array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
@@ -151,7 +165,7 @@ variables_tuple_t< Ts... > variables_tuple( tuple< Ts... >& tup,
 { return variables_tuple_helper( tup, names, make_seq< sizeof...( Ts )>{} ); }
 
 template< typename... Ts >
-array< string, sizeof...( Ts ) > default_variable_names( string base = "var" )
+array< string, sizeof...( Ts )> default_variable_names( string base = "var" )
 {
     array< string, sizeof...( Ts )> ret;
     for( size_t i = 0; i < sizeof...( Ts ); ++i )
@@ -356,12 +370,129 @@ constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l
 constexpr constant< bool, true > constant_true = constant< bool, true >{};
 constexpr constant< bool, false > constant_false = constant< bool, false >{};
 
+namespace details {
+
+template< typename... Exprs >
+struct DependentVariableIDs;
+
+template< >
+struct DependentVariableIDs< >
+{ using type = seq< >; };
+
+template< size_t I, typename T >
+struct DependentVariableIDs< Variable< I, T >>
+{ using type = seq< I >; };
+
+template< typename T >
+struct DependentVariableIDs< StaticValue< T >>
+{ using type = seq< >; };
+
+template< typename T, T Value >
+struct DependentVariableIDs< Constant< T, Value >>
+{ using type = seq< >; };
+
+template< typename ExprT >
+struct DependentVariableIDs< ExprT >
+{ 
+    using argument_types = ExprT::argument_types;
+
+    template< typename Seq >
+    struct helper;
+
+    template< size_t... Is >
+    struct helper< seq< Is... >>
+    { using type = merge_unique_sorted_seq< typename DependentVariableIDs< 
+        tuple_element_t< Is, argument_types >>::type... >; };
+
+    using type = helper< make_seq< tuple_size_v< argument_types >>>::type; 
+};
+
+template< typename... Exprs >
+requires( isgreater( sizeof...( Exprs ), 1 ))
+struct DependentVariableIDs< Exprs... >
+{ using type = merge_unique_sorted_seq< 
+    typename DependentVariableIDs< Exprs >::type... >; };
+
+template< size_t I, typename ExprT >
+struct VariableType
+{ 
+protected:
+    template< typename Seq >
+    struct helper;
+
+    template< >
+    struct helper< seq< >>
+    { using type = void; };
+
+    template< size_t J >
+    struct helper< seq< J >>
+    { using type = VariableType< I, 
+        tuple_element_t< J, typename ExprT::argument_types >>::type; };
+
+    template< size_t J, size_t... Js >
+    requires( isgreater( sizeof...( Js ), 0 ))
+    struct helper< seq< J, Js... >>
+    { 
+        using jth = VariableType< I, tuple_element_t< J, 
+            typename ExprT::argument_types >>::type;
+
+        using type = std::conditional_t< not is_same_v< void, jth >, jth,
+            typename helper< seq< Js...>>::type >;
+    };
+
+public:
+    using type = helper< make_seq< tuple_size_v< 
+        typename ExprT::argument_types >>>::type;
+};
+
+template< size_t I, size_t J, typename T >
+requires( I == J )
+struct VariableType< I, Variable< J, T >>
+{ using type = T; };
+
+template< size_t I, size_t J, typename T >
+requires( I != J )
+struct VariableType< I, Variable< J, T >>
+{ using type = void; };
+
+template< size_t I, typename T >
+struct VariableType< I, StaticValue< T >>
+{ using type = void; };
+
+template< size_t I, typename T, T Value >
+struct VariableType< I, Constant< T, Value >>
+{ using type = void; };
+
+template< typename ExprT >
+struct DependentVariables
+{
+protected:
+    using variable_ids = DependentVariableIDs< ExprT >::type;
+
+    template< typename Seq >
+    struct helper;
+
+    template< size_t... Is >
+    struct helper< seq< Is... >>
+    { using type = tuple< Variable< Is,
+        typename VariableType< Is, ExprT >::type >... >; };
+
+public:
+    using type = helper< variable_ids >::type;
+};
+
+} // namespace details
+
+template< typename ExprT >
+using dependent_variables_t = details::DependentVariables< ExprT >::type;
+
 /// @brief negation expression
 /// @tparam T the negated type
 ///
 template< typename T >
 struct Negation: ExpressionTag
 { 
+    using argument_types = tuple< T >;
     using result_type = decltype( -result_t< T >{} );
 
     constexpr T arg() const { return _arg; }
@@ -381,6 +512,7 @@ struct Negation: ExpressionTag
 template< typename T, typename U >
 struct Sum: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -403,6 +535,7 @@ struct Sum: ExpressionTag
 template< typename T, typename U >
 struct Difference: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} - result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -425,6 +558,7 @@ struct Difference: ExpressionTag
 template< typename T, typename U >
 struct Product: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
 
     constexpr T left_arg() const { return _left; }
@@ -447,6 +581,7 @@ struct Product: ExpressionTag
 template< typename T, typename U >
 struct Quotient: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
 
     constexpr T numerator_arg() const { return _numerator; }
@@ -469,6 +604,7 @@ struct Quotient: ExpressionTag
 template< typename T >
 struct SquareRoot: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::sqrt( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -488,6 +624,7 @@ struct SquareRoot: ExpressionTag
 template< int Exp, typename T >
 struct Power: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -506,6 +643,7 @@ struct Power: ExpressionTag
 template< typename T >
 struct Sine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::sin( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -524,6 +662,7 @@ struct Sine: ExpressionTag
 template< typename T >
 struct Cosine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::cos( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -542,6 +681,7 @@ struct Cosine: ExpressionTag
 template< typename T >
 struct Tangent: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::tan( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -560,6 +700,7 @@ struct Tangent: ExpressionTag
 template< typename T >
 struct Arcsine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::asin( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -578,6 +719,7 @@ struct Arcsine: ExpressionTag
 template< typename T >
 struct Arccosine: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::acos( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -596,6 +738,7 @@ struct Arccosine: ExpressionTag
 template< typename T >
 struct Arctangent: ExpressionTag
 {
+    using argument_types = tuple< T >;
     using result_type = decltype( std::atan( result_t< T >{} ));
 
     constexpr T arg() const { return _arg; }
@@ -615,6 +758,7 @@ struct Arctangent: ExpressionTag
 template< typename T, typename U >
 struct Arctangent2: ExpressionTag
 { 
+    using argument_types = tuple< T >;
     // we use the result_type of a fraction here to factor units properly
     // this assumes that std::atan2 doesn't change the unit. hopefully it stays
     // true that trig functions operate only on scalars and this won't be an 
@@ -653,6 +797,7 @@ struct Element: tuple_element_t< I, ArrayT >
 template< typename T, typename U >
 struct Equals: ExpressionTag
 { 
+    using argument_types = tuple< T, U >;
     using result_type = bool;
 
     constexpr T left_arg() const { return _left; }
@@ -670,31 +815,421 @@ struct Equals: ExpressionTag
 };
 
 /// @brief logical and expression
-/// @tparam T 
-/// @tparam U 
-template< typename T, typename U >
+/// @tparam Ts... 
+template< typename... Ts >
 struct Conjunction: ExpressionTag
 {
+    using argument_types = tuple< Ts... >;
+    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
     using result_type = bool;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const
+    { return std::get< I >( _args ); }
+
+    template< size_t... Is >
+    constexpr result_type eval_helper( seq< Is... > ) const
+    { return ( expressions::eval( arg< Is >()) and ... ); }
 
     constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) and expressions::eval( right_arg() ); }
+    { return eval_helper( make_seq< arguments_size() >{} ); }
 
-    constexpr Conjunction( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+    constexpr Conjunction( Ts... ts ): _args{ ts... } { } 
     constexpr Conjunction() = default;
     
-    T _left;
-    U _right;
+    argument_types _args;
 };
 
+/// @brief logical or expression
+/// @tparam Ts...
+template< typename... Ts >
+struct Disjunction: ExpressionTag
+{
+    using argument_types = tuple< Ts... >;
+    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
+    using result_type = bool;
 
-/**
- * OPERATORS
- */
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const
+    { return std::get< I >( _args ); }
+
+    template< size_t... Is >
+    constexpr result_type eval_helper( seq< Is... > ) const
+    { return ( expressions::eval( arg< Is >()) or ... ); }
+
+    constexpr result_type eval( ) const
+    { return eval_helper( make_seq< arguments_size() >{} ); }
+
+    constexpr Disjunction( Ts... ts ): _args{ ts... } { } 
+    constexpr Disjunction() = default;
+    
+    argument_types _args;
+};
+
+/// @brief logical not expression
+/// @tparam T 
+/// @tparam U 
+template< typename T >
+struct Compliment: ExpressionTag
+{
+    using argument_types = tuple< T >;
+    using result_type = bool;
+
+    constexpr T arg() const { return _arg; }
+
+    constexpr result_type eval( ) const
+    { return not expressions::eval( arg() ); }
+
+    constexpr Compliment( T arg ): _arg{ arg } { } 
+    constexpr Compliment() = default;
+    
+    T _arg;
+};
+
+template< typename ExprT >
+struct IsBooleanExpression: 
+    integral_constant< bool, is_same_v< result_t< ExprT >, bool >> { };
+
+template< typename ExprT >
+struct IsConjunction: integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsConjunction< Conjunction< Exprs... >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsDisjunction: integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsDisjunction< Disjunction< Exprs... >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsCompliment: integral_constant< bool, false > { };
+
+template< typename ExprT >
+struct IsCompliment< Compliment< ExprT >>: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT >
+struct IsCanonicalTerminus: integral_constant< bool, 
+    not IsConjunction< ExprT >::value and
+    not IsDisjunction< ExprT >::value and
+    not IsCompliment< ExprT >::value > { };
+
+template< typename ExprT >
+struct IsCanonicalComplimentedTerminus: integral_constant< bool, false > { };
+
+template< typename ExprT >
+struct IsCanonicalComplimentedTerminus< Compliment< ExprT >>: 
+    integral_constant< bool, IsCanonicalTerminus< ExprT >::value > { };
+
+template< typename ExprT >
+struct IsCanonicalConjunctiveTerminus: 
+    integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsCanonicalConjunctiveTerminus< Conjunction< Exprs... >>:
+    integral_constant< bool, (
+        ( IsCanonicalTerminus< Exprs >::value or 
+          IsCanonicalComplimentedTerminus< Exprs >::value ) and ... )> { };
+
+template< typename ExprT >
+struct IsCanonicalDisjunctiveTerminus: 
+    integral_constant< bool, false > { };
+
+template< typename... Exprs >
+struct IsCanonicalDisjunctiveTerminus< Disjunction< Exprs... >>:
+    integral_constant< bool, (
+        ( IsCanonicalTerminus< Exprs >::value or 
+          IsCanonicalComplimentedTerminus< Exprs >::value or 
+          IsCanonicalConjunctiveTerminus< Exprs >::value ) and ... )> { };
+
+template< typename ExprT >
+struct IsCanonical: integral_constant< bool, 
+    IsCanonicalTerminus< ExprT >::value or
+    IsCanonicalComplimentedTerminus< ExprT >::value or
+    IsCanonicalConjunctiveTerminus< ExprT >::value or
+    IsCanonicalDisjunctiveTerminus< ExprT >::value > { };
+
+
+template< typename ExprT >
+constexpr bool is_boolean_expression_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_conjunction_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_disjunction_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_compliment_v = IsBooleanExpression< ExprT >::value;
+
+template< typename ExprT >
+constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
+
+/// @brief restructures a boolean expression into 
+/// disjunction-of-conjunctions-of-negations format
+/// @tparam  
+template< typename ExprT >
+struct CanonicalExpression;
+
+template< typename ExprT >
+requires( IsCanonical< ExprT >::value )
+struct CanonicalExpression< ExprT >
+{ using type = ExprT; };
+
+/// first we push the compliments down through disjunctions and conjunctions
+/// using demorgan's laws.  Then distribute conjunctions through disjunctions
+/// 
+
+template< typename ExprT >
+struct PushCompliments
+{
+protected:
+    template< typename U >
+    struct pusher
+    { using type = U; };
+
+    template< bool Value >
+    struct pusher< Compliment< Constant< bool, Value >>>
+    { using type = Constant< bool, not Value >; };
+
+    template< typename U >
+    struct pusher< Compliment< Compliment< U >>>
+    { using type = pusher< U >::type; };
+
+    template< typename... Us >
+    struct pusher< Compliment< Disjunction< Us... >>>
+    { using type = Conjunction< typename pusher< Compliment< Us >>::type... >; };
+
+    template< typename... Us >
+    struct pusher< Compliment< Conjunction< Us... >>>
+    { using type = Disjunction< typename pusher< Compliment< Us >>::type... >; };
+
+public:
+    using type = pusher< ExprT >::type;
+};
+
+namespace test {
+
+using compf = constant< bool, false >;
+using compt = constant< bool, true >;
+using comp0 = Compliment< constant< bool, false >>;
+using comp1 = Compliment< comp0 >;
+using comp2 = Compliment< Disjunction< compf, compt >>;
+using comp3 = Compliment< Conjunction< compf, compt >>;
+
+static_assert( is_same_v< typename PushCompliments< comp0 >::type, compt > );
+static_assert( is_same_v< typename PushCompliments< comp1 >::type, compf > );
+static_assert( is_same_v< typename PushCompliments< comp2 >::type, 
+    Conjunction< compt, compf >> );
+static_assert( is_same_v< typename PushCompliments< comp3 >::type, 
+    Disjunction< compt, compf >> );
+} // namespace test
+
+// template< typename ExprT >
+// struct DistributeConjunctions {
+// protected:
+//     template< typename ConjT, typename Seq >
+//     struct helper;
+
+//     template< typename... Os, typename... As, size_t... Is >
+//     struct helper< Conjunction< Disjunction< Os... >, As... >, seq< Is... >>
+//     { using type = Disjunction< typename distributor< 
+//         Conjunction< Os...[Is], As... >>::type... >; };
+
+
+//     template< typename U >
+//     struct commutator
+//     { using type = U; };
+
+//     template< typename... As, typename... Bs >
+//     struct commutator< Conjunction< Conjunction< As... >, Bs... >>
+//     { using type = commutator< Conjunction< As..., Bs... >>::type; };
+
+//     template< typename A, typename... As >
+//     struct commutator< Conjunction< A, As... >>
+//     { using type = commutator< Conjunction< A, 
+//         commutator< Conjunction<  As..., Bs... >>::type; };
+
+//     template< typename... As, typename... Bs >
+//     struct commutator< Disjunction< Disjunction< As... >, Bs... >>
+//     { using type = commutator< Disjunction< As..., Bs... >>::type; };
+
+//     template< typename U >
+//     struct distributor
+//     { using type = U; };
+
+
+//     /// (( O or Os... ) and As... )
+//     /// (( O and As... ) or ( Os...[0] and As... ) or ( Os...[1] and As... ) or ... )
+//     ///
+//     template< typename... Os, typename... As >
+//     struct distributor< Conjunction< Disjunction< Os... >, As... >>
+//     { using type = helper< Conjunction< Disjunction< Os... >, As... >, 
+//         make_seq< sizeof...( Os ) >>::type; };
+
+//     template< typename A, typename... As >
+//     struct distributor< Conjunction< A, As... >>
+//     { using type = commutator< Conjunction< A, 
+//         typename distributor< Conjunction< As... >::type >::type; };
+
+// public:
+//     using type = distributor< ExprT >::type;
+// };
+
+// namespace test {
+
+// using stat = StaticValue< bool >;
+
+// using conj0 = Conjunction< stat, stat >;
+// using conj1 = Conjunction< Disjunction< stat, compt >, compf >;
+// using conj2 = Conjunction< compf, Disjunction< stat, compt >>;
+
+// static_assert( is_same_v< typename DistributeConjunctions< conj0 >::type, conj0 > );
+// static_assert( is_same_v< typename DistributeConjunctions< conj1 >::type, 
+//     Disjunction< Conjunction< stat, compf >, Conjunction< compt, compf >>> );
+// // static_assert( is_same_v< typename DistributeConjunctions< conj2 >::type, 
+// //     Disjunction< Conjunction< compf, stat >, Conjunction< compf, compt >>> );
+
+// } // namespace test
+
+namespace test {
+    using stat = StaticValue< bool >;
+} // namespace test
+
+/// @brief converts the boolean logic expression into disjunctive normal form
+/// @tparam ExprT 
+namespace canonical {
+    // replace parameter packs with binary operations
+    template< typename A >
+    struct preprocess
+    { using type = A; };
+
+    template< typename A >
+    struct preprocess< Negation< A >>
+    { using type = Negation< typename preprocess< A >::type >; };
+
+    template< typename A, typename B >
+    struct preprocess< Conjunction< A, B >>
+    { using type = Conjunction< typename preprocess< A >::type, 
+        typename preprocess< B >::type >; };
+
+    template< typename A, typename B >
+    struct preprocess< Disjunction< A, B >>
+    { using type = Disjunction< typename preprocess< A >::type, 
+        typename preprocess< B >::type >; };
+
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ))
+    struct preprocess< Conjunction< First, Rest... >>
+    { using type = Conjunction< typename preprocess< First >::type, 
+        typename preprocess< Conjunction< Rest... >>::type >; };
+
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ))
+    struct preprocess< Disjunction< First, Rest... >>
+    { using type = Disjunction< typename preprocess< First >::type, 
+        typename preprocess< Disjunction< Rest... >>::type >; };
+
+    // tests to make sure preprocessor is working right
+    static_assert( is_same_v< Conjunction< test::stat, Conjunction< test::stat, test::stat >>,
+        typename preprocess< Conjunction< test::stat, test::stat, test::stat >>::type > );
+
+    // using preprocessed_type = preprocess< ExprT >::type;
+
+    // demorgans laws and double negatives
+    template< typename A >
+    struct dem
+    { using type = A; };
+
+    template< typename A >
+    struct dem< Compliment< Compliment< A >>>
+    { using type = dem< A >::type; };
+
+    template< typename A, typename B >
+    struct dem< Compliment< Disjunction< A, B >>>
+    { using type = Conjunction< typename dem< Compliment< A >>::type, 
+        typename dem< Compliment< B >>::type >; };
+
+    template< typename A, typename B >
+    struct dem< Compliment< Conjunction< A, B >>>
+    { using type = Disjunction< typename dem< Compliment< A >>::type, 
+        typename dem< Compliment< B >>::type >; };
+
+    // using demorgans_type = dem< preprocessed_type >::type;
+
+    // testing demorgans laws
+    // ~(A & B) == ~A | ~B
+    static_assert( is_same_v< Disjunction< Compliment< test::stat >, Compliment< test::stat >>,
+        typename dem< Compliment< Conjunction< test::stat, test::stat >>>::type > );
+
+    // ~(A | B) == ~A & ~B
+    static_assert( is_same_v< Conjunction< Compliment< test::stat >, Compliment< test::stat >>,
+        typename dem< Compliment< Disjunction< test::stat, test::stat >>>::type > );
+
+    // ~(A & ~B) == ~A | B
+    static_assert( is_same_v< Disjunction< Compliment< test::stat >, test::stat >,
+        typename dem< Compliment< Conjunction< test::stat, Compliment< test::stat >>>>::type > );
+
+
+    // distribution
+    template< typename A >
+    struct dist
+    { using type = A; };
+
+    template< typename A, typename B, typename C >
+    struct dist< Conjunction< Disjunction< A, B >, C >>
+    { using type = Disjunction< typename dist< Conjunction< A, C >>::type, 
+        typename dist< Conjunction< B, C >>::type >; };
+
+    template< typename A, typename B, typename C >
+    struct dist< Conjunction< A, Disjunction< B, C >>>
+    { using type = Disjunction< typename dist< Conjunction< A, B >>::type, 
+        typename dist< Conjunction< A, C >>::type >; };
+
+    template< typename A, typename B, typename C, typename D >
+    struct dist< Conjunction< Disjunction< A, B >, Disjunction< C, D >>>
+    { using type = Disjunction< 
+        Disjunction< 
+            typename dist< Conjunction< A, C >>::type, 
+            typename dist< Conjunction< A, D >>::type>,
+        Disjunction<
+            typename dist< Conjunction< B, C >>::type, 
+            typename dist< Conjunction< B, D >>::type>>; };
+
+    // using distributed_type = dist< demorgans_type >::type;
+
+    // postprocess by bringing all conjunctions and disjunctions back to 
+    // parameter packs
+    
+    // our final structure will be 
+    // Disjunction< Conjunction< Negation<A>... >... >
+    template< typename T >
+    struct rotate_right
+    { using type = T; };
+    
+    template< typename A, typename B, typename C >
+    struct rotate_right< Disjunction< Disjunction< A, B >, C >>
+    { using type = rotate_right< Disjunction< 
+        typename rotate_right< A >::type, 
+        typename rotate_right< Disjunction< B, C >>::type >::type; };
+
+
+} // namespace canonical
+
+/// @brief compliment of a compliment is the original expression
+/// @tparam ExprT 
+template< typename ExprT >
+requires( IsCanonicalTerminus< ExprT >::value )
+struct CanonicalExpression< Compliment< Compliment< ExprT >>>
+{ using type = CanonicalExpression< ExprT >::type; };
+
+
+/////////////
+/// Operators
+///
 
 // negation
 template< expression T >
@@ -832,11 +1367,24 @@ constexpr auto operator==( tuple< Ts... > const& left,
     tuple< Us... > const& right )
 { return tuple_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
+template< typename... Ts, typename... Us >
+requires( sizeof...( Ts ) == sizeof...( Us ) and 
+    (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( tuple< Ts... > const& left, 
+    tuple< Us... > const& right )
+{ return not tuple_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
 template< typename ShapeT, typename... Ts, typename... Us >
 requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
 constexpr auto operator==( Tensor< ShapeT, Ts... > const& left,
     Tensor< ShapeT, Us... > const& right )
 { return tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+template< typename ShapeT, typename... Ts, typename... Us >
+requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( Tensor< ShapeT, Ts... > const& left,
+    Tensor< ShapeT, Us... > const& right )
+{ return not tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
 
 // logical operations
 template< expression T, expression U >
@@ -853,6 +1401,23 @@ requires( not expression< T > )
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< StaticValue< T >, U >{ static_expr( left ), right }; }
 
+template< expression T, expression U >
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< T, U >{ left, right }; }
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< T, StaticValue< U >>{ left, static_expr( right )}; }
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator or( T const& left, U const& right )
+{ return Disjunction< StaticValue< T >, U >{ static_expr( left ), right }; }
+
+template< expression T >
+constexpr auto operator not( T const& arg )
+{ return Compliment< T >{ arg }; }
 
 template< size_t I, typename T >
 struct Differential
@@ -978,10 +1543,6 @@ struct Jacobian
     tuple< Diffs... > diffs;
 };
 
-/// @brief type-erased expression container
-/// @tparam result_type 
-template< typename result_type >
-struct Expression;
 
 } // namespace expressions
 
@@ -995,9 +1556,14 @@ constexpr auto sqrt( ExprT const& expr )
 
 namespace expressions {
 
-/**
- * Solvers
- */
+///////////
+/// Solvers
+///
+
+/// @brief trait to list the combination of 
+/// @tparam ExprT 
+template< typename ExprT >
+struct BooleanSatisfaction;
 
 struct MaximumIterations: optional< size_t >
 { 
@@ -1252,7 +1818,7 @@ struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}and{})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}and{})", expr.template arg<0>(), expr.template arg<1>() );
         return formatter< std::string >::format( str, ctx );
     }
 };
