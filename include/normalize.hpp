@@ -2,18 +2,23 @@
 #define __NORMALIZE_HPP__
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Expression Normalization Library                                         
+/// Expression Normalization Library                                        ///
+//////////////////////////////////////////////////////////////////////////////
 /// 
 /// Notes:
 /// * A parameter to the associative disjunctive/additive operation is a "Term"
 /// * A parameter to the associative and distriutive conjunctive/multipicative 
 ///   operation is an "Element"
 ///
-/// example:
+/// Example Expression:
 /// (a + b)*(c + de + f)*g*(h+i)
 /// acgh+acgi + adegh+adegi + afgh+afgi +
 /// bcgh+bcgi + bdegh+bdegi + bfgh+bfgi
 /// 
+/// References:
+/// * Disjunctive Normal Form 
+///   [https://en.wikipedia.org/wiki/Disjunctive_normal_form]
+///
 
 #include "utility.hpp"
 
@@ -24,11 +29,11 @@ namespace normalization {
 /// and associative properties.  Three lazily evaluated operations are passed as 
 /// template-template parameters that define tuple-like types.
 /// TODO: document type restrictions (constructor reqs, etc)
-/// @tparam SumOf represents a lazily evaluated, associative operation
-/// @tparam ProductOf represents a lazily evaluated, associative operation that 
-/// distributes over SumOf
-/// @tparam ComplimentOf represents a lazily evaluated unary operation that
-/// follows De Morgan's Laws (https://en.wikipedia.org/wiki/De_Morgan%27s_laws)
+/// @tparam SumOf lazily evaluated, associative operation
+/// @tparam ProductOf lazily evaluated, associative operation that distributes 
+/// over SumOf
+/// @tparam ComplimentOf lazily evaluated unary operation that follows 
+/// De Morgan's Laws (https://en.wikipedia.org/wiki/De_Morgan%27s_laws)
 /// @tparam T the type of the expression to be normalized
 /// 
 /// Converts T to the equivilent of disjunctive normal form.  In other words,
@@ -66,8 +71,11 @@ template< template< typename... > class SumOf,
 constexpr normalized_t< SumOf, ProductOf, ComplimentOf, T > normalize( T expr )
 { return Normalizer< SumOf, ProductOf, ComplimentOf, T >::value( expr ); }
 
-////////////////////
-/// Idempotent Case
+////////////////////////
+/// Idempotent Case ///
+//////////////////////
+/// 
+/// Specialization for leaves of a normalized expression.
 ///
 /// @brief default/leaf case for the normalizer.  Also exemplifies the required
 /// static values and aliases for a normalizer
@@ -114,9 +122,10 @@ public:
     { return expr; }
 };
 
-//////////////////////////
-/// Associative Outer Case
-/// 
+///////////////////////////////
+/// Associative Outer Case ///
+/////////////////////////////
+///
 /// @brief Normalizer specialization for disjunctions/summations.
 template< template< typename... > class SumOf,
           template< typename... > class ProductOf,
@@ -258,8 +267,9 @@ public:
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
-///////////////////////////////////////////
-/// Associative and Distributive Inner Case
+////////////////////////////////////////////////
+/// Associative and Distributive Inner Case ///
+//////////////////////////////////////////////
 /// 
 /// @brief Normalizer specialization for conjunctions/products
 template< template< typename... > class SumOf,
@@ -419,10 +429,11 @@ public:
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
 
-/////////////////////
-/// Double Compliment
+//////////////////////////
+/// Double Compliment ///
+////////////////////////
 ///
-/// @brief De Morgan's Law of conjunctions
+/// @brief Compliments eliminate compliments
 template< template< typename... > class SumOf, 
           template< typename... > class ProductOf, 
           template< typename > class ComplimentOf, 
@@ -466,9 +477,10 @@ public:
     { return reference_normalizer::value( reference_value( expr )); }
 };
 
-////////////////////
-/// De Morgan's Laws
-/// 
+/////////////////////////
+/// De Morgan's Laws ///
+///////////////////////
+///
 /// @brief De Morgan's Law of disjunctions
 template< template< typename... > class SumOf, 
           template< typename... > class ProductOf, 
