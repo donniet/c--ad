@@ -1,28 +1,31 @@
 # C++ad 
 
-Geometry expression library built on top of C++. 
+Library for rigorous expression of physical objects using unintrusive syntax
+and leveraging only the minimual international standards.  
+
+Currently the only dependencies are a modern C++26 compiler and CMake
 
 ## Goals
 
-### Expressability
+### 1. Expressability
 Rigorous expression of quantifiable physical systems. Code in this library must be spare of extraneous logic and implement only what is required by the goals listed here.
 
-### Validation
+### 2. Validation
 Descriptive validation of physical expressions
 
-### Interopability
+### 3. Interopability
 Simple generation of models for external tools, applications, and libraries.  Direct interopability for common physics and graphics libraries like OpenGL.
 
-### Linking
+### 4. Linking
 Simple linking of library capabilities to external applications and libraries
 
-### Dependencies
+### 5. Dependencies
 Minimal build and run dependencies.  Building and linking must use common C++ tooling such as CMake and Make. Should be buildable with common, open-source, C++ compilers including clang++ and g++.
 
-### Simplicity
+### 6. Simplicity
 Semantics of geometric and physical expressions and constraints accessible to novice C++ programmers
 
-### Componentization
+### 7. Componentization
 Components should be loosely interdependent allowing for "copy-paste" re-use of individual components where possible.
 
 ## Components

@@ -5,6 +5,13 @@
 /// Expression Normalization Library                                        ///
 //////////////////////////////////////////////////////////////////////////////
 /// 
+/// Rewrites a lazily evaluated expression in a canonical form.  This enables
+/// evaluation, truth-table generation, and solvers on generic expressions 
+/// with little additional burden on the programmer, and without compromising
+/// the lazy evaluation by manipulating the expression as it is being described
+/// by the programmer (see Goals "1: Expressibility," "2: Validation", and 
+/// "6: Simplicity")
+///
 /// Notes:
 /// * A parameter to the associative disjunctive/additive operation is a "Term"
 /// * A parameter to the associative and distriutive conjunctive/multipicative 
@@ -41,14 +48,30 @@ namespace normalization {
 ///
 ///     SumOf< ProductOf< [ ComplimentOf< Ts > | Ts ]... >... >
 ///
-/// NOTE: SumOf and ProductOf will be elided(?) and not appear nary operation. 
-/// meaning the following structures may also describe the resulting type:
+/// This is done by encoding propositional logic equivilance rules, such as
+/// De Morgan's Laws, into the templating system.  The following rules are 
+/// encoded by this normalizer:
+/// 
+/// * Law of the Excluded Middle (elimination of double-compliments/negation)
+/// * Associative Law (nested SumOf and ProductOf operations are enumerated into
+///   a single operation)
+/// * Distributive Law for Conjunctions/Products (ProductOf distributes over 
+///   SumOf)
+/// * De Morgan's Laws (Compliment/Negations distribute over both SumOf and 
+///   ProductOf operations)
+///
+/// The resulting normalized expressions evaluate exactly as the input 
+/// expressions so long as the laws above are valid for the template-template
+/// parameters.
+///
+/// NOTE: SumOf and ProductOf are elided(?) and not appear as a unary operation. 
+/// This means the following structures may also describe the resulting type:
 ///
 ///     ProductOf< [ ComplimentOf< Ts > | Ts ]... >
 ///     SumOf< [ ComplimentOf< Ts > | Ts ]... >
 ///     [ ComplimentOf< T > | T ]
 ///     T
-/// 
+///
 template< template< typename... > class SumOf,      // associative, n-ary
           template< typename... > class ProductOf,  // associative, n-ary and
                                                     // distributes over SumOf
