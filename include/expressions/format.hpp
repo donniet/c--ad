@@ -22,14 +22,14 @@ struct formatter< expressions::StaticValue< ExprT >, char >:
     { return formatter< ExprT >::format( (ExprT)expr, ctx ); }
 };
 
-template< typename T, T Value >
-struct formatter< expressions::Constant< T, Value >, char >: 
-    formatter< T >
+template< auto Value >
+struct formatter< expressions::Constant< Value >, char >: 
+    formatter< decltype( Value )>
 {
     template< typename FormatContext >
-    FormatContext::iterator format( expressions::Constant< T, Value > expr, 
+    FormatContext::iterator format( expressions::Constant< Value > expr, 
         FormatContext& ctx ) const
-    { return formatter< T >::format( Value, ctx ); }
+    { return formatter< decltype( Value )>::format( Value, ctx ); }
 };
 
 template< size_t I, typename T >

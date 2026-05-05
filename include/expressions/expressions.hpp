@@ -34,11 +34,18 @@ struct ExpressionTag
     // result_type eval() const ...
 };
 
+/// @brief expressions which require iterative 
+struct Iterative: ExpressionTag
+{ };
+
+template< typename T >
+constexpr bool is_iterative_v = std::is_base_of_v< Iterative, T >;
+
 /// @brief trait to identify a type as an expression type
 /// @tparam T is the type to be checked
 template< typename T >
-struct is_expression
-{ static constexpr bool value = std::is_base_of_v< ExpressionTag, T >; };
+struct is_expression: integral_constant< size_t, 
+    std::is_base_of_v< ExpressionTag, T >> { };
 
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
@@ -93,6 +100,8 @@ struct Variable: ExpressionTag
     string _name;
 };
 
+/// @brief container for variable values
+/// @tparam ...Vars are the variables in this scope
 template< typename... Vars >
 struct Scope
 { 
@@ -415,29 +424,29 @@ StaticValue< T > static_expr( T const& value )
 /// @tparam T the type of the constant
 /// @tparam Value of the constant
 ///
-template< typename T, T Value >
+template< auto Value >
 struct Constant : ExpressionTag
 {
-    using value_type = T;
+    using value_type = std::remove_cv_t< decltype( Value )>;
     using result_type = value_type;
 
-    static constexpr T value = Value;
+    static constexpr value_type value = Value;
 
-    constexpr operator T() const
+    constexpr operator value_type() const
     { return value; }
 
     consteval result_type eval( ) const
     { return value; }
 };
 
-template< typename T, T Value >
-using constant = Constant< T, Value >;
+template< auto Value >
+using constant = Constant< Value >;
 
 // NOTE: not sure about the constants
-constexpr constant< long double, 0.l > constant_zero = constant< long double, 0.l >{};
-constexpr constant< long double, 1.l > constant_one = constant< long double, 1.l >{};
-constexpr constant< bool, true > constant_true = constant< bool, true >{};
-constexpr constant< bool, false > constant_false = constant< bool, false >{};
+constexpr constant< 0.l > constant_zero = constant< 0.l >{};
+constexpr constant< 1.l > constant_one = constant< 1.l >{};
+constexpr constant< true > constant_true = constant< true >{};
+constexpr constant< false > constant_false = constant< false >{};
 
 namespace details {
 
@@ -456,8 +465,8 @@ template< typename T >
 struct DependentVariableIDs< StaticValue< T >>
 { using type = seq< >; };
 
-template< typename T, T Value >
-struct DependentVariableIDs< Constant< T, Value >>
+template< auto Value >
+struct DependentVariableIDs< Constant< Value >>
 { using type = seq< >; };
 
 template< typename ExprT >
@@ -528,8 +537,8 @@ template< size_t I, typename T >
 struct VariableType< I, StaticValue< T >>
 { using type = void; };
 
-template< size_t I, typename T, T Value >
-struct VariableType< I, Constant< T, Value >>
+template< size_t I, auto Value >
+struct VariableType< I, Constant< Value >>
 { using type = void; };
 
 template< typename ExprT >
@@ -1046,7 +1055,7 @@ constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
 ///
 
 template< typename ExprT >
-struct Minimum 
+struct Minimum: Iterative 
 {
     using expression_type = ExprT;
     using argument_types = tuple< expression_type >;
@@ -1061,7 +1070,7 @@ struct Minimum
 };
 
 template< typename ExprT >
-struct ArgumentMinimum
+struct ArgumentMinimum: Iterative
 {
     using expression_type = ExprT;
     using argument_types = tuple< expression_type >;
@@ -1292,19 +1301,22 @@ struct Differential
     // derivative of a static value is 0
     template< typename U >
     auto operator()( StaticValue< U > const& expr )
-    { return Constant< decltype( U{} / T{} ), 
-        static_cast< decltype( U{} / T{} ) >( 0 ) >{}; }
+    { 
+        using result_type = decltype( U{} / T{} );
+        return Constant< static_cast< result_type >( 0 ) >{}; 
+    }
 
     // derivative of a constant is 0
-    template< typename U, U Value >
-    auto operator()( Constant< U, Value > const& expr )
-    { return Constant< decltype( U{} / T{} ), 
-        static_cast< decltype( U{} / T{} ) >( 0 ) >{}; }
+    template< auto Value >
+    auto operator()( Constant< Value > const& expr )
+    { 
+        using result_type = decltype( typename Constant< Value >::result_type{} / T{} );
+        return Constant< static_cast< result_type >( 0 )>{}; 
+    }
 
     template< size_t J, typename U >
     auto operator()( Variable< J, U > const& expr )
-    { return Constant< decltype( U{} / T{} ), 
-        static_cast< decltype( U{} / T{} ) >( I == J ? 1 : 0 )>{ }; }
+    { return Constant< static_cast< decltype( U{} / T{} ) >( I == J ? 1 : 0 )>{ }; }
 
     template< typename U >
     auto operator()( Negation< U > const& expr )
@@ -1331,15 +1343,19 @@ struct Differential
 
     template< typename U >
     auto operator()( SquareRoot< U > const& expr )
-    { return Constant< decltype( result_t< U >{} / result_t< U >{} ), 
-        static_cast< decltype( result_t< U >{} / result_t< U >{} ) >( 0.5 ) >{} / 
-            expr * (*this)( expr.arg() ); }
+    { 
+        using result_type = decltype( result_t< U >{} / result_t< U >{} );
+        return Constant< static_cast< result_type >( 0.5 ) >{} / 
+            expr * (*this)( expr.arg() ); 
+    }
 
     template< int Exp, typename U >
     auto operator()( Power< Exp, U > const& expr )
-    { return Constant< decltype( result_t< U >{} / result_t< U >{} ), 
-        static_cast< decltype( result_t< U >{} / result_t< U >{} ) >( Exp ) >{} * 
-            pow< Exp-1 >( expr.arg() ) * (*this)( expr.arg() ); }
+    { 
+        using result_type = decltype( result_t< U >{} / result_t< U >{} );
+        return Constant<  static_cast< result_type >( Exp ) >{} * 
+            pow< Exp-1 >( expr.arg() ) * (*this)( expr.arg() ); 
+    }
 
     template< typename U >
     auto operator()( Sine< U > const& expr )
