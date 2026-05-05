@@ -29,13 +29,13 @@ Semantics of geometric and physical expressions and constraints accessible to no
 Components should be loosely interdependent allowing for "copy-paste" re-use of individual components where possible.
 
 ## Components
-This project is a loosely inter-dependent components
+C++ad is made from loosely-dependent component libraries.
 
 ### Units
 Header-only C++ library for type-safe physical units such as length, time and mass. Arithmetic operations on unit types validate expressions automatically, and convert unit types simuntaneous with unit values. 
 
 ```
-auto kinetic_energy( Mass m, Velocity v )
+Energy kinetic( Mass m, Velocity v )
 { return m * pow<2>( v ) / 2; };
 
 // ERROR: cannot add unit values of different types

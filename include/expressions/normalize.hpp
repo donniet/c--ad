@@ -79,6 +79,7 @@ template< template< typename... > class SumOf,      // associative, n-ary
           typename T >
 class Normalizer;
 
+
 /// @brief helper alias to identify a normalizer using the given type
 template< template< typename... > class SumOf,      
           template< typename... > class ProductOf, 

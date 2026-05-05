@@ -706,6 +706,53 @@ template< typename RetT, typename TupleT, size_t... Is >
 RetT tuple_rest_helper( TupleT const& tup, seq< Is... > )
 { return { get< 1 + Is >( tup )... }; }
 
+template< typename T, typename TupleT >
+struct IsTupleElement;
+
+template< typename T, typename... Ts >
+struct IsTupleElement< T, tuple< Ts... >>:
+    integral_constant< bool, ( is_same_v< T, Ts > or ... )> { };
+
+template< typename T, typename TupleT, size_t Start = 0 >
+struct TupleIndex;
+
+template< typename T, size_t Start >
+struct TupleIndex< T, tuple<>, Start >: integral_constant< size_t, Start > { };
+
+template< typename T, typename First, typename... Rest, size_t Start >
+requires( is_same_v< T, First > ) 
+struct TupleIndex< T, tuple< First, Rest... >, Start >: 
+    integral_constant< size_t, Start > { };
+
+template< typename T, typename First, typename... Rest, size_t Start >
+requires( not is_same_v< T, First > )
+struct TupleIndex< T, tuple< First, Rest... >, Start >:
+    TupleIndex< T, tuple< Rest... >, Start + 1 > { };
+
+template< typename T, typename TupleT >
+constexpr size_t tuple_index_v = TupleIndex< T, TupleT, 0 >::value;
+
+template< typename TupleT, typename... Us >
+struct IsTupleMadeFrom;
+
+template< >
+struct IsTupleMadeFrom< tuple<> >: integral_constant< bool, true > { };
+
+template< typename TupleT, typename... Us >
+requires(( not IsTupleElement< Us, TupleT >::value or ... ))
+struct IsTupleMadeFrom< TupleT, Us... >: integral_constant< bool, false > { };
+
+template< typename... Ts, typename First, typename... Rest >
+requires( IsTupleElement< First, tuple< Ts... >>::value and
+    ( IsTupleElement< Rest, tuple< Ts... >>::value and ... ))
+struct IsTupleMadeFrom< tuple< Ts... >, First, Rest... >:
+    IsTupleMadeFrom< remove_nth_t< tuple_index_v< First, tuple< Ts... >>, 
+        tuple< Ts... >>, Rest... > 
+{ };
+
+template< typename TupleT, typename... Ts >
+constexpr bool is_tuple_made_from_v = IsTupleMadeFrom< TupleT, Ts... >::value;
+
 } // namespace detail
 
 /// @brief returns the first element of a tuple
@@ -745,6 +792,18 @@ constexpr auto remove_nth( std::tuple< Ts... > const& tup )
 template< typename First, typename... Rest >
 constexpr std::tuple< Rest... > remove_first( std::tuple< First, Rest... > const& tup )
 { return remove_nth< 0 >( tup ); }
+
+template< typename T, typename TupleT >
+constexpr bool is_tuple_element = detail::IsTupleElement< T, TupleT >::value;
+
+template< typename TupleT >
+struct IsTuple: integral_constant< bool, false > {};
+
+template< typename... Ts >
+struct IsTuple< tuple< Ts... >>: integral_constant< bool, true > {};
+
+template< typename TupleT >
+constexpr bool is_tuple_v = IsTuple< TupleT >::value;
 
 ////////////////////////////
 /// runtime access to tuples

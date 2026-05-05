@@ -7,7 +7,7 @@
 #include <cassert>
 #include <array>
 
-#include "normalize.hpp"
+#include "expressions/normalize.hpp"
 
 using namespace expressions::normalization;
 
@@ -159,7 +159,8 @@ int main( int ac, char* av[] )
     constexpr auto bn = normalize< Or, And, Not >( b );
     static_assert( b and (bool)bn == (bool)b );
     static_assert( is_same_v< std::remove_cvref_t< decltype( bn ) >, 
-        Or< And< Not< bool >, Not< bool >>, And< Not< bool >, Not< bool >>> > );
+        Or< And< Not< bool >, Not< bool >>, 
+            And< Not< bool >, Not< bool >>> > );
 
 
 

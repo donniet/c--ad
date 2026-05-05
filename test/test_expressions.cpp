@@ -1,6 +1,8 @@
 
 #include "units.hpp"
-#include "expressions.hpp"
+#include "expressions/expressions.hpp"
+#include "expressions/solvers.hpp"
+#include "expressions/format.hpp"
 
 #include <print>
 #include <format>

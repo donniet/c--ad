@@ -1,5 +1,5 @@
-#ifndef __EXPRESSIONS_HPP__
-#define __EXPRESSIONS_HPP__
+#ifndef __EXPRESSIONS_EXPRESSIONS_HPP__
+#define __EXPRESSIONS_EXPRESSIONS_HPP__
 
 #include "tensors.hpp"
 #include "utility.hpp"
@@ -13,10 +13,6 @@
 #include <typeinfo>
 #include <set>
 #include <optional>
-
-#ifndef NO_EXPRESSION_PRINTING
-#include <format>
-#endif
 
 // #include <string_view>
 
@@ -52,6 +48,9 @@ static constexpr bool is_expression_v = is_expression< T >::value;
 
 template< typename T >
 concept expression = is_expression_v< T >;
+
+template< size_t I, typename T >
+struct Variable;
 
 /// @brief a placeholder in an expression whose value can change
 /// @tparam I is the index in the declared variables to this variable
@@ -94,6 +93,23 @@ struct Variable: ExpressionTag
     string _name;
 };
 
+template< typename... Vars >
+struct Scope
+{ 
+    static constexpr size_t size = sizeof...( Vars );
+    using variables_type = tuple< Vars... >;
+
+    template< size_t... Is >
+    constexpr variables_type variables_helper( seq< Is... > )
+    { return {{ &std::get< Is >( _values ), _names[ Is ] }... }; }
+
+    constexpr variables_type variables() 
+    { return variables_helper( make_seq< size >{} ); }
+
+    tuple< typename Vars::result_type... > _values;
+    std::array< string, size > _names;
+};
+
 namespace details {
 
 } // namespace details
@@ -102,7 +118,7 @@ namespace details {
 
 template< size_t... Is >
 array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
-{ return { ( string( "var ") + std::to_string( Is ))... }; }
+{ return {( string( "var ") + std::to_string( Is ))... }; }
 
 /// @brief the declaration of a variable in a delcare_variables function
 /// @tparam T the type of the variable
@@ -223,50 +239,103 @@ namespace detail {
 /// @brief evaluates a type T
 /// @tparam T the type to be evaluated
 ///
-template< typename T >
+template< typename T, typename... Params >
 struct Evaluator;
+
+template< typename... Params >
+struct EvaluationParameters: tuple< Params... > { };
+
+template< typename U, typename T, typename... Params >
+Evaluator< U, Params... > cast_evaluator( Evaluator< T, Params... > const& evaluator )
+{
+    static constexpr auto cast_helper = [&evaluator]< size_t... Is >( seq< Is... > )
+    { return Evaluator< U, Params... >{ std::get< Is >( evaluator )... }; };
+
+    return cast_helper( make_seq< sizeof...( Params )>{} );
+}
+
+template< typename U, typename... Params >
+Evaluator< U, Params... > make_evaluator( EvaluationParameters< Params... > const& params )
+{ 
+    static auto helper = [&params]< size_t... Is >( seq< Is... > ) constexpr
+    { return Evaluator< U, Params... >{ get< Is >( params )... }; };
+
+    return helper( make_seq< sizeof...( Params )>{} );
+}
 
 /// @brief evaluator for expressions of type T
 /// @tparam T the type of the expression
 ///
-template< typename T >
+template< typename T, typename... Params >
 requires( is_expression_v< T > )
-struct Evaluator< T >
+struct Evaluator< T, Params... >: EvaluationParameters< Params... >
 { 
     using result_type = T::result_type;
-
-    constexpr static result_type evaluate( T const& expr )
-    { return expr.eval( ); }
-};
-
-template< shape S, typename... Ts >
-struct Evaluator< Tensor< S, Ts... >>
-{ 
-    using result_type = Tensor< S, typename Evaluator< Ts >::result_type... >;
+    static constexpr size_t param_size = sizeof...( Params );
 
     template< size_t... Is >
-    static constexpr result_type evaluate_helper( Tensor< S, Ts... > const& value, 
-        seq< Is... > )
-    { return { Evaluator< tensor_element_t< Is, Tensor< S, Ts... >>>::evaluate( 
-        tensor_get< Is >( value ))... }; }
+    constexpr result_type evaluate_helper( T const& expr, seq< Is... > ) const
+    { return expr.eval( std::get< Is >( *this )... ); }
 
-    // always return the value itselv
-    static constexpr result_type evaluate( Tensor< S, Ts... > const& value )
+    constexpr result_type operator ()( T const& expr ) const
+    { return evaluate_helper( expr, make_seq< param_size >{} ); }
+};
+
+template< typename... Ts, typename... Params >
+struct Evaluator< tuple< Ts... >, Params... >: EvaluationParameters< Params... >
+{
+    using result_type = tuple< typename Evaluator< Ts, Params... >::result_type... >;
+    using tuple_type = tuple< Ts... >;
+
+    template< size_t I >
+    struct TupleElementEvaluator
+    {
+        static constexpr typename Evaluator< Ts...[ I ], Params... >::result_type 
+        eval( tuple_type const& tup, EvaluationParameters< Params... > const& params )
+        { return make_evaluator< Ts...[ I ]>( params )( std::get< I >( tup )); }
+    };
+
+    template< size_t... Is >
+    constexpr result_type evaluate_helper( tuple_type const& tup, seq< Is... > ) const
+    { return { TupleElementEvaluator< Is >::eval( tup, *this )... }; }
+};
+
+template< shape S, typename... Ts, typename... Params >
+struct Evaluator< Tensor< S, Ts... >, Params... >: EvaluationParameters< Params... >
+{ 
+    using result_type = Tensor< S, typename Evaluator< Ts >::result_type... >;
+    using tensor_type = Tensor< S, Ts... >;
+
+    template< size_t I >
+    struct TensorElementEvaluator
+    { 
+        static constexpr typename Evaluator< Ts...[ I ], Params... >::result_type 
+        eval( tensor_type const& ten, EvaluationParameters< Params... > const& params )
+        { return make_evaluator< Ts...[ I ]>( params )( tensor_get< I >( ten )); }
+    };
+
+    template< size_t... Is >
+    constexpr result_type evaluate_helper( Tensor< S, Ts... > const& ten, 
+        seq< Is... > ) const
+    { return { TensorElementEvaluator< Is >::eval( ten, *this )... }; }
+
+    // always return the value itself
+    constexpr result_type operator ()( Tensor< S, Ts... > const& value ) const
     { return evaluate_helper( value, make_seq< Tensor< S, Ts... >::size() >{} ); }
 };
 
 /// @brief evaluator for non-expression types
 /// @tparam T the type of the non-expression
 ///
-template< typename T >
-requires( not is_expression_v< T > and not is_tensor_v< T > )
-struct Evaluator< T >
+template< typename T, typename... Params >
+requires( not is_expression_v< T > and not is_tensor_v< T > and not is_tuple_v< T > )
+struct Evaluator< T, Params... >: EvaluationParameters< Params... >
 { 
     using result_type = T;
 
-    // always return the value itselv
-    constexpr static T evaluate( T const& value )
-    { return value; }; 
+    // always return the value itself
+    constexpr result_type operator ()( T const& value ) const
+    { return value; };
 };
 
 } // namespace detail
@@ -283,9 +352,9 @@ using result_t = detail::Evaluator< T >::result_type;
 /// @param vars the values of variables in the expression
 /// @return the result of evaluating expression expr using values stored in vars
 ///
-template< typename T >
-constexpr result_t< T > eval( T const& expr )
-{ return detail::Evaluator< T >::evaluate( expr ); }
+template< typename T, typename... Params >
+constexpr result_t< T > eval( T const& expr, Params... params )
+{ return detail::Evaluator< T, Params... >{ params... }( expr ); }
 
 /// @brief trait to identify variables
 /// @tparam T the type to be tested
@@ -486,6 +555,10 @@ public:
 template< typename ExprT >
 using dependent_variables_t = details::DependentVariables< ExprT >::type;
 
+///////////////////
+/// Operations ///
+/////////////////
+///
 /// @brief negation expression
 /// @tparam T the negated type
 ///
@@ -968,6 +1041,48 @@ constexpr bool is_compliment_v = IsBooleanExpression< ExprT >::value;
 template< typename ExprT >
 constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
 
+///////////////
+/// Aggregates
+///
+
+template< typename ExprT >
+struct Minimum 
+{
+    using expression_type = ExprT;
+    using argument_types = tuple< expression_type >;
+    using result_type = result_t< ExprT >;
+
+    constexpr expression_type expr() const { return _expr; }
+
+    constexpr Minimum( expression_type expr ): _expr{ expr } { }
+    constexpr Minimum() = default;
+    
+    expression_type _expr;
+};
+
+template< typename ExprT >
+struct ArgumentMinimum
+{
+    using expression_type = ExprT;
+    using argument_types = tuple< expression_type >;
+    using variable_types = dependent_variables_t< ExprT >;
+
+    template< typename TupleT >
+    struct ResultHelper;
+
+    template< typename... Vars >
+    struct ResultHelper< tuple< Vars... >>
+    { using type = tuple< result_t< Vars >... >; };
+
+    using result_type = ResultHelper< variable_types >::type;
+
+    constexpr expression_type expr() const { return _expr; }
+
+    constexpr ArgumentMinimum( expression_type expr ): _expr{ expr } { }
+    constexpr ArgumentMinimum() = default;
+
+    expression_type _expr;
+};
 
 /////////////
 /// Operators
@@ -1161,6 +1276,14 @@ template< expression T >
 constexpr auto operator not( T const& arg )
 { return Compliment< T >{ arg }; }
 
+template< typename ExprT >
+constexpr auto min( ExprT const& expr )
+{ return Minimum< ExprT >{ expr }; }
+
+template< typename ExprT >
+constexpr auto argmin( ExprT const& expr )
+{ return ArgumentMinimum< ExprT >{ expr }; }
+
 template< size_t I, typename T >
 struct Differential
 {
@@ -1286,6 +1409,7 @@ struct Jacobian
 };
 
 
+
 } // namespace expressions
 
 namespace std {
@@ -1296,278 +1420,5 @@ constexpr auto sqrt( ExprT const& expr )
 
 } // namespace std 
 
-namespace expressions {
 
-///////////
-/// Solvers
-///
-
-/// @brief trait to list the combination of 
-/// @tparam ExprT 
-template< typename ExprT >
-struct BooleanSatisfaction;
-
-struct MaximumIterations: optional< size_t >
-{ 
-    constexpr MaximumIterations( value_type const& value ): 
-        optional< size_t >{ value } { }
-    constexpr MaximumIterations() = default;
-};
-
-// TODO: this requires a unit!
-struct LearningRate: optional< long double >
-{
-    constexpr LearningRate( value_type const& value ): 
-        optional< long double >{ value } { }
-    constexpr LearningRate() = default;
-};
-
-// TODO: this requires a unit!
-struct MinimumError: optional< long double >
-{
-    constexpr MinimumError( value_type const& value ): 
-        optional< long double >{ value } { }
-    constexpr MinimumError() = default;
-};
-
-constexpr MaximumIterations maximum_iterations = { 0 };
-constexpr LearningRate learning_rate = { 0.l };
-constexpr MinimumError minimum_error = { 0.l };
-
-template< typename... Parameters >
-struct Solver: tuple< Parameters... >
-{
-    template< typename T >
-    auto& operator []( T )
-    { return get< std::remove_const_t< T >>( *this ); }
-
-    template< typename T >
-    auto param( T, T::value_type def )
-    { 
-        if( auto p = get< std::remove_const_t< T >>( *this ); p )
-            return *p;
-        return def;
-    }
-};
-
-template< variable... Vars >
-struct GradientDescent: 
-    Solver< MaximumIterations, LearningRate, MinimumError >
-{
-    static constexpr size_t variables_size = sizeof...( Vars );
-    static constexpr size_t default_max_iterations = 100;
-    static constexpr long double default_learning_rate = 1e-3;
-    static constexpr long double default_minimum_error = 0;
-
-    template< size_t I >
-    auto& get_variable()
-    { return std::get< I >( _vars ); }
-
-    template< size_t... Is >
-    void initialize_variables( seq< Is... > ) 
-    { /* TODO: not sure what to do here yet */ }
-
-    template< size_t I, typename ErrorT, typename GradElementT >
-    auto descend_element( ErrorT err, GradElementT grad_n )
-    {
-        auto x = get_variable< I >();
-        auto r = param( learning_rate, default_learning_rate );
-        // TODO: check this math
-        // gradient unit will be err unit / var unit
-        // err * grad ~= err * err / var unit
-        // rate unit must therefore be var unit * var unit / err unit / err unit
-        // the learning rate must be in the same units
-
-        using rate_type = result_t< decltype( x * x / err / err ) >;
-        auto rate = static_cast< rate_type >( r );
-
-        return eval( x ) - rate * err * grad_n;
-    }
-
-    template< typename ErrorT, typename GradT, size_t... Is >
-    void descend( ErrorT err, GradT grad, seq< Is... > )
-    { (( get_variable< Is >() = descend_element< Is >( err, tensor_get< Is >( grad ))), ... ); }
-
-    template< size_t... Is >
-    auto get_gradient( seq< Is... > )
-    { return gradient( get_variable< Is >()... ); }
-
-    template< typename ExprT >
-    void operator ()( ExprT const& expr )
-    {
-        using result_type = result_t< ExprT >;
-        auto grad = get_gradient( make_seq< variables_size >{} );
-
-        auto iterations = param( maximum_iterations, default_max_iterations );
-        auto thresh = param( minimum_error, default_minimum_error );
-
-        // initialize variables...
-        initialize_variables( make_seq< variables_size >{} );
-
-        // calculate the gradient
-        auto g = grad( expr );
-
-        for( size_t step = 0; step < iterations; ++step )
-        {
-            auto err_n = eval( expr );
-            if( static_cast< long double >( err_n ) < thresh )
-                break;
-
-            auto g_n = eval( g );
-
-            descend( err_n, g_n, make_seq< variables_size >{} );
-        }
-    };
-
-    GradientDescent( Vars... vars ): _vars{ vars... } { }
-
-    tuple< Vars... > _vars;
-};
-
-template< variable... Vars >
-GradientDescent< Vars... > gradient_descent( Vars... vars )
-{ return { vars... }; }
-
-} // namespace expressions
-
-
-#ifndef NO_EXPRESSION_PRINTING
-
-namespace std {
-
-// template< size_t I, typename... Ts >
-// Ts...[I] get( expressions::Array< Ts... > const& arr )
-// { return get< I >( arr.values() ); }
-
-
-template< typename ExprT >
-struct formatter< expressions::StaticValue< ExprT >, char >: 
-    formatter< ExprT >
-{
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::StaticValue< ExprT > expr, 
-        FormatContext& ctx ) const
-    { return formatter< ExprT >::format( (ExprT)expr, ctx ); }
-};
-
-template< typename T, T Value >
-struct formatter< expressions::Constant< T, Value >, char >: 
-    formatter< T >
-{
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Constant< T, Value > expr, 
-        FormatContext& ctx ) const
-    { return formatter< T >::format( Value, ctx ); }
-};
-
-template< size_t I, typename T >
-struct formatter< expressions::Variable< I, T >, char >:
-    formatter< std::string >
-{
-    string format_string;
-
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Variable< I, T > expr, 
-        FormatContext& ctx ) const
-    { return formatter< std::string >::format( expr.name(), ctx ); }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Sum< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Sum< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}+{})", expr.left_arg(), expr.right_arg() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Product< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}*{})", expr.left_arg(), expr.right_arg() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Quotient< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Quotient< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}/{})", expr.numerator_arg(), expr.denominator_arg() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Difference< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Difference< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}-{})", expr.left_arg(), expr.right_arg() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-template< typename ExprT >
-struct formatter< expressions::Negation< ExprT >, char >:
-    formatter< ExprT >
-{
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Negation< ExprT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto i = ctx.out();
-        *i++ = '-';
-        ctx.advance_to(i);
-        return formatter< ExprT >::format( expr.arg(), ctx );
-    }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Equals< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Equals< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}=={})", expr.left_arg(), expr.right_arg() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-template< typename LeftT, typename RightT >
-struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
-    formatter< std::string >
-{   
-    template< typename FormatContext >
-    FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
-        FormatContext& ctx ) const
-    { 
-        auto str = std::format( "({}and{})", expr.template arg<0>(), expr.template arg<1>() );
-        return formatter< std::string >::format( str, ctx );
-    }
-};
-
-
-} // namespace std
-
-#endif
-
-#endif
+#endif // __EXPRESSIONS_EXPRESSIONS_HPP__
