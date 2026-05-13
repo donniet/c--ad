@@ -40,9 +40,9 @@ using scalar_type = long double;
 template< size_t... >
 struct Shape;
 
-/////////////////////////////////////////
-/// Tensor Shape // Empty Base Class ///
-///////////////////////////////////////
+////////////////////////////////////////
+/// Tensor Shape / Empty Base Class ///
+//////////////////////////////////////
 ///
 /// @brief an empty shape corresponds to a tensor with a single element.  It 
 /// is also the base class of all Shapes, and so contains the size_t data 
@@ -93,9 +93,9 @@ private:
     size_t _value;
 };
 
-//////////////////////////////////////////////
-/// Tensor Shape /// Recursive Definition ///
 ////////////////////////////////////////////
+/// Tensor Shape / Recursive Definition ///
+//////////////////////////////////////////
 ///
 /// @brief a non-empty shape of an array. An instance of this shape acts as an 
 /// index into an array:
@@ -184,9 +184,9 @@ static_assert( sizeof( Shape<> ) == sizeof( Shape<2,2,2> ) and
     sizeof( Shape<> ) == sizeof( size_t ));
 #endif // DEBUG
 
-/////////////////////////////////////////
-/// Tensor Shape /// Get Index Value ///
 ///////////////////////////////////////
+/// Tensor Shape / Get Index Value ///
+/////////////////////////////////////
 ///
 
 namespace detail {
