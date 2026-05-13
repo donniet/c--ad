@@ -32,6 +32,16 @@ namespace tensors {
 /// @brief default scalar type
 using scalar_type = long double;
 
+///////////////
+/// Tensor ///
+/////////////
+///
+/// A tensor is a tuple-like object imbued with a tensor shape defined above
+
+// forward declaration
+template< typename ShapeT, typename... Ts >
+struct Tensor;
+
 /////////////////////
 /// Tensor Shape ///
 ///////////////////
@@ -182,54 +192,6 @@ constexpr inline Shape< 1 > Shape<>::insert( Shape ) const
 /// ensure that the Shape class is always just the size of a size_t
 static_assert( sizeof( Shape<> ) == sizeof( Shape<2,2,2> ) and
     sizeof( Shape<> ) == sizeof( size_t ));
-#endif // DEBUG
-
-///////////////////////////////////////
-/// Tensor Shape / Get Index Value ///
-/////////////////////////////////////
-///
-
-namespace detail {
-
-// forward decl
-template< size_t I, typename S >
-struct ShapeGet;
-
-/// @brief helper to get the zeroeth element of a shape
-/// @tparam First is the element of the shape
-/// @tparam ...Rest are the remaining shape elements
-///
-template< size_t First, size_t... Rest >
-struct ShapeGet< 0, Shape< First, Rest... >>
-{ 
-    static constexpr size_t value( Shape< First, Rest... > shp ) 
-    { return shp.first(); } 
-};
-
-/// @brief helper to get the Ith element of a shape
-/// @tparam I the element of the shape to extract
-/// @tparam First the first element of the shape
-/// @tparam ...Rest the remaining elements of a shape
-template< size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
-struct ShapeGet< I, Shape< First, Rest... >>
-{ 
-    static constexpr size_t value( Shape< First, Rest... > shp ) 
-    { return ShapeGet< I-1, Shape< Rest... >>::value( shp ); } 
-};
-
-} // namespace detail
-
-/// @brief method to get the Ith element of a shape
-/// @tparam S the shape to extract from
-/// @tparam I the element to extract
-/// @param shp the shape to extract from
-/// @return the size of element I in shape S
-template< size_t I, typename S >
-constexpr size_t shape_get( S shp )
-{ return detail::ShapeGet< I, S >::value( shp ); }
-
-#ifndef NDEBUG
 static_assert( Shape< 2, 2 >{ 1, 1 } == Shape< 2, 2 >{ 1, 1 } );
 static_assert( Shape< 2, 2 >{ 1, 1 }.element() == 
     Shape< 2, 2, 2 >{ 0, 1, 1 }.element() );
@@ -280,7 +242,40 @@ static_assert(
         [ Shape< 4, 4 >{ 1, 0 }] == 4 );
 #endif // DEBUG
 
+//////////////////////////////////////////////
+/// Tensor Shape / Implementation Details ///
+////////////////////////////////////////////
+///
+
 namespace detail {
+
+// forward decl
+template< size_t I, typename S >
+struct ShapeGet;
+
+/// @brief helper to get the zeroeth element of a shape
+/// @tparam First is the element of the shape
+/// @tparam ...Rest are the remaining shape elements
+///
+template< size_t First, size_t... Rest >
+struct ShapeGet< 0, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return shp.first(); } 
+};
+
+/// @brief helper to get the Ith element of a shape
+/// @tparam I the element of the shape to extract
+/// @tparam First the first element of the shape
+/// @tparam ...Rest the remaining elements of a shape
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct ShapeGet< I, Shape< First, Rest... >>
+{ 
+    static constexpr size_t value( Shape< First, Rest... > shp ) 
+    { return ShapeGet< I-1, Shape< Rest... >>::value( shp ); } 
+};
+
 // forward decl
 template< typename T, typename U >
 struct ShapeCat;
@@ -292,31 +287,6 @@ template< size_t... Ts, size_t... Us >
 struct ShapeCat< Shape< Ts... >, Shape< Us... >>
 { using type = Shape< Ts..., Us... >; };
 
-} // namespace detail
-
-/// @brief concatenate two shapes
-/// @tparam T the left shape
-/// @tparam U the right shape
-template< typename T, typename U >
-using shape_cat_t = detail::ShapeCat< T, U >::type;
-
-/// @brief create a shape from a constant tuple
-/// @tparam ...Ts remaining index types (must be size_t)
-/// @param tup the const tuple to turn into a Shape<...>
-/// @return a Shape<...>
-template< typename... Ts >
-consteval auto shape_from_tuple( tuple< size_t, Ts... > tup )
-{ return Shape< get< 0 >( tup ) >::cat( 
-    shape_from_tuple< Ts... >( remove_first( tup ))); }
-
-/// @brief an empty shape from an empty tuple
-/// @param tup an empty tuple
-/// @return an empty shape
-consteval Shape< > shape_from_tuple( tuple< > tup )
-{ return { }; }
-
-namespace detail {
-
 /// @brief trait to determine if a type is a Shape<...>
 /// @tparam T the type to test
 template< typename T >
@@ -327,23 +297,10 @@ struct IsShape : std::integral_constant< bool, false > { };
 template< size_t... Is >
 struct IsShape< Shape< Is... >> : std::integral_constant< bool, true > { };
 
-} // namespace detail
-
-/// @brief trait to determine if a type is a shape
-/// @tparam T the type to test
-template< typename T >
-constexpr bool is_shape_v = detail::IsShape< T >::value;
-
-/// @brief the concept of a tensor shape
-/// @tparam T is the type to test
-template< typename T >
-concept shape = is_shape_v< T >;
-
-namespace detail {
 /// @brief determines if element I is an odd element of a tensor with shape S
 /// @tparam I the element to test
 /// @tparam S the shape of the tensor
-template< size_t I, shape S >
+template< size_t I, typename S >
 struct IsElementEven;
 
 /// @brief the zero-th element of a shape is always even
@@ -371,17 +328,8 @@ struct IsElementEven< I, Shape< First, Rest... >>
         ( not is_first_even and not is_rest_even );
 };
 
-} // namespace detail
-
-/// @brief determines if I is an even element of a tensor with shape S
-/// @tparam I the element to test
-/// @tparam S the shape of the tensor
-template< size_t I, shape S >
-static constexpr bool is_element_even_v = detail::IsElementEven< I, S >::value;
-
-namespace detail {
 // forward decl
-template< shape S, typename Seq >
+template< typename S, typename Seq >
 struct ShapeInsertAt;
 
 // inserting an empty sequence into an empty shape 
@@ -405,7 +353,7 @@ struct ShapeInsertAt< Shape< First, Rest... >, seq< I, Is... >>
 };  
 
 // forard declaration
-template< shape S, size_t I >
+template< typename S, size_t I >
 struct ShapeInsertAtElement;
 
 /// @brief inserting into an empty shape is still empty and only supported if
@@ -431,7 +379,280 @@ struct ShapeInsertAtElement< Shape< First, Rest... >, I >
         ShapeInsertAtElement< Shape< Rest... >, rem >::insert( from ) }; }
 };  
 
+// forward declaration
+template< size_t I, typename S >
+struct ShapeElement;
+
+template<>
+struct ShapeElement< 0, Shape<> >: integral_constant< size_t, 0 > { };
+
+/// @brief extracts the first size from a shape
+/// @tparam First the first size of the shape
+/// @tparam ...Rest the remaining sizes
+template< size_t First, size_t... Rest >
+struct ShapeElement< 0, Shape< First, Rest... >>:
+    std::integral_constant< size_t, First > { };
+
+/// @brief extract the Ith size of a shape
+/// @tparam I the dimension to extract the size
+/// @tparam First the first size of this shape
+/// @tparam ...Rest the remaining sizes of this shape
+template< size_t I, size_t First, size_t... Rest >
+struct ShapeElement< I, Shape< First, Rest... >>:
+    std::integral_constant< size_t, 
+        ShapeElement< I-1, Shape< Rest... >>::value > 
+{ };
+
+// forward decl
+template< size_t I, typename S >
+struct RemoveShapeElement;
+
+/// @brief helper to remove the first size from a shape
+/// @tparam First the first size of the shape
+/// @tparam ...Rest the reamining sizes
+template< size_t First, size_t... Rest >
+struct RemoveShapeElement< 0, Shape< First, Rest... >>
+{ 
+    using type = Shape< Rest... >; 
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return shp; }
+};
+
+/// @brief helper to remove the Ith size from a shape
+/// @tparam I the size to remove
+/// @tparam First the first size of a shape
+/// @tparam ...Rest the remaining sizes
+template< size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct RemoveShapeElement< I, Shape< First, Rest... >>
+{ 
+    using type = ShapeCat< Shape< First >, 
+        typename RemoveShapeElement< I - 1, Shape< Rest... >>::type >::type; 
+
+    static constexpr type value( Shape< First, Rest... > shp )
+    { return Shape< First >{ shp.first() }.cat(
+        RemoveShapeElement< I-1, Shape< Rest... >>::value( shp )); }
+};
+
+/// @brief a trait to calculate the shape of a tensor contracted on two of its
+/// dimensions
+/// @tparam I the first dimension to contract
+/// @tparam J the second dimension to contract
+/// @tparam S the shape of the tensor
+template< size_t I, size_t J, typename S >
+requires( isless( I, J ) and 
+    ShapeElement< I, S >::value == ShapeElement< J, S >::value )
+struct ContractShape
+{ using type = RemoveShapeElement< I, 
+    typename RemoveShapeElement< J, S >::type >::type; };
+
+// forward decl
+template< size_t K, size_t I, typename S >
+struct InsertShapeElement;
+
+/// @brief insert K at the first dimension of a shape
+/// @tparam K the size to insert
+/// @tparam ...Is the sizes of the shape dimensions
+template< size_t K, size_t... Is >
+struct InsertShapeElement< K, 0, Shape< Is... >>
+{ 
+    using type = Shape< K, Is... >; 
+
+    static constexpr type value( size_t k, Shape< Is... > shp )
+    { return type{ k, shp }; }
+};
+
+/// @brief insert K at dimension I of a shape
+/// @tparam K the size to insert
+/// @tparam I the dimension to insert at
+/// @tparam First the size of the first dimension of the shape
+/// @tparam ...Rest the sizes of the remaining dimensions
+template< size_t K, size_t I, size_t First, size_t... Rest >
+requires( isgreater( I, 0 ))
+struct InsertShapeElement< K, I, Shape< First, Rest... >>
+{ 
+    using type = ShapeCat< Shape< First >, 
+        typename InsertShapeElement< K, I-1, Shape< Rest... >>::type >::type; 
+
+    static constexpr type value( size_t k, Shape< First, Rest... > shp )
+    { return Shape< First >{ shp.first() }.cat( 
+        InsertShapeElement< K, I-1, Shape< Rest... >>::value( k, shp )); }
+};
+
+// forward decl
+template< typename S >
+struct SubTensorShape;
+
+/// @brief reduce each dimension of a tensor's shape by 1
+/// @tparam ...Sizes are the sizes of each dimension of the shape
+template< size_t... Sizes >
+requires(( isgreater( Sizes, 1 ) and ... ))
+struct SubTensorShape< Shape< Sizes... >>
+{ using type = Shape< (Sizes - 1)... >; };
+
+/// @brief reverses a contraction operation on dimensions I and J
+/// @tparam K the size of the contracted dimensions
+/// @tparam I the first contraction dimension
+/// @tparam J the second contraction dimension
+/// @tparam S the shape to uncontract
+template< size_t K, size_t I, size_t J, typename S >
+requires( isless( I, J ))
+struct UncontractShape
+{ 
+    using type = InsertShapeElement< K, J, 
+        typename InsertShapeElement< K, I, S >::type >::type; 
+
+    static constexpr type value( size_t k, S shp )
+    { return insert_shape_element< K, J >( k, 
+        insert_shape_element< K, I >( k, shp )); }
+};
+
+/// @brief helper class to transpose indices I and J of a shape S
+/// @tparam I the first dimension to transpose
+/// @tparam J the second dimension to transpose
+/// @tparam S the shape to transpose the I and J dimensions
+template< size_t I, size_t J, typename S >
+struct TransposeShape
+{ 
+    static constexpr size_t ith = ShapeElement< I, S >::value;
+    static constexpr size_t jth = ShapeElement< J, S >::value;
+
+    using base_type = detail::RemoveShapeElement< I, 
+        typename detail::RemoveShapeElement< J, S >::type >::type;
+    using type = InsertShapeElement< ith, J, 
+        typename InsertShapeElement< jth, I, base_type >::type >::type;
+
+    /// @brief calculates the value of an index of shape S with the Ith and Jth
+    /// dimensions transposed
+    /// @param shp the shape to transpose
+    /// @return the transposed shape
+    static constexpr type value( S shp )
+    {
+        size_t i = shape_get< I >( shp );
+        size_t j = shape_get< J >( shp );
+
+        auto base = remove_shape_element< I >( 
+            remove_shape_element< J >( shp ));
+
+        return insert_shape_element< ith, J >( i,
+            insert_shape_element< jth, I >( j, base ));
+    }
+};
+
+/// @brief helper class for creation of uniformly typed tensors
+template< typename S, typename T, typename Seq >
+struct UniformTensorHelper;
+
+template< typename S, typename T, size_t... Is >
+struct UniformTensorHelper< S, T, seq< Is... >>
+{ using type = Tensor< S, std::conditional_t< Is == Is, T, T >... >; };
+
+// forward decl
+template< size_t I, typename TensorT >
+struct TensorElement;
+
+/// @brief the type of the Ith element of a tensor
+/// @tparam I the element
+/// @tparam S the shape of the tensor
+/// @tparam ...Ts the types of the tensor
+template< size_t I, typename S, typename... Ts >
+struct TensorElement< I, Tensor< S, Ts... >>
+{ using type = tuple_element_t< I, tuple< Ts... >>; };
+
+/// @brief trait to identify tensor types
+/// @tparam T type type to test
+template< typename T >
+struct IsTensor: integral_constant< bool, false > { };
+
+/// @brief trait to identify tensor types
+/// @tparam S the shape of the tensor
+/// @tparam ...Ts are the types of the tensor elements
+template< typename S, typename... Ts >
+struct IsTensor< Tensor< S, Ts... >>: integral_constant< bool, true > { };
+
+template< typename TensorT, size_t... Is >
+TensorT zero_tensor_helper( seq< Is... > )
+{ return { static_cast< typename TensorElement< Is, TensorT >::type >( 
+    Is - Is )... }; }
+
+template< typename, typename... >
+struct ExtendVector;
+
+template< size_t N, typename... Ts, typename... Us >
+struct ExtendVector< Tensor< Shape< N >, Ts... >, Us... >
+{
+    using vector_type = Tensor< Shape< N >, Ts... >;
+    using type = Tensor< Shape< N + sizeof...( Us ) >, Ts..., Us... >;
+
+    template< size_t... Is >
+    static constexpr type make_helper( vector_type const& vec, Us const&... values, seq< Is... > )
+    { return { tensor_get< Is >( vec )..., values... }; }
+
+    static constexpr type make( vector_type const& vec, Us const&... values )
+    { return make_helper( vec, values..., make_seq< sizeof...( Ts )>{} ); }
+};
+
+/// @brief trait to identify if the given tensor has shape S
+/// @tparam T the type of the tensor to test
+/// @tparam S the shape to compare
+template< typename T, typename S >
+struct IsTensorShape: 
+    integral_constant< bool, std::is_same_v< S, typename T::shape_type >> { };
+
 } // namespace detail
+
+/////////////////////////////////
+/// Tensor Shape / Utilities ///
+///////////////////////////////
+///
+/// These are traits and methods to use and manipulate tensor shapes
+///
+
+/// @brief method to get the Ith element of a shape
+/// @tparam S the shape to extract from
+/// @tparam I the element to extract
+/// @param shp the shape to extract from
+/// @return the size of element I in shape S
+template< size_t I, typename S >
+constexpr size_t shape_get( S shp )
+{ return detail::ShapeGet< I, S >::value( shp ); }
+
+/// @brief concatenate two shapes
+/// @tparam T the left shape
+/// @tparam U the right shape
+template< typename T, typename U >
+using shape_cat_t = detail::ShapeCat< T, U >::type;
+
+/// @brief create a shape from a constant tuple
+/// @tparam ...Ts remaining index types (must be size_t)
+/// @param tup the const tuple to turn into a Shape<...>
+/// @return a Shape<...>
+template< typename... Ts >
+consteval auto shape_from_tuple( tuple< size_t, Ts... > tup )
+{ return Shape< get< 0 >( tup ) >::cat( 
+    shape_from_tuple< Ts... >( remove_first( tup ))); }
+
+/// @brief an empty shape from an empty tuple
+/// @param tup an empty tuple
+/// @return an empty shape
+consteval Shape< > shape_from_tuple( tuple< > tup )
+{ return { }; }
+
+/// @brief trait to determine if a type is a shape
+/// @tparam T the type to test
+template< typename T >
+constexpr bool is_shape_v = detail::IsShape< T >::value;
+
+/// @brief the concept of a tensor shape
+/// @tparam T is the type to test
+template< typename T >
+concept shape = is_shape_v< T >;
+
+/// @brief determines if I is an even element of a tensor with shape S
+/// @tparam I the element to test
+/// @tparam S the shape of the tensor
+template< size_t I, shape S >
+static constexpr bool is_element_even_v = detail::IsElementEven< I, S >::value;
 
 /// @brief create a shape with one larger size at each dimension and adjust the
 /// indices of the shape instance relative to the supplied sequence
@@ -463,70 +684,11 @@ template< size_t I, shape S >
 consteval auto shape_insert_at_element( S shp )
 { return detail::ShapeInsertAtElement< S, I >::insert( shp ); }
 
-namespace detail {
-// forward declaration
-template< size_t I, shape S >
-struct ShapeElement;
-
-template<>
-struct ShapeElement< 0, Shape<> >: integral_constant< size_t, 0 > { };
-
-/// @brief extracts the first size from a shape
-/// @tparam First the first size of the shape
-/// @tparam ...Rest the remaining sizes
-template< size_t First, size_t... Rest >
-struct ShapeElement< 0, Shape< First, Rest... >>:
-    std::integral_constant< size_t, First > { };
-
-/// @brief extract the Ith size of a shape
-/// @tparam I the dimension to extract the size
-/// @tparam First the first size of this shape
-/// @tparam ...Rest the remaining sizes of this shape
-template< size_t I, size_t First, size_t... Rest >
-struct ShapeElement< I, Shape< First, Rest... >>:
-    std::integral_constant< size_t, 
-        ShapeElement< I-1, Shape< Rest... >>::value > 
-{ };
-} // namespace detail
-
 /// @brief alias of the Ith element of shape S
 /// @tparam I the element of shape S to extract
 /// @tparam S the shape to extract from
 template< size_t I, shape S >
 constexpr size_t shape_element_v = detail::ShapeElement< I, S >::value;
-
-namespace detail {
-// forward decl
-template< size_t I, shape S >
-struct RemoveShapeElement;
-
-/// @brief helper to remove the first size from a shape
-/// @tparam First the first size of the shape
-/// @tparam ...Rest the reamining sizes
-template< size_t First, size_t... Rest >
-struct RemoveShapeElement< 0, Shape< First, Rest... >>
-{ 
-    using type = Shape< Rest... >; 
-    static constexpr type value( Shape< First, Rest... > shp )
-    { return shp; }
-};
-
-/// @brief helper to remove the Ith size from a shape
-/// @tparam I the size to remove
-/// @tparam First the first size of a shape
-/// @tparam ...Rest the remaining sizes
-template< size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
-struct RemoveShapeElement< I, Shape< First, Rest... >>
-{ 
-    using type = shape_cat_t< Shape< First >, 
-        typename RemoveShapeElement< I - 1, Shape< Rest... >>::type >; 
-
-    static constexpr type value( Shape< First, Rest... > shp )
-    { return Shape< First >{ shp.first() }.cat(
-        RemoveShapeElement< I-1, Shape< Rest... >>::value( shp )); }
-};
-} // namespace detail
 
 /// @brief remove the Ith size from a shape
 /// @tparam I the size to remove from the shape
@@ -536,20 +698,6 @@ struct RemoveShapeElement< I, Shape< First, Rest... >>
 template< size_t I, shape S >
 constexpr auto remove_shape_element( S shp )
 { return detail::RemoveShapeElement< I, S >::value( shp ); }
-
-namespace detail {
-/// @brief a trait to calculate the shape of a tensor contracted on two of its
-/// dimensions
-/// @tparam I the first dimension to contract
-/// @tparam J the second dimension to contract
-/// @tparam S the shape of the tensor
-template< size_t I, size_t J, shape S >
-requires( isless( I, J ) and shape_element_v< I, S > == shape_element_v< J, S > )
-struct ContractShape
-{ using type = RemoveShapeElement< I, 
-    typename RemoveShapeElement< J, S >::type >::type; };
-
-} // namespace detail
 
 /// @brief alias to the contracted shape of a tensor
 /// @tparam I the first contraction dimension
@@ -563,53 +711,6 @@ using contract_shape_t = detail::ContractShape< I, J, S >::type;
 static_assert( is_same_v< Shape< 1, 2, 4 >, 
     contract_shape_t< 2, 3, Shape< 1, 2, 3, 3, 4 >>> );
 #endif // DEBUG
-
-namespace detail {
-// forward decl
-template< size_t K, size_t I, shape S >
-struct InsertShapeElement;
-
-/// @brief insert K at the first dimension of a shape
-/// @tparam K the size to insert
-/// @tparam ...Is the sizes of the shape dimensions
-template< size_t K, size_t... Is >
-struct InsertShapeElement< K, 0, Shape< Is... >>
-{ 
-    using type = Shape< K, Is... >; 
-
-    static constexpr type value( size_t k, Shape< Is... > shp )
-    { return type{ k, shp }; }
-};
-
-/// @brief insert K at dimension I of a shape
-/// @tparam K the size to insert
-/// @tparam I the dimension to insert at
-/// @tparam First the size of the first dimension of the shape
-/// @tparam ...Rest the sizes of the remaining dimensions
-template< size_t K, size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
-struct InsertShapeElement< K, I, Shape< First, Rest... >>
-{ 
-    using type = shape_cat_t< Shape< First >, 
-        typename InsertShapeElement< K, I-1, Shape< Rest... >>::type >; 
-
-    static constexpr type value( size_t k, Shape< First, Rest... > shp )
-    { return Shape< First >{ shp.first() }.cat( 
-        InsertShapeElement< K, I-1, Shape< Rest... >>::value( k, shp )); }
-};
-
-// forward decl
-template< shape S >
-struct SubTensorShape;
-
-/// @brief reduce each dimension of a tensor's shape by 1
-/// @tparam ...Sizes are the sizes of each dimension of the shape
-template< size_t... Sizes >
-requires(( isgreater( Sizes, 1 ) and ... ))
-struct SubTensorShape< Shape< Sizes... >>
-{ using type = Shape< (Sizes - 1)... >; };
-
-} // namespace detail
 
 /// @brief insert a dimension of size K at dimension I of shape S
 /// @tparam K the size of the dimension to insert
@@ -640,25 +741,6 @@ static_assert( Shape< 3, 2 >{ 2, 1 } == insert_shape_element< 3, 0 >( 2, Shape< 
 static_assert( Shape< 2, 3 >{ 1, 2 }.element() == insert_shape_element< 3, 1 >( 2, Shape< 2 >{ 1 }).element() );
 static_assert( Shape< 3, 3 >{ 2, 2 } == insert_shape_element< 3, 0 >( 2, Shape< 3 >{ 2 }) );
 #endif // DEBUG
-
-namespace detail {
-/// @brief reverses a contraction operation on dimensions I and J
-/// @tparam K the size of the contracted dimensions
-/// @tparam I the first contraction dimension
-/// @tparam J the second contraction dimension
-/// @tparam S the shape to uncontract
-template< size_t K, size_t I, size_t J, shape S >
-requires( isless( I, J ))
-struct UncontractShape
-{ 
-    using type = InsertShapeElement< K, J, 
-        typename InsertShapeElement< K, I, S >::type >::type; 
-
-    static constexpr type value( size_t k, S shp )
-    { return insert_shape_element< K, J >( k, 
-        insert_shape_element< K, I >( k, shp )); }
-};
-} // namespace detail
 
 /// @brief reverses the contraction operation on dimensions I and J of shape S
 /// @tparam K the size of the contracted dimensions
@@ -702,40 +784,6 @@ static_assert( uncontract_index< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 2 }).elem
 // static_assert( Shape< 1, 2, 3, 3, 4 >{ 0, 1, 2, 2, 3 } == uncontract< 3, 2, 3 >( 2, Shape< 1, 2, 4 >{ 0, 1, 3 }) );
 #endif // DEBUG
 
-namespace detail {
-/// @brief helper class to transpose indices I and J of a shape S
-/// @tparam I the first dimension to transpose
-/// @tparam J the second dimension to transpose
-/// @tparam S the shape to transpose the I and J dimensions
-template< size_t I, size_t J, shape S >
-struct TransposeShape
-{ 
-    static constexpr size_t ith = shape_element_v< I, S >;
-    static constexpr size_t jth = shape_element_v< J, S >;
-
-    using base_type = detail::RemoveShapeElement< I, 
-        typename detail::RemoveShapeElement< J, S >::type >::type;
-    using type = InsertShapeElement< ith, J, 
-        typename InsertShapeElement< jth, I, base_type >::type >::type;
-
-    /// @brief calculates the value of an index of shape S with the Ith and Jth
-    /// dimensions transposed
-    /// @param shp the shape to transpose
-    /// @return the transposed shape
-    static constexpr type value( S shp )
-    {
-        size_t i = shape_get< I >( shp );
-        size_t j = shape_get< J >( shp );
-
-        auto base = remove_shape_element< I >( 
-            remove_shape_element< J >( shp ));
-
-        return insert_shape_element< ith, J >( i,
-            insert_shape_element< jth, I >( j, base ));
-    }
-};
-} // namespace detail
- 
 /// @brief the shape of a tensor transposed on the Ith and Jth indices
 /// @tparam I the first dimension to transpose
 /// @tparam J the second dimension to transpose
@@ -753,16 +801,6 @@ using transpose_shape_t = detail::TransposeShape< I, J, S >::type;
 template< size_t I, size_t J, shape S >
 constexpr transpose_shape_t< I, J, S > transpose_shape( S shp )
 { return detail::TransposeShape< I, J, S >::value( shp ); }
-
-///////////////
-/// Tensor ///
-/////////////
-///
-/// A tensor is a tuple-like object imbued with a tensor shape defined above
-///
-/// forward decl
-template< shape S, typename... Ts >
-struct Tensor;
 
 /////////////////////////////
 /// Tensor / Null Tensor ///
@@ -924,15 +962,14 @@ private:
 
 };
 
-namespace detail {
-template< shape S, typename T, typename Seq >
-struct UniformTensorHelper;
+///////////////////////////
+/// Tensor / Utilities ///
+/////////////////////////
+///
+/// Traits and methods to manipulate tensors and tensor types
+///
 
-template< shape S, typename T, size_t... Is >
-struct UniformTensorHelper< S, T, seq< Is... >>
-{ using type = Tensor< S, std::conditional_t< Is == Is, T, T >... >; };
-} // namespace detail
-  //
+/// @brief type alias for uniformly typed tensors
 template< shape S, typename T >
 using uniform_tensor_t = 
     detail::UniformTensorHelper< S, T, make_seq< S::size() >>::type;
@@ -976,20 +1013,6 @@ struct tensor_shape
 template< typename TensorT >
 using tensor_shape_t = tensor_shape< TensorT >::type;
 
-namespace detail {
-// forward decl
-template< size_t I, typename TensorT >
-struct TensorElement;
-
-/// @brief the type of the Ith element of a tensor
-/// @tparam I the element
-/// @tparam S the shape of the tensor
-/// @tparam ...Ts the types of the tensor
-template< size_t I, shape S, typename... Ts >
-struct TensorElement< I, Tensor< S, Ts... >>
-{ using type = tuple_element_t< I, tuple< Ts... >>; };
-} // namespace detail
-
 /// @brief the type of the Ith element of a tensor
 /// @tparam TensorT the tensor type
 template< size_t I, typename TensorT >
@@ -1005,19 +1028,6 @@ requires( S::size() == sizeof...( Ts ))
 constexpr Tensor< S, Ts... > make_tensor( Ts... ts )
 { return { ts... }; }
 
-namespace detail {
-/// @brief trait to identify tensor types
-/// @tparam T type type to test
-template< typename T >
-struct IsTensor: integral_constant< bool, false > { };
-
-/// @brief trait to identify tensor types
-/// @tparam S the shape of the tensor
-/// @tparam ...Ts are the types of the tensor elements
-template< shape S, typename... Ts >
-struct IsTensor< Tensor< S, Ts... >>: integral_constant< bool, true > { };
-} // namespace detail 
-  //
 /// @brief determines if a type is a tensor
 /// @tparam T the type to test
 template< typename T >
@@ -1028,20 +1038,29 @@ constexpr bool is_tensor_v = detail::IsTensor< T >::value;
 template< typename T >
 concept tensor = is_tensor_v< T >;
 
-namespace detail {
+//////////////////////
+/// Tensor / Zero ///
+////////////////////
+///
+/// methods to create zero tensors of uniform or arbitrary types
 
-template< typename TensorT, size_t... Is >
-TensorT zero_tensor_helper( seq< Is... > )
-{ return { static_cast< tensor_element_t< Is, TensorT >>( Is - Is )... }; }
-
-} // namespace detail
-
+/// @brief creates a zero tensor with shape S and uniform type T for all 
+/// elements
+/// @tparam S the shape of the tensor
+/// @tparam T the type of all the elements
+/// @returns a tensor of uniform type T and shape S with each element
+/// set to 0
 template< shape S, typename T >
 requires( isgreater( S::size(), 1 ))
 constexpr uniform_tensor_t< S, T > zero_tensor()
 { return detail::zero_tensor_helper< uniform_tensor_t< S, T >>( 
     make_seq< S::size() >{} ); }
 
+/// @brief creates a zero tensor with shape S and element types Ts...
+/// @tparam S the shape of the tensor
+/// @tparam ...Ts are the types of the tensor elements
+/// @returns a tensor with shape S and element types Ts... where all elements
+/// are set to 0
 template< shape S, typename... Ts >
 requires( S::size() == sizeof...( Ts ) )
 constexpr Tensor< S, Ts... > zero_tensor()
@@ -1059,39 +1078,32 @@ constexpr Tensor< S, Ts... > zero_tensor()
 template< typename T >
 concept vector = ( is_tensor_v< T > and tensor_shape_t< T >::degree() <= 1 );
 
+/// @brief a vector of uniform element types
+/// @tparam N is the size of the vector
+/// @tparam T is the type of the elements of the vector
 template< size_t N, typename T >
 using uniform_vector_t = uniform_tensor_t< Shape< N >, T >;
 
+/// @brief uniform vector with zero values for it's elements
+/// @tparam N is the size of the vector
+/// @tparam T is the type of the elements
 template< size_t N, typename T >
 requires( isgreater( N, 1 ))
 constexpr uniform_tensor_t< Shape< N >, T > zero_vector()
 { return zero_tensor< Shape< N >, T >(); }
 
+/// @brief arbitrarily typed vector with element values equal to zero
+/// @tparam N is the size of the vector
+/// @tparam ...Ts are the types of the elements
 template< size_t N, typename... Ts >
 requires( N == sizeof...( Ts ))
 constexpr Tensor< Shape< N >, Ts... > zero_vector()
 { return zero_tensor< Shape< N >, Ts... >(); }
 
-namespace detail {
-template< vector, typename... >
-struct ExtendVector;
-
-template< size_t N, typename... Ts, typename... Us >
-struct ExtendVector< Tensor< Shape< N >, Ts... >, Us... >
-{
-    using vector_type = Tensor< Shape< N >, Ts... >;
-    using type = Tensor< Shape< N + sizeof...( Us ) >, Ts..., Us... >;
-
-    template< size_t... Is >
-    static constexpr type make_helper( vector_type const& vec, Us const&... values, seq< Is... > )
-    { return { tensor_get< Is >( vec )..., values... }; }
-
-    static constexpr type make( vector_type const& vec, Us const&... values )
-    { return make_helper( vec, values..., make_seq< sizeof...( Ts )>{} ); }
-};
-
-} // namespace detail
-
+/// @brief the type of a vector extended to contain new elements of the 
+/// supplied types
+/// @tparam V is the original vector type
+/// @tparam ...Us are the element types to be extended to the vector type V
 template< vector V, typename... Us >
 using extend_vector_t = detail::ExtendVector< V, Us... >::type;
 
@@ -1105,20 +1117,16 @@ template< vector V, typename... Us >
 extend_vector_t< V, Us... > extend_vector( V const& vec, Us const&... values )
 { return detail::ExtendVector< V, Us... >::make( vec, values... ); }
 
+/// @brief a matrix is a tensor of degree 2 (a two dimensional tensor)
 template< typename T >
 concept matrix = ( is_tensor_v< T > and tensor_shape_t< T >::degree() == 2 );
 
+/// @brief type helper for a matrix of uniform type
+/// @tparam Rows in the matrix
+/// @tparam Cols in the matrix
+/// @tparam T is the type of the elements
 template< size_t Rows, size_t Cols, typename T >
 using uniform_matrix_t = uniform_tensor_t< Shape< Rows, Cols >, T >;
-
-namespace detail {
-/// @brief trait to identify if the given tensor has shape S
-/// @tparam T the type of the tensor to test
-/// @tparam S the shape to compare
-template< tensor T, shape S >
-struct IsTensorShape: 
-    integral_constant< bool, is_same_v< S, tensor_shape_t< T >>> { };
-} // namespace detail
 
 /// @brief concept of a tensor of a given shape
 /// @tparam the type to test
@@ -1162,7 +1170,7 @@ struct IsEqualityDefined< LeftT, RightT >:
 
 /// @brief specialization of IsTensorEqualityDefined in the case where the 
 /// tensor shapes are not the same.
-template< shape LeftS, typename... Ts, shape RightS, typename... Us >
+template< typename LeftS, typename... Ts, typename RightS, typename... Us >
 requires( not is_same_v< LeftS, RightS > )
 struct IsEqualityDefined< Tensor< LeftS, Ts... >, 
     Tensor< RightS, Us... >>: integral_constant< bool, false > { };
@@ -1178,7 +1186,7 @@ struct IsTensorEqualityDefinedHelper< LeftT, RightT,
 
 /// @brief specialization of IsTensorEqualityDefined in the case where the 
 /// tensor shapes are the same.  In this case we inherit to the helper value
-template< shape LeftS, typename... Ts, shape RightS, typename... Us >
+template< typename LeftS, typename... Ts, typename RightS, typename... Us >
 requires( is_same_v< LeftS, RightS > )
 struct IsEqualityDefined< Tensor< LeftS, Ts... >, Tensor< RightS, Us... >>: 
     IsTensorEqualityDefinedHelper< 
@@ -1283,7 +1291,7 @@ struct ContractedElementSequenceHelper;
 /// @tparam J the second index to be contracted on
 /// @tparam S is the shape of the tensor to be contracted
 /// @tparam Is... are 0, 1, ... N where N == shape_element_v< I, S >
-template< size_t K, size_t I, size_t J, shape S, size_t... Is >
+template< size_t K, size_t I, size_t J, typename S, size_t... Is >
 struct ContractedElementSequenceHelper< K, I, J, S, seq< Is... >>
 {
     // calculate the contracted shape
@@ -1301,7 +1309,7 @@ struct ContractedElementSequenceHelper< K, I, J, S, seq< Is... >>
 /// @tparam I the first contraction index
 /// @tparam J the second contraction index
 /// @tparam S the shape of the tensor
-template< size_t K, size_t I, size_t J, shape S >
+template< size_t K, size_t I, size_t J, typename S >
 using contracted_element_seq = ContractedElementSequenceHelper< K, I, J, S, 
     make_seq< shape_element_v< I, S >>>::type;
 
@@ -1482,7 +1490,6 @@ struct MatrixMultiplyHelper
 template< typename LeftT, typename RightT >
 constexpr bool matmul_compatible_v = 
     MatrixMultiplyHelper< LeftT, RightT >::is_compatible;
-
 
 } // namespace detail
 
@@ -1727,6 +1734,8 @@ template< shape S, typename... Ts >
 constexpr auto norm( Tensor< S, Ts... > const& ten )
 { return detail::TensorNorm< 2, Tensor< S, Ts... >>::value( ten ); }
 
+namespace detail {
+
 template< typename MatrixT >
 struct IdentityMatrixHelper;
 
@@ -1748,9 +1757,11 @@ struct IdentityMatrixHelper< Tensor< S, Ts... >>
     { return identity_helper( make_seq< sizeof...( Ts )>{} ); }
 };
 
+} // namespace detail
+
 template< typename MatrixT >
 constexpr MatrixT identity_matrix()
-{ return IdentityMatrixHelper< MatrixT >::identity(); }
+{ return detail::IdentityMatrixHelper< MatrixT >::identity(); }
 
 /// @brief contract a tensor along indices I and J
 /// @tparam TensorT the type of the tensor to contract
@@ -1812,6 +1823,13 @@ constexpr auto element_subtensor( TensorT const& ten )
     return detail::element_subtensor_helper< I >( ten, 
         make_seq< sub_shape_type::size() >{} );
 }
+
+////////////////////////////////////
+/// Tensor / Matrix Determinant ///
+//////////////////////////////////
+///
+/// implementation of a matrix determinant for tensors
+///
 
 // forward decl
 template< typename TensorT >
