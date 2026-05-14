@@ -59,6 +59,54 @@ concept expression = is_expression_v< T >;
 template< size_t I, typename T >
 struct Variable;
 
+/// @brief trait to identify variables
+/// @tparam T the type to be tested
+///
+template< typename T >
+struct IsVariable
+{ static constexpr bool value = false; };
+
+template< size_t I, typename T >
+struct IsVariable< Variable< I, T >>
+{ static constexpr bool value = true; };
+
+template< typename T >
+constexpr bool is_variable_v = IsVariable< T >::value;
+
+template< typename T >
+concept variable = is_variable_v< T >;
+
+// forward decl
+template< typename... Vars >
+struct Scope;
+
+template< typename T >
+struct IsScope: integral_constant< bool, false > { };
+
+template< typename... Vars >
+struct IsScope< Scope< Vars... >>: integral_constant< bool, true > { };
+
+template< typename T >
+constexpr bool is_scope_v = IsScope< T >::value;
+
+template< size_t I, typename ScopeT >
+struct ScopeContainsVariable;
+
+template< size_t I, typename ScopeT >
+requires( not is_scope_v< ScopeT >)
+struct ScopeContainsVariable< I, ScopeT >: integral_constant< bool, false > { };
+
+template< size_t I, typename ScopeT >
+requires( is_scope_v< ScopeT >)
+struct ScopeContainsVariable< I, ScopeT >: integral_constant< bool,
+    ScopeT::template has_value< Variable< I, bool >>> { };
+
+template< size_t I, typename ScopeT >
+constexpr bool scope_contains_variable_v = ScopeContainsVariable< I, ScopeT >::value;
+
+template< typename T, size_t I >
+concept scope_containing = scope_contains_variable_v< I, T >;
+
 /// @brief a placeholder in an expression whose value can change
 /// @tparam I is the index in the declared variables to this variable
 /// @tparam T is the type of this variable
@@ -73,7 +121,10 @@ struct Variable: ExpressionTag
     string name() const
     { return _name; }
 
-    T eval() const
+    template< typename FirstParam, typename... RestParams >
+    constexpr T eval( FirstParam&, RestParams&... ) const;
+
+    constexpr T eval() const
     { return *_ptr; }
 
     // NOTE: this is for advanced use.  It re-wires the underlying
@@ -83,6 +134,7 @@ struct Variable: ExpressionTag
     { _ptr = &storage; }
 
     Variable& operator=( Variable const& ) = delete;
+
     template< typename U >
     requires( std::is_convertible_v< T, U > )
     Variable& operator =( U const& other )
@@ -103,26 +155,99 @@ struct Variable: ExpressionTag
 /// @brief container for variable values
 /// @tparam ...Vars are the variables in this scope
 template< typename... Vars >
-struct Scope
+struct Scope: tuple< typename Vars::result_type... >
 { 
     static constexpr size_t size = sizeof...( Vars );
     using variables_type = tuple< Vars... >;
 
+    template< typename Var >
+    static constexpr bool has_value = (( Vars::index == Var::index ) or ... );
+
+    template< typename Var, typename Seq >
+    struct GetValueHelper;
+
+    template< size_t I, typename T, size_t J, size_t... Js >
+    requires( I == Vars...[ J ]::index )
+    struct GetValueHelper< Variable< I, T >, seq< J, Js... >>
+    {
+        static constexpr T& value( Scope& scope )
+        { return std::get< J >( scope ); }
+
+        static constexpr T const& value( Scope const& scope )
+        { return std::get< J >( scope ); }
+    };
+
+    template< size_t I, typename T, size_t J, size_t... Js >
+    requires( I != Vars...[ J ]::index )
+    struct GetValueHelper< Variable< I, T >, seq< J, Js... >>:
+        GetValueHelper< Variable< I, T >, seq< Js... >>
+    { };
+
+    template< typename Var >
+    struct GetValue;
+
+    template< size_t I, typename T >
+    requires( has_value< Variable< I, T >>)
+    struct GetValue< Variable< I, T >>:
+        GetValueHelper< Variable< I, T >, make_seq< size >> 
+    { }; 
+
+    template< typename Var >
+    constexpr typename Var::result_type& value( Var var = {} )
+    { return GetValue< Var >::value( *this ); }
+
+    template< typename Var >
+    constexpr typename Var::result_type const& value( Var var = {} ) const
+    { return GetValue< Var >::value( *this ); }
+               
     template< size_t... Is >
     constexpr variables_type variables_helper( seq< Is... > )
-    { return {{ &std::get< Is >( _values ), _names[ Is ] }... }; }
+    { return {{ &std::get< Is >( *this ), _names[ Is ] }... }; }
 
     constexpr variables_type variables() 
     { return variables_helper( make_seq< size >{} ); }
 
-    tuple< typename Vars::result_type... > _values;
+    template< typename Var, typename... OtherVars >
+    constexpr void import_variable_value( Scope< OtherVars... > const& other )
+    {
+        using other_scope = Scope< OtherVars... >;
+
+        if( other_scope::template has_value< Var >)
+            value< Var >() = other_scope::template value< Var >();
+    }
+
+    template< typename... OtherVars, size_t I, size_t... Is >
+    constexpr void import_values_helper( Scope< OtherVars... > const& other, 
+        seq< I, Is... > )
+    {
+        using other_scope = Scope< OtherVars... >;
+
+        if( other_scope::template has_value< Vars...[ I ]> )
+            value< Vars...[ I ]>() = other_scope::template value< Vars...[ I ]>(); 
+    }
+
+    template< typename... OtherVars >
+    constexpr Scope( Scope< OtherVars... > const& other )
+    { import_values_helper( other, make_seq< size >{} ); }
+
+    constexpr Scope() = default;
+
     std::array< string, size > _names;
 };
 
-namespace details {
+template< size_t I, typename T >
+template< typename FirstParam, typename... RestParams >
+constexpr T Variable< I, T >::eval( FirstParam& first, RestParams&... rest ) const
+{
+    if constexpr( scope_contains_variable_v< I, FirstParam >)
+        return first.value( *this );
 
-} // namespace details
+    return eval( rest... ); 
+}
 
+template< variable Var, typename... Vars >
+constexpr typename Var::value_type scoped_value( Scope< Vars... > const& scope )
+{ return scope.variable_value( Var{} ); }
 
 
 template< size_t... Is >
@@ -248,102 +373,68 @@ namespace detail {
 /// @brief evaluates a type T
 /// @tparam T the type to be evaluated
 ///
-template< typename T, typename... Params >
+template< typename T >
 struct Evaluator;
-
-template< typename... Params >
-struct EvaluationParameters: tuple< Params... > { };
-
-template< typename U, typename T, typename... Params >
-Evaluator< U, Params... > cast_evaluator( Evaluator< T, Params... > const& evaluator )
-{
-    static constexpr auto cast_helper = [&evaluator]< size_t... Is >( seq< Is... > )
-    { return Evaluator< U, Params... >{ std::get< Is >( evaluator )... }; };
-
-    return cast_helper( make_seq< sizeof...( Params )>{} );
-}
-
-template< typename U, typename... Params >
-Evaluator< U, Params... > make_evaluator( EvaluationParameters< Params... > const& params )
-{ 
-    static auto helper = [&params]< size_t... Is >( seq< Is... > ) constexpr
-    { return Evaluator< U, Params... >{ get< Is >( params )... }; };
-
-    return helper( make_seq< sizeof...( Params )>{} );
-}
 
 /// @brief evaluator for expressions of type T
 /// @tparam T the type of the expression
 ///
-template< typename T, typename... Params >
+template< typename T >
 requires( is_expression_v< T > )
-struct Evaluator< T, Params... >: EvaluationParameters< Params... >
+struct Evaluator< T >
 { 
     using result_type = T::result_type;
-    static constexpr size_t param_size = sizeof...( Params );
 
-    template< size_t... Is >
-    constexpr result_type evaluate_helper( T const& expr, seq< Is... > ) const
-    { return expr.eval( std::get< Is >( *this )... ); }
-
-    constexpr result_type operator ()( T const& expr ) const
-    { return evaluate_helper( expr, make_seq< param_size >{} ); }
+    template< typename... Params >
+    constexpr result_type operator ()( T const& expr, Params&... params ) const
+    { return expr.eval( params... ); }
 };
 
-template< typename... Ts, typename... Params >
-struct Evaluator< tuple< Ts... >, Params... >: EvaluationParameters< Params... >
+template< typename... Ts >
+struct Evaluator< tuple< Ts... >>
 {
-    using result_type = tuple< typename Evaluator< Ts, Params... >::result_type... >;
+    using result_type = tuple< typename Evaluator< Ts >::result_type... >;
     using tuple_type = tuple< Ts... >;
 
-    template< size_t I >
-    struct TupleElementEvaluator
-    {
-        static constexpr typename Evaluator< Ts...[ I ], Params... >::result_type 
-        eval( tuple_type const& tup, EvaluationParameters< Params... > const& params )
-        { return make_evaluator< Ts...[ I ]>( params )( std::get< I >( tup )); }
-    };
+    template< size_t... Is, typename... Params >
+    constexpr result_type evaluate_helper( tuple_type const& tup, 
+        seq< Is... >, Params&... params ) const
+    { return { Evaluator< Ts...[Is] >{}( std::get< Is >( tup ), params... )... }; }
 
-    template< size_t... Is >
-    constexpr result_type evaluate_helper( tuple_type const& tup, seq< Is... > ) const
-    { return { TupleElementEvaluator< Is >::eval( tup, *this )... }; }
+    template< typename... Params >
+    constexpr result_type operator ()( tuple< Ts... > const& tup, Params&... params ) const
+    { return evaluate_helper( tup, make_seq< sizeof...( Ts )>{}, params... ); }
 };
 
-template< shape S, typename... Ts, typename... Params >
-struct Evaluator< Tensor< S, Ts... >, Params... >: EvaluationParameters< Params... >
+template< shape S, typename... Ts >
+struct Evaluator< Tensor< S, Ts... >>
 { 
     using result_type = Tensor< S, typename Evaluator< Ts >::result_type... >;
     using tensor_type = Tensor< S, Ts... >;
 
-    template< size_t I >
-    struct TensorElementEvaluator
-    { 
-        static constexpr typename Evaluator< Ts...[ I ], Params... >::result_type 
-        eval( tensor_type const& ten, EvaluationParameters< Params... > const& params )
-        { return make_evaluator< Ts...[ I ]>( params )( tensor_get< I >( ten )); }
-    };
-
-    template< size_t... Is >
+    template< size_t... Is, typename... Params >
     constexpr result_type evaluate_helper( Tensor< S, Ts... > const& ten, 
-        seq< Is... > ) const
-    { return { TensorElementEvaluator< Is >::eval( ten, *this )... }; }
+        seq< Is... >, Params&... params ) const
+    { return { Evaluator< Ts...[Is] >{}( ten, params... )... }; }
 
     // always return the value itself
-    constexpr result_type operator ()( Tensor< S, Ts... > const& value ) const
-    { return evaluate_helper( value, make_seq< Tensor< S, Ts... >::size() >{} ); }
+    template< typename... Params >
+    constexpr result_type operator ()( Tensor< S, Ts... > const& value, Params&... params ) const
+    { return evaluate_helper( value, make_seq< Tensor< S, Ts... >::size() >{}, params... ); }
 };
 
 /// @brief evaluator for non-expression types
 /// @tparam T the type of the non-expression
 ///
-template< typename T, typename... Params >
+template< typename T >
 requires( not is_expression_v< T > and not is_tensor_v< T > and not is_tuple_v< T > )
-struct Evaluator< T, Params... >: EvaluationParameters< Params... >
+struct Evaluator< T >
 { 
     using result_type = T;
 
     // always return the value itself
-    constexpr result_type operator ()( T const& value ) const
+    template< typename... Params >
+    constexpr result_type operator ()( T const& value, Params&... ) const
     { return value; };
 };
 
@@ -362,25 +453,8 @@ using result_t = detail::Evaluator< T >::result_type;
 /// @return the result of evaluating expression expr using values stored in vars
 ///
 template< typename T, typename... Params >
-constexpr result_t< T > eval( T const& expr, Params... params )
-{ return detail::Evaluator< T, Params... >{ params... }( expr ); }
-
-/// @brief trait to identify variables
-/// @tparam T the type to be tested
-///
-template< typename T >
-struct IsVariable
-{ static constexpr bool value = false; };
-
-template< size_t I, typename T >
-struct IsVariable< Variable< I, T >>
-{ static constexpr bool value = true; };
-
-template< typename T >
-constexpr bool is_variable_v = IsVariable< T >::value;
-
-template< typename T >
-concept variable = is_variable_v< T >;
+constexpr result_t< T > eval( T const& expr, Params&... params )
+{ return detail::Evaluator< T >{}( expr, params... ); }
 
 /// @brief wrapper to turn any type into an expression
 /// @tparam T the wrapped type
@@ -389,10 +463,12 @@ template< typename T >
 requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
 struct StaticValue : ExpressionTag
 { 
+    using argument_types = tuple< >;
     using value_type = T;
     using result_type = value_type;
 
-    constexpr result_type eval( ) const
+    template< typename... Params >
+    constexpr result_type eval( Params&... ) const
     { return _value; }
 
     // casting to and from an expression should be explicit
@@ -427,6 +503,7 @@ StaticValue< T > static_expr( T const& value )
 template< auto Value >
 struct Constant : ExpressionTag
 {
+    using argument_types = tuple< >;
     using value_type = std::remove_cv_t< decltype( Value )>;
     using result_type = value_type;
 
@@ -435,7 +512,8 @@ struct Constant : ExpressionTag
     constexpr operator value_type() const
     { return value; }
 
-    consteval result_type eval( ) const
+    template< typename... Params >
+    consteval result_type eval( Params&... ) const
     { return value; }
 };
 
@@ -470,9 +548,17 @@ struct DependentVariableIDs< Constant< Value >>
 { using type = seq< >; };
 
 template< typename ExprT >
+struct ExpressionArguments
+{ using type = ExprT::argument_types; };
+
+template< typename... Exprs >
+struct ExpressionArguments< tuple< Exprs... >>
+{ using type = tuple< Exprs... >; };
+
+template< typename ExprT >
 struct DependentVariableIDs< ExprT >
 { 
-    using argument_types = ExprT::argument_types;
+    using argument_types = ExpressionArguments< ExprT >::type;
 
     template< typename Seq >
     struct helper;
@@ -505,14 +591,14 @@ protected:
     template< size_t J >
     struct helper< seq< J >>
     { using type = VariableType< I, 
-        tuple_element_t< J, typename ExprT::argument_types >>::type; };
+        tuple_element_t< J, typename ExpressionArguments< ExprT >::type >>::type; };
 
     template< size_t J, size_t... Js >
     requires( isgreater( sizeof...( Js ), 0 ))
     struct helper< seq< J, Js... >>
     { 
         using jth = VariableType< I, tuple_element_t< J, 
-            typename ExprT::argument_types >>::type;
+            typename ExpressionArguments< ExprT >::type >>::type;
 
         using type = std::conditional_t< not is_same_v< void, jth >, jth,
             typename helper< seq< Js...>>::type >;
@@ -520,7 +606,7 @@ protected:
 
 public:
     using type = helper< make_seq< tuple_size_v< 
-        typename ExprT::argument_types >>>::type;
+        typename ExpressionArguments< ExprT >::type >>>::type;
 };
 
 template< size_t I, size_t J, typename T >
@@ -559,10 +645,333 @@ public:
     using type = helper< variable_ids >::type;
 };
 
+template< size_t I, typename ExprT >
+struct DependsOnVariableIndex: integral_constant< bool, 
+    sequence_contains_v< I, typename DependentVariableIDs< ExprT >::type >> { };
+
 } // namespace details
 
 template< typename ExprT >
 using dependent_variables_t = details::DependentVariables< ExprT >::type;
+
+template< typename ExprT >
+using dependent_variable_id_seq = details::DependentVariableIDs< ExprT >::type;
+
+template< size_t I, typename ExprT >
+constexpr bool depends_on_variable_index_v = 
+    details::DependsOnVariableIndex< I, ExprT >::value;
+
+///////////////////////////////////
+/// Substitution and Arguments ///
+/////////////////////////////////
+///
+///
+///
+
+template< typename SubTuple, typename VarsTuple >
+struct CompatibleSubstitutionHelper;
+
+template< typename Ten, typename VarsTuple >
+struct CompatibleTensorSubstitution;
+
+template< size_t N, typename... Subs, typename... Vars >
+struct CompatibleTensorSubstitution< Tensor< Shape< N >, Subs... >, 
+    tuple< Vars... >>: 
+        CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >>
+{ };
+
+template< typename... Subs, typename... Vars >
+requires( sizeof...( Subs ) != sizeof...( Vars ))
+struct CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >>: 
+    integral_constant< bool, false > { };
+
+template< typename Sub, typename... Subs, typename Var, typename... Vars >
+requires( sizeof...( Subs ) == sizeof...( Vars ) and 
+    std::is_convertible_v< result_t< Sub >, result_t< Var >> )
+struct CompatibleSubstitutionHelper< 
+    tuple< Sub, Subs... >, tuple< Var, Vars... >>: 
+        CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >> 
+{ };
+
+template< typename Sub, typename... Subs, typename Var, typename... Vars >
+requires( sizeof...( Subs ) == sizeof...( Vars ) and 
+    not std::is_convertible_v< result_t< Sub >, result_t< Var >> )
+struct CompatibleSubstitutionHelper< 
+    tuple< Sub, Subs... >, tuple< Var, Vars... >>: integral_constant< bool,
+        false > 
+{ };
+
+template< >
+struct CompatibleSubstitutionHelper< tuple<>, tuple<> >: 
+    integral_constant< bool, true > { };
+
+template< typename ExprT, typename... Subs >
+struct CompatibleSubstitution;
+
+template< size_t I, typename T, typename U >
+struct CompatibleSubstitution< Variable< I, T >, U >:
+    std::is_convertible< result_t< U >, T > { }; 
+
+template< typename ExprT, typename Ten >
+requires( tensor< result_t< Ten >> )
+struct CompatibleSubstitution< ExprT, Ten >:
+    CompatibleTensorSubstitution< result_t< Ten >, 
+        dependent_variables_t< ExprT >>
+{ };
+
+ 
+template< typename ExprT, typename... Subs >
+requires(( not tensor< result_t< Subs >> and ... ))
+struct CompatibleSubstitution< ExprT, Subs... >:
+    CompatibleSubstitutionHelper< 
+        tuple< Subs... >, dependent_variables_t< ExprT >>
+{ };
+
+template< typename ExprT, typename... Subs >
+constexpr bool is_compatible_substitution_v = // true;
+// DEBUG: turning off substitution compatibility checking to debug substitutions
+//
+    CompatibleSubstitution< ExprT, Subs... >::value;
+
+template< typename ExprT, typename... Args >
+struct Substitution;
+
+template< template< typename... > class Op, typename... Args >
+struct Arguments;
+
+template< template< typename... > class Op, typename... Args >
+struct Arguments: ExpressionTag, tuple< Args... >
+{
+    using argument_types = tuple< Args... >;
+
+private:
+    using expression_type = Op< Args... >;
+
+    template< size_t... Is >
+    constexpr expression_type expression_helper( seq< Is... > ) const
+    { return { std::get< Is >( static_cast< argument_types >( *this ))... }; }
+
+    constexpr expression_type expression() const
+    { return expression_helper( make_seq< sizeof...( Args )>{} ); }
+public:
+    template< typename... Subs >
+    requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
+    constexpr typename Substitution< Op< Args... >, Subs... >::type
+    operator ()( Subs... subs );
+
+    template< typename... Subs >
+    requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
+    constexpr typename Substitution< Op< Args... >, Subs... >::type
+    operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > sub );
+
+    constexpr Arguments( Args... args ): tuple< Args... >{ args... } { }
+    constexpr Arguments() = default;
+};
+
+template< size_t I, typename ExprT >
+struct GetArgument
+{
+    using type = tuple_element_t< I, typename ExprT::argument_types >;
+    static constexpr type const& value( ExprT const& expr )
+    { return std::get< I >( expr ); }
+};
+
+template< size_t I, typename ExprT >
+using expression_argument_t = GetArgument< I, ExprT >::type;
+
+template< size_t I, typename ExprT >
+constexpr expression_argument_t< I, ExprT > const& 
+get_argument( ExprT const& expr )
+{ return GetArgument< I, ExprT >::value( expr ); }
+
+/// @brief Element Of operation
+template< size_t I >
+struct Element
+{
+    template< typename ArrayT >
+    struct Of;
+};
+
+template< size_t I >
+template< typename ArrayT >
+requires( not tensor< result_t< ArrayT >> )
+struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
+{
+    using result_type = tuple_element_t< I, result_t< ArrayT >>;
+    
+    constexpr ArrayT arg() const { return std::get< 0 >( *this ); }
+    
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::get< I >( expressions::eval( arg(), params... )); }
+    
+    constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
+    constexpr Of() = default;
+};
+
+template< size_t I >
+template< typename ArrayT >
+requires( tensor< result_t< ArrayT >> )
+struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
+{
+    using result_type = tensor_element_t< I, result_t< ArrayT >>;
+
+    constexpr ArrayT arg() const { return std::get< 0 >( *this ); }
+        
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::get< I >( expressions::eval( arg(), params... )); }
+    
+    constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
+    constexpr Of() = default;
+};
+
+template< size_t I, typename T >
+using element_of = Element< I >::template Of< T >;
+
+template< size_t I, typename T >
+constexpr element_of< I, T > element( T const& arr )
+{ return { arr }; }
+
+
+/// @brief expression manipulator for substitution of the variable with an 
+/// expression
+template< size_t I, typename ExprT, typename WithT >
+struct VariableSubstitution;
+
+template< size_t I, size_t J, typename ValueT, typename WithT >
+requires( I == J and std::is_convertible_v< result_t< WithT >, result_t< ValueT >> )
+struct VariableSubstitution< I, Variable< J, ValueT >, WithT >
+{
+    using type = WithT;
+    static constexpr type value( Variable< J, ValueT > const&, 
+        WithT const& with )
+    { return with; }
+};
+
+template< size_t I, typename ExprT, typename WithT >
+requires( not depends_on_variable_index_v< I, ExprT > )
+struct VariableSubstitution< I, ExprT, WithT >
+{
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr, WithT const& )
+    { return expr; }
+};
+
+template< size_t I, template< typename... > class Op,
+    typename... Args, typename WithT >
+requires( expression< Op< Args... >> and 
+    depends_on_variable_index_v< I, Op< Args... >>)
+struct VariableSubstitution< I, Op< Args... >, WithT >
+{
+    using type = Op< typename VariableSubstitution< I, Args, WithT >::type... >;
+    static constexpr type value( Op< Args... > const& expr, WithT with )
+    { return value_helper( expr, with, make_seq< sizeof...( Args )>{} ); }
+
+private:
+    template< size_t... Is >
+    static constexpr type value_helper( Op< Args... > const& expr, 
+        WithT const& with, seq< Is... > )
+    { return { VariableSubstitution< I, Args...[ Is ], WithT >::value(
+        get_argument< Is >( expr ), with )... }; }
+};
+
+template< typename ExprT, typename ArgTuple, typename Seq >
+struct SubstitutionHelper;
+
+template< typename ExprT, typename Ten, typename Seq >
+struct SubstitutionTensorHelper;
+
+template< typename ExprT, typename Ten >
+struct SubstitutionTensor:
+    SubstitutionTensorHelper< ExprT, Ten, make_seq< tensor_shape_t< result_t< Ten >>::size() >>
+{ };
+
+template< typename ExprT, typename Ten, size_t... Is >
+struct SubstitutionTensorHelper< ExprT, Ten, seq< Is... >>:
+    SubstitutionHelper< ExprT, tuple< element_of< Is, Ten >... >, 
+        dependent_variable_id_seq< ExprT >>
+{
+    using helper_type = SubstitutionHelper< ExprT, tuple< element_of< Is, Ten >... >, 
+        dependent_variable_id_seq< ExprT >>;
+
+    using type = helper_type::type;
+    
+    static constexpr type value( ExprT const& expr, Ten const& ten )
+    { return helper_type::value( expr, element< Is >( ten )... ); }
+};
+
+template< typename ExprT >
+struct SubstitutionHelper< ExprT, tuple<>, seq<> >
+{
+    using type = ExprT;
+    static constexpr type value( ExprT expr )
+    { return expr; }
+};
+
+/// @brief substitutes First for Variable< J, T >, and Rest... for 
+/// Variable< Js, Ts >... 
+template< typename ExprT, typename First, typename... Rest, 
+    size_t J, size_t... Js >
+struct SubstitutionHelper< ExprT, tuple< First, Rest... >, seq< J, Js... >>:
+    SubstitutionHelper< typename VariableSubstitution< J, ExprT, First >::type,
+        tuple< Rest... >, seq< Js... >>
+{
+    using first_substitution = VariableSubstitution< J, ExprT, First >;
+    using first_substitution_type = first_substitution::type;
+    using rest_helper = SubstitutionHelper< first_substitution_type, 
+        tuple< Rest... >, seq< Js... >>;
+
+    using type = rest_helper::type;
+
+    static constexpr type value( ExprT expr, First first, Rest... rest )
+    { return rest_helper::value( first_substitution::value( expr, first ), rest... ); }
+};
+
+template< typename ExprT, typename... Args >
+struct Substitution;
+
+template< typename ExprT, typename Ten >
+requires( tensor< result_t< Ten >> )
+struct Substitution< ExprT, Ten >:
+    SubstitutionTensor< ExprT, Ten >
+{ };
+
+template< typename ExprT, typename... Args >
+requires(( not tensor< result_t< Args >> and ... ))
+struct Substitution< ExprT, Args... >: 
+    SubstitutionHelper< ExprT, tuple< Args... >, dependent_variable_id_seq< ExprT >>
+{ };
+
+/// @brief substitutes arguments for the dependent variables of an expression
+/// @tparam ExprT type of the expression to be substituted into
+/// @tparam Args... types of the args being substituted
+/// @param expr is the instance of the original expression
+/// @param args... are the 
+template< typename ExprT, typename... Args >
+constexpr typename Substitution< ExprT, Args... >::type 
+substitution( ExprT expr, Args... args )
+{ return Substitution< ExprT, Args... >::value( expr, args... ); }
+
+template< template< typename... > class Op, typename... Args >
+template< typename... Subs >
+requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
+constexpr typename Substitution< Op< Args... >, Subs... >::type
+Arguments< Op, Args... >::operator ()( Subs... subs )
+{ return substitution( expression(), subs... ); }
+
+//template< template< typename... > class Op, typename... Args >
+//template< typename... Subs >
+//requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
+//constexpr typename Substitution< Op< Args... >, Subs... >::type
+//Arguments< Op, Args... >::operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > ten )
+//{ 
+//    static auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+//    { return substitution( expression(), tensor_get< Is >( ten )... ); };
+//
+//    return helper( make_seq< sizeof...( Subs )>{} ); 
+//}
+
 
 ///////////////////
 /// Operations ///
@@ -572,66 +981,69 @@ using dependent_variables_t = details::DependentVariables< ExprT >::type;
 /// @tparam T the negated type
 ///
 template< typename T >
-struct Negation: ExpressionTag
+struct Negation: Arguments< Negation, T >
 { 
-    using argument_types = tuple< T >;
     using result_type = decltype( -result_t< T >{} );
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const 
+    { return get_argument< 0 >( *this ); }
 
-    constexpr result_type eval( ) const
-    { return -expressions::eval( arg() ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return -expressions::eval( arg(), params... ); }
 
-    constexpr Negation( T arg ): _arg{ arg } { } 
+    constexpr Negation( T arg ): Arguments< Negation, T >{ arg } { } 
     constexpr Negation() = default;
-
-    T _arg;
 };
+
+static_assert( eval( Negation< Variable< 0, int >>{}( 5 )) == -5 );
+
+template< typename... Ts >
+struct Sum;
 
 /// @brief sum expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Sum: ExpressionTag
+struct Sum< T, U >: Arguments< Sum, T, U >
 { 
-    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
+    //using dependent_vars = dependent_variables_t< argument_types >;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
-
-    constexpr auto eval( ) const
-    { return expressions::eval( left_arg() ) + expressions::eval( right_arg() ); }
-
-    constexpr Sum( T left, U right ): 
-        _left{ left }, _right{ right } { } 
-    constexpr Sum() = default;
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
     
-    T _left;
-    U _right;
+    template< typename... Params >
+    constexpr auto eval( Params&... params ) const
+    { return expressions::eval( left_arg(), params... ) + 
+        expressions::eval( right_arg(), params... ); }
+
+    constexpr Sum( T left, U right ): Arguments< Sum, T, U >{ left, right } { } 
+    constexpr Sum() = default;
 };
+
+template< typename... Ts >
+struct Difference;
 
 /// @brief difference expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Difference: ExpressionTag
+struct Difference< T, U >: Arguments< Difference, T, U >
 { 
-    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} - result_t< U >{} );
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
 
-    constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) - expressions::eval( right_arg() ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return expressions::eval( left_arg(), params... ) - 
+        expressions::eval( right_arg(), params... ); }
 
     constexpr Difference( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+        Arguments< Difference, T, U >{ left, right } { } 
     constexpr Difference() = default;
-
-    T _left;
-    U _right;
 };
 
 /// @brief product expression
@@ -646,8 +1058,10 @@ struct Product: ExpressionTag
     constexpr T left_arg() const { return _left; }
     constexpr U right_arg() const { return _right; }
 
-    constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) * expressions::eval( right_arg() ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return expressions::eval( left_arg(), params... ) * 
+        expressions::eval( right_arg(), params... ); }
 
     constexpr Product( T left, U right ): 
         _left{ left }, _right{ right } { } 
@@ -669,8 +1083,10 @@ struct Quotient: ExpressionTag
     constexpr T numerator_arg() const { return _numerator; }
     constexpr U denominator_arg() const { return _denominator; }
 
-    constexpr result_type eval( ) const
-    { return expressions::eval( numerator_arg() ) / expressions::eval( denominator_arg() ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return expressions::eval( numerator_arg(), params... ) / 
+        expressions::eval( denominator_arg(), params... ); }
 
     constexpr Quotient( T numerator, U denominator ):
         _numerator{ numerator }, 
@@ -691,8 +1107,9 @@ struct SquareRoot: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::sqrt( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::sqrt( expressions::eval( arg(), params... )); }
 
     constexpr SquareRoot( T arg ): _arg{ arg } { } 
     constexpr SquareRoot() = default;
@@ -703,22 +1120,27 @@ struct SquareRoot: ExpressionTag
 /// @brief integral power expression
 /// @tparam T 
 /// @tparam Exp 
-template< int Exp, typename T >
-struct Power: ExpressionTag
+template< int Exp >
+struct Power
 {
-    using argument_types = tuple< T >;
-    using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
+    template< typename T >
+    struct Of: Arguments< Of, T >
+    {
+        using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+        constexpr T arg() const { return get_argument< 0 >( *this ); }
+   
+        template< typename... Params >
+        constexpr result_type eval( Params&... params ) const
+        { return std::pow< Exp >( expressions::eval( arg(), params... )); }
 
-    constexpr result_type eval( ) const
-    { return std::pow< Exp >( expressions::eval( arg() )); }
-
-    constexpr Power( T arg ): _arg{ arg } {} 
-    constexpr Power() = default;
-
-    T _arg;
+        constexpr Of( T arg ): Arguments< Of, T >{ arg } {} 
+        constexpr Of() = default;
+    };
 };
+
+template< size_t Exp, typename T >
+using power_of = Power< Exp >::template Of< T >;
 
 /// @brief sine expression
 /// @tparam T 
@@ -730,8 +1152,9 @@ struct Sine: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::sin( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::sin( expressions::eval( arg(), params... )); }
 
     constexpr Sine( T arg ): _arg{ arg } { } 
     constexpr Sine() = default;
@@ -749,8 +1172,9 @@ struct Cosine: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::cos( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::cos( expressions::eval( arg(), params... )); }
 
     constexpr Cosine( T arg ): _arg{ arg } { } 
     constexpr Cosine() = default;
@@ -768,8 +1192,9 @@ struct Tangent: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::tan( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::tan( expressions::eval( arg(), params... )); }
 
     constexpr Tangent( T arg ): _arg{ arg } { } 
     constexpr Tangent() = default;
@@ -787,8 +1212,9 @@ struct Arcsine: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::asin( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::asin( expressions::eval( arg(), params... )); }
 
     constexpr Arcsine( T arg ): _arg{ arg } { } 
     constexpr Arcsine() = default;
@@ -806,8 +1232,9 @@ struct Arccosine: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::acos( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::acos( expressions::eval( arg(), params... )); }
 
     constexpr Arccosine( T arg ): _arg{ arg } { } 
     constexpr Arccosine() = default;
@@ -825,8 +1252,9 @@ struct Arctangent: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return std::atan( expressions::eval( arg() )); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return std::atan( expressions::eval( arg(), params... )); }
 
     constexpr Arctangent( T arg ): _arg{ arg } { } 
     constexpr Arctangent() = default;
@@ -851,7 +1279,8 @@ struct Arctangent2: ExpressionTag
     constexpr U denominator_arg() const { return _denominator; }
 
     // TODO: write an eval for std::atan2 that handles units properly
-    constexpr result_type eval( ) const;
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const;
 
     constexpr Arctangent2( T numerator, U denominator ):
         _numerator{ numerator }, 
@@ -865,14 +1294,14 @@ struct Arctangent2: ExpressionTag
 /// @brief extract the element from a tuple-like array
 /// @tparam ArrayT 
 /// @tparam I 
-template< size_t I, typename ArrayT >
-struct Element: tuple_element_t< I, ArrayT >
-{  
-    constexpr Element( ArrayT arr ): 
-        tuple_element_t< I, ArrayT >{ std::get< I >( arr ) }
-    { }
-};
-
+// template< size_t I, typename ArrayT >
+// struct Element: tuple_element_t< I, ArrayT >
+// {  
+//     constexpr Element( ArrayT arr ): 
+//         tuple_element_t< I, ArrayT >{ std::get< I >( arr ) }
+//     { }
+// };
+// 
 /// @brief equality expression
 /// @tparam T 
 /// @tparam U 
@@ -884,9 +1313,11 @@ struct Equals: ExpressionTag
 
     constexpr T left_arg() const { return _left; }
     constexpr U right_arg() const { return _right; }
-
-    constexpr result_type eval( ) const
-    { return expressions::eval( left_arg() ) == expressions::eval( right_arg() ); }
+    
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return expressions::eval( left_arg(), params... ) == 
+        expressions::eval( right_arg(), params... ); }
 
     constexpr Equals( T left, U right ): 
         _left{ left }, _right{ right } { } 
@@ -909,12 +1340,13 @@ struct Conjunction: ExpressionTag
     constexpr Ts...[ I ] arg() const
     { return std::get< I >( _args ); }
 
-    template< size_t... Is >
-    constexpr result_type eval_helper( seq< Is... > ) const
-    { return ( expressions::eval( arg< Is >()) and ... ); }
+    template< size_t... Is, typename... Params >
+    constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
+    { return ( expressions::eval( arg< Is >(), params... ) and ... ); }
 
-    constexpr result_type eval( ) const
-    { return eval_helper( make_seq< arguments_size() >{} ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return eval_helper( make_seq< arguments_size() >{}, params... ); }
 
     constexpr Conjunction( Ts... ts ): _args{ ts... } { } 
     constexpr Conjunction() = default;
@@ -935,12 +1367,13 @@ struct Disjunction: ExpressionTag
     constexpr Ts...[ I ] arg() const
     { return std::get< I >( _args ); }
 
-    template< size_t... Is >
-    constexpr result_type eval_helper( seq< Is... > ) const
-    { return ( expressions::eval( arg< Is >()) or ... ); }
+    template< size_t... Is, typename... Params >
+    constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
+    { return ( expressions::eval( arg< Is >(), params... ) or ... ); }
 
-    constexpr result_type eval( ) const
-    { return eval_helper( make_seq< arguments_size() >{} ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return eval_helper( make_seq< arguments_size() >{}, params... ); }
 
     constexpr Disjunction( Ts... ts ): _args{ ts... } { } 
     constexpr Disjunction() = default;
@@ -959,8 +1392,9 @@ struct Compliment: ExpressionTag
 
     constexpr T arg() const { return _arg; }
 
-    constexpr result_type eval( ) const
-    { return not expressions::eval( arg() ); }
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return not expressions::eval( arg(), params... ); }
 
     constexpr Compliment( T arg ): _arg{ arg } { } 
     constexpr Compliment() = default;
@@ -1199,7 +1633,7 @@ constexpr auto sqrt( T const& arg )
 // pow
 template< int Exp, expression T >
 constexpr auto pow( T const& arg )
-{ return Power< Exp, T >{ arg }; }
+{ return power_of< Exp, T >{ arg }; }
 
 // equality
 template< expression T, expression U >
@@ -1350,7 +1784,7 @@ struct Differential
     }
 
     template< int Exp, typename U >
-    auto operator()( Power< Exp, U > const& expr )
+    auto operator()( power_of< Exp, U > const& expr )
     { 
         using result_type = decltype( result_t< U >{} / result_t< U >{} );
         return Constant<  static_cast< result_type >( Exp ) >{} * 

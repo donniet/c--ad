@@ -310,7 +310,7 @@ struct base_unit< scalar_unit_id, T >
     // implicit cast operator
     constexpr operator scalar_type() const
     { return value; }
-    constexpr base_unit() : value{0.} { }
+    constexpr base_unit() : value{ static_cast< scalar_type >( 0 )} { }
     constexpr base_unit( base_unit const& other ) : value{ other.value } { }
     // implicit scalar constructor
     constexpr base_unit( scalar_type value ) : value{ value } { }

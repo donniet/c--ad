@@ -529,7 +529,36 @@ template< size_t I, size_t... Is >
 struct sequence_at_helper< 0, seq< I, Is... >>
 { static constexpr size_t value = I; };
 
+/// @brief trait to determine if an index is in an index sequence
+template< size_t I, typename Seq >
+struct SequenceContains;
+
+/// @brief null case for testing if a sequence contains an index
+template< size_t I >
+struct SequenceContains< I, seq< >>: 
+    integral_constant< bool, false > { };
+
+/// @brief success case 
+template< size_t I, size_t J, size_t... Js >
+requires( I == J )
+struct SequenceContains< I, seq< J, Js... >>: 
+    integral_constant< bool, true > { };
+
+/// @brief recurse case
+template< size_t I, size_t J, size_t... Js >
+requires( I != J )
+struct SequenceContains< I, seq< J, Js... >>:
+    SequenceContains< I, seq< Js... >> { };
+
 } // namespace detail
+
+/// @brief trait to determine of a sequence contains an index
+/// @tparam I is the index to search for
+/// @tparam Seq is the index sequence to search
+/// @returns true of Seq contains the index I
+template< size_t I, typename Seq >
+constexpr size_t sequence_contains_v = 
+    detail::SequenceContains< I, Seq >::value;
 
 /// @brief value of the sequence at a given index
 /// @tparam Seq the integer sequence
@@ -620,6 +649,7 @@ struct MergeUniqueSortedSequences< seq< Is... >>
 { using type = seq< Is... >; };
 
 template< size_t... Js >
+requires( isgreater( sizeof...( Js ), 0 )) // for disambiguation
 struct MergeUniqueSortedSequences< seq< Js... >, seq< >>
 { using type = seq< Js... >; };
 

@@ -8,13 +8,15 @@
 #include <format>
 #include <cassert>
 
+using namespace expressions;
+using namespace units;
+
+
+void test_iteration();
 
 int main( int ac, char* av[] )
 {
     using std::println;
-
-    using namespace expressions;
-    using namespace units;
 
     auto zero = constant_zero;
     auto one = constant_one;
@@ -101,33 +103,86 @@ int main( int ac, char* av[] )
     auto grad = gradient( a );
 
     // paraboloid 
-    auto para = ( pow< 2 >( x - 2 ) + pow< 2 >( y - 3 ) + 3 );
+//    auto para = ( pow< 2 >( x - 2 ) + pow< 2 >( y - 3 ) + 3 );
+//
+//    auto solver = gradient_descent( x, y );
+//    solver[ maximum_iterations ] = 1000;
+//    solver[ learning_rate ] = 1e-3;
+//
+//    solver( para );
+//    println( "solved para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
+//
+//    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+//
+//    static_assert( is_same_v< tuple< decltype( z ), decltype( w ) >, 
+//	dependent_variables_t< decltype( para2 )>> );
+//
+//    // verify the dependent_variables_t trait works
+//    static_assert( 
+//        ( z.index < w.index and is_same_v< 
+//            tuple< decltype( z ), decltype( w )>,
+//            dependent_variables_t< decltype( para2 )>> ) or 
+//        ( w.index < z.index and is_same_v< 
+//            tuple< decltype( w ), decltype( z )>,
+//            dependent_variables_t< decltype( para2 )>> ));
 
-    auto solver = gradient_descent( x, y );
-    solver[ maximum_iterations ] = 1000;
-    solver[ learning_rate ] = 1e-3;
+    // eval( vec( w, z ), minimize( para2, iterations( n ), iteration_delta( d )) and n < 1000 and 
+    // 
+    // auto rate = 0.01_sqft;
+    // auto gradient = grad( para2 );
+    // auto p = vec< Length, Length >( 0_ft, 0_ft );
+    //
+    //
+    // DT: I like this format because it's flexible and can be implimented with the current
+    //	   scoping of variables.
+    //
+    // auto min = eval( 
+    //	    iteratation( p, n ).initial_condition( n == 0 ).
+    //	    iterate_until( n == 1000 or norm( gradient ) < 0.001_sqft ).
+    //	    update( p - rate * para2( p ) * gradient( p ), n + 1 ).
+    //	    value( p ));
 
-    solver( para );
-    println( "solved: para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
+//    auto solver2 = gradient_descent( w, z );
+//    solver2[ maximum_iterations ] = 1000;
+//    solver2[ learning_rate ] = 1e-2;
+//    solver2( para2 );
+//    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
-    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
-
-    // verify the dependent_variables_t trait works
-    static_assert( 
-        ( z.index < w.index and is_same_v< 
-            tuple< decltype( z ), decltype( w )>,
-            dependent_variables_t< decltype( para2 )>> ) or 
-        ( w.index < z.index and is_same_v< 
-            tuple< decltype( w ), decltype( z )>,
-            dependent_variables_t< decltype( para2 )>> ));
-
-    auto solver2 = gradient_descent( w, z );
-    solver2[ maximum_iterations ] = 1000;
-    solver2[ learning_rate ] = 1e-2;
-    solver2( para2 );
-    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
-
-
+     test_iteration();
 
     return EXIT_SUCCESS;
+}
+
+
+void test_iteration() 
+{
+    using std::println;
+
+    auto vars = declare_variables(
+        var< uniform_vector_t< 2, Length >>( "p" ),
+        var< Cardinal    >( "n" ),
+        var< Cardinal    >( "m" ),
+        var< Length      >( "w" ),
+        var< Length      >( "z" ));
+
+    auto [ p, n, m, z, w ] = vars.all();
+
+//    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+    
+    // sum of the first n integers
+    auto [ s, steps ] = eval( iteration( m, n ).
+        initial_values( 0, 1 ).
+        update( m + n, n + 1 ).
+        until( n == 100 ));
+
+    println( std::runtime_format( "sum of first {} integers: {}" ), steps, s );
+
+//    auto gradw = gradient( w );
+//    auto gradz = gradient( z );
+//    auto rate = 1.0 / 100.0_sqft;
+//
+//    auto [ min_value, steps ] = eval( iteration( w, z, n ).
+//        initial_values( 0_ft, 0_ft, 0 ).
+//        update( w - rate * para2( w, z ) * gradw( para2 ), n + 1 ).
+//        until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
 }

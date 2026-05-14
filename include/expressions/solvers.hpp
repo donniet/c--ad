@@ -36,11 +36,19 @@ using namespace normalization;
 ///
 /// auto f = 5 * pow< 2 >( y - 3 ) * 4 * pow< 2 >( x - 2 );
 ///
-/// auto expr = min( f ) 
-/// auto solution = 
+/// auto solution = eval( argmin( f ), method< GradientDescent >
+///	.learning_rate( 
 ///
 ///
 
+
+///
+/// audo grad = get_gradient( para2 );
+///
+/// auto [ min_value, steps ] = eval( iteratation( p, n ).
+///    initial_values( { 0_ft, 0_ft }, 0 ).
+///    update( p - rate * para2( p ) * grad( p ), n + 1 ).
+///    until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
 ///
 ///
 /// if( auto solution : solve( all_of( arithmetic_expr ), criteria_expr ))
@@ -48,6 +56,127 @@ using namespace normalization;
 ///
 ///
 ///
+
+template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
+struct Iteration;
+
+template< typename UpdatesTuple, typename VariablesTuple >
+struct IterationUpdater;
+
+template< variable... Vars >
+struct IterationInitializer;
+
+template< variable... Vars >
+constexpr IterationInitializer< Vars... > iteration( Vars... );
+
+template< variable... Vars >
+struct IterationInitializer
+{
+    IterationInitializer& initial_values( typename Vars::result_type... inits )
+    { 
+        _inits = make_tuple( inits... ); 
+        return *this;
+    }
+
+    template< expression... Updates >
+    IterationUpdater< tuple< Updates... >, tuple< Vars... >> update( 
+        Updates const&... updates );
+
+    IterationInitializer( Vars... vars ): _vars{ vars... } { }
+
+    tuple< Vars... > _vars;
+    tuple< typename Vars::result_type... > _inits;
+};
+
+template< expression... Updates, variable... Vars >
+struct IterationUpdater< tuple< Updates... >, tuple< Vars... >>: 
+    IterationInitializer< Vars... >
+{
+    template< expression UntilE >
+    Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> until( 
+        UntilE const& until_expr ) const;
+
+    IterationUpdater( IterationInitializer< Vars... > const& init, 
+        Updates const&... updates ): 
+            IterationInitializer< Vars... >{ init }, 
+            _updates{ updates... }
+    { }
+
+    tuple< Updates... > _updates;
+};
+
+template< variable... Vars >
+template< expression... Updates >
+IterationUpdater< tuple< Updates... >, tuple< Vars... >> 
+IterationInitializer< Vars... >::update( 
+    Updates const&... updates )
+{ return { *this, updates... }; }
+
+template< expression UntilE, expression... Updates, variable... Vars >
+struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: ExpressionTag
+{
+    using argument_types = tuple< UntilE, Updates..., Vars... >;
+    using result_type = tuple< result_t< Vars >... >;
+
+    constexpr UntilE until_expr() const { return _until_expr; }
+    constexpr tuple< Updates... > updates() const{ return _updates; }
+    constexpr tuple< Vars... > vars() const { return _vars; }
+
+    template< typename... Params >
+    constexpr Scope< Vars... > make_scope( Params&... params ) const
+    { 
+        // TODO: find a scope parameter and use it as the parent scope
+        return { };
+    }
+
+    template< typename... Params >
+    constexpr auto eval( Params&... params ) const
+    {
+        // create a scope for this iteration
+        auto scope = make_scope( params... );
+
+        auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
+        { (( scope.template value< Vars...[ Is ]>() = std::get< Is >( _inits )), ...); };
+
+        // scope update helper
+        // TODO: enforce the tuple-type here with a requires on the IterationBuilder
+        auto scope_updater = [&]< size_t... Is >( seq< Is... > )
+        { (( scope.template value< Vars...[Is]>() = expressions::eval( 
+            std::get< Is >( _updates ), scope, params... )), ... ); };
+
+        // get the initial values for the variables and update them in our scope
+        scope_initializer( make_seq< sizeof...( Updates )>{} );
+
+        // loop while the until expression evals to false
+        while( not expressions::eval( until_expr(), scope ))
+            scope_updater( make_seq< sizeof...( Updates )>{} ); 
+
+        // return the scoped value of the vars
+        return make_tuple( scope.template value< Vars >()... );
+    }
+
+    constexpr Iteration() = default;
+    constexpr Iteration( UntilE until_expr, tuple< Updates... > updates, 
+        tuple< Vars... > vars, tuple< typename Vars::result_type... > inits ): 
+            _until_expr{ until_expr }, _updates{ updates }, 
+            _vars{ vars }, _inits{ inits } { }
+
+    UntilE _until_expr;
+    tuple< Updates... > _updates;
+    tuple< Vars... > _vars;
+    tuple< typename Vars::result_type... > _inits;
+};
+
+template< expression... Updates, variable... Vars >
+template< expression UntilE >
+Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> 
+IterationUpdater< tuple< Updates... >, tuple< Vars... >>::until( UntilE const& until_expr ) const
+{ return { until_expr, _updates, IterationInitializer< Vars... >::_vars, 
+    IterationInitializer< Vars... >::_inits }; }
+
+template< variable... Vars >
+constexpr IterationInitializer< Vars... > iteration( Vars... vars )
+{ return { vars... }; }
 
 /// @brief trait to list the combinations of non-boolean valued boolean 
 /// expressions that must be true for the expression to be true
@@ -131,7 +260,7 @@ struct GradientDescent:
     template< size_t I, typename ErrorT, typename GradElementT >
     auto descend_element( ErrorT err, GradElementT grad_n )
     {
-        auto x = get_variable< I >();
+        auto x = get_variable< I >(); 
         auto r = param( learning_rate, default_learning_rate );
         // TODO: check this math
         // gradient unit will be err unit / var unit
