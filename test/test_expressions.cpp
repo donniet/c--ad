@@ -173,7 +173,7 @@ void test_iteration()
     auto [ s, steps ] = eval( iteration( m, n ).
         initial_values( 0, 1 ).
         update( m + n, n + 1 ).
-        until( n == 100 ));
+        until( n > 100 ));
 
     println( std::runtime_format( "sum of first {} integers: {}" ), steps, s );
 

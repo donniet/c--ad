@@ -1301,7 +1301,8 @@ struct Arctangent2: ExpressionTag
 //         tuple_element_t< I, ArrayT >{ std::get< I >( arr ) }
 //     { }
 // };
-// 
+//
+
 /// @brief equality expression
 /// @tparam T 
 /// @tparam U 
@@ -1326,6 +1327,32 @@ struct Equals: ExpressionTag
     T _left;
     U _right;
 };
+
+/// @brief equality expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct GreaterThan: ExpressionTag
+{ 
+    using argument_types = tuple< T, U >;
+    using result_type = bool;
+
+    constexpr T left_arg() const { return _left; }
+    constexpr U right_arg() const { return _right; }
+    
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { return expressions::eval( left_arg(), params... ) >
+        expressions::eval( right_arg(), params... ); }
+
+    constexpr GreaterThan( T left, U right ): 
+        _left{ left }, _right{ right } { } 
+    constexpr GreaterThan() = default;
+    
+    T _left;
+    U _right;
+};
+
 
 /// @brief logical and expression
 /// @tparam Ts... 
@@ -1685,6 +1712,21 @@ requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
 constexpr auto operator!=( Tensor< ShapeT, Ts... > const& left,
     Tensor< ShapeT, Us... > const& right )
 { return not tensor_equals_helper( left, right, make_seq< sizeof...( Ts )>{} ); }
+
+// greater than
+template< expression T, expression U >
+constexpr auto operator >( T const& left, U const& right )
+{ return GreaterThan< T, U >{ left, right }; }
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator >( T const& left, U const& right )
+{ return GreaterThan< T, StaticValue< U >>{ left, static_expr( right )}; }
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator >( T const& left, U const& right )
+{ return GreaterThan< StaticValue< T >, U >{ static_expr( left ), right }; }
 
 // logical operations
 template< expression T, expression U >

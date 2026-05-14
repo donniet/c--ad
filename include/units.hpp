@@ -348,11 +348,10 @@ struct unit_traits< base_unit< Id, T >>
 };
 
 template< typename T >
-struct is_unit; 
+struct is_unit: integral_constant< bool, false > { }; 
 
 template< unit_id_type Id, arithmetic T >
-struct is_unit< base_unit< Id, T >>
-{ static constexpr bool value = true; };
+struct is_unit< base_unit< Id, T >>: integral_constant< bool, true > { };
 
 template< typename T >
 concept unit = is_unit< T >::value;
