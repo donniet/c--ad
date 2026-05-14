@@ -739,6 +739,10 @@ struct Substitution;
 template< template< typename... > class Op, typename... Args >
 struct Arguments;
 
+template< typename T >
+concept compound_expression = expression< T > and requires( T )
+{ typename T::argument_types; };
+
 template< template< typename... > class Op, typename... Args >
 struct Arguments: ExpressionTag, tuple< Args... >
 {
@@ -833,6 +837,73 @@ template< size_t I, typename T >
 constexpr element_of< I, T > element( T const& arr )
 { return { arr }; }
 
+/// @brief expression manipulator that replaces any argument in an expression
+/// with the given WithT argument.
+/// @tparam Predicate resolves to an integral_constant< bool, ... > like
+/// like object-type (ie: has a constexpr static bool value member) which
+/// flags the expression passed as the template parameter as substitutable
+template< template< typename > class Predicate, typename ExprT, typename WithT >
+struct PredicateSubstitution;
+
+template< template< typename > class Predicate, typename ExprT, typename WithT >
+requires( Predicate< ExprT >::value )
+struct PredicateSubstitution< Predicate, ExprT, WithT >
+{
+    using type = WithT;
+    static constexpr type value( ExprT const& expr, WithT const& with )
+    { return with; } 
+};
+
+template< template< typename > class Predicate, size_t I, typename T, typename WithT >
+requires( not Predicate< Variable< I, T >>::value )
+struct PredicateSubstitution< Predicate, Variable< I, T >, WithT >
+{
+    using type = Variable< I, T >;
+    static constexpr type value( Variable< I, T > const& var, WithT const& with )
+    { return var; }
+};
+
+template< template< typename > class Predicate, auto Value, typename WithT >
+requires( not Predicate< Constant< Value >>::value )
+struct PredicateSubstitution< Predicate, Constant< Value >, WithT >
+{
+    using type = Constant< Value >;
+    static constexpr type value( Constant< Value > const& const_value, WithT const& with )
+    { return const_value; }
+};
+
+template< template< typename > class Predicate, typename T, typename WithT >
+requires( not Predicate< StaticValue< T >>::value )
+struct PredicateSubstitution< Predicate, StaticValue< T >, WithT >
+{
+    using type = StaticValue< T >;
+    static constexpr type value( StaticValue< T > const& static_value, WithT const& with )
+    { return static_value; }
+};
+
+template< template< typename > class Predicate, 
+    template< typename... > class Op, typename... Args, typename WithT >
+requires( not Predicate< Op< Args... >>::value )
+struct PredicateSubstitution< Predicate, Op< Args... >, WithT > {
+private:
+    template< typename ArgT >
+    using ArgumentSub = PredicateSubstitution< Predicate, ArgT, WithT >;
+
+    template< typename ArgT >
+    static constexpr typename ArgumentSub< ArgT >::type sub_argument( ArgT const& arg, WithT const& with )
+    { return ArgumentSub< ArgT >::value( arg, with ); }
+
+public:
+
+    using type = Op< typename ArgumentSub< Args >::type... >;
+    static constexpr type value( Op< Args... > const& op, WithT const& with )
+    {
+        static auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return { sub_argument( get_argument< Is >( op ), with )... }; };
+
+        return helper( op, make_seq< sizeof...( Args )>{} ); 
+    }
+};
 
 /// @brief expression manipulator for substitution of the variable with an 
 /// expression
@@ -1050,13 +1121,12 @@ struct Difference< T, U >: Arguments< Difference, T, U >
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Product: ExpressionTag
+struct Product: Arguments< Product, T, U > 
 { 
-    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this );; }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
@@ -1064,24 +1134,20 @@ struct Product: ExpressionTag
         expressions::eval( right_arg(), params... ); }
 
     constexpr Product( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+        Arguments< Product, T, U >{ left, right } { }
     constexpr Product() = default;
-
-    T _left;
-    U _right;
 };
 
 /// @brief quotient expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Quotient: ExpressionTag
+struct Quotient: Arguments< Quotient, T, U >
 { 
-    using argument_types = tuple< T, U >;
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
 
-    constexpr T numerator_arg() const { return _numerator; }
-    constexpr U denominator_arg() const { return _denominator; }
+    constexpr T numerator_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U denominator_arg() const { return get_argument< 1 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
@@ -1089,32 +1155,26 @@ struct Quotient: ExpressionTag
         expressions::eval( denominator_arg(), params... ); }
 
     constexpr Quotient( T numerator, U denominator ):
-        _numerator{ numerator }, 
-        _denominator{ denominator } { } 
+        Arguments< Quotient, T, U >{ numerator, denominator } { }
     constexpr Quotient() = default;
-
-    T _numerator;
-    U _denominator;
 };
 
 /// @brief square root expression
 /// @tparam T 
 template< typename T >
-struct SquareRoot: ExpressionTag
+struct SquareRoot: Arguments< SquareRoot, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::sqrt( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::sqrt( expressions::eval( arg(), params... )); }
 
-    constexpr SquareRoot( T arg ): _arg{ arg } { } 
+    constexpr SquareRoot( T arg ):  
+        Arguments< SquareRoot, T >{ arg } { }
     constexpr SquareRoot() = default;
-
-    T _arg;
 };
 
 /// @brief integral power expression
@@ -1145,38 +1205,34 @@ using power_of = Power< Exp >::template Of< T >;
 /// @brief sine expression
 /// @tparam T 
 template< typename T >
-struct Sine: ExpressionTag
+struct Sine: Arguments< Sine, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::sin( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::sin( expressions::eval( arg(), params... )); }
 
-    constexpr Sine( T arg ): _arg{ arg } { } 
+    constexpr Sine( T arg ): Arguments< Sine, T >{ arg } { } 
     constexpr Sine() = default;
-
-    T _arg;
 };
 
 /// @brief cosine expression
 /// @tparam T 
 template< typename T >
-struct Cosine: ExpressionTag
+struct Cosine: Arguments< Cosine, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::cos( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::cos( expressions::eval( arg(), params... )); }
 
-    constexpr Cosine( T arg ): _arg{ arg } { } 
+    constexpr Cosine( T arg ): Arguments< Cosine, T >{ arg } { } 
     constexpr Cosine() = default;
 
     T _arg;
@@ -1185,110 +1241,93 @@ struct Cosine: ExpressionTag
 /// @brief tangent expression
 /// @tparam T 
 template< typename T >
-struct Tangent: ExpressionTag
+struct Tangent: Arguments< Tangent, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::tan( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::tan( expressions::eval( arg(), params... )); }
 
-    constexpr Tangent( T arg ): _arg{ arg } { } 
+    constexpr Tangent( T arg ): Arguments< Tangent, T >{ arg } { } 
     constexpr Tangent() = default;
-
-    T _arg;
 };
 
 /// @brief arcsine expression
 /// @tparam T 
 template< typename T >
-struct Arcsine: ExpressionTag
+struct Arcsine: Arguments< Arcsine, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::asin( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::asin( expressions::eval( arg(), params... )); }
 
-    constexpr Arcsine( T arg ): _arg{ arg } { } 
+    constexpr Arcsine( T arg ): Arguments< Arcsine, T >{ arg } { } 
     constexpr Arcsine() = default;
-
-    T _arg;
 };
 
 /// @brief arccosine expression
 /// @tparam T 
 template< typename T >
-struct Arccosine: ExpressionTag
+struct Arccosine: Arguments< Arccosine, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::acos( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::acos( expressions::eval( arg(), params... )); }
 
-    constexpr Arccosine( T arg ): _arg{ arg } { } 
+    constexpr Arccosine( T arg ): Arguments< Arccosine, T >{ arg } { } 
     constexpr Arccosine() = default;
-
-    T _arg;
 };
 
 /// @brief sine expression
 /// @tparam T 
 template< typename T >
-struct Arctangent: ExpressionTag
+struct Arctangent: Arguments< Arctangent, T >
 {
-    using argument_types = tuple< T >;
     using result_type = decltype( std::atan( result_t< T >{} ));
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return std::atan( expressions::eval( arg(), params... )); }
 
-    constexpr Arctangent( T arg ): _arg{ arg } { } 
+    constexpr Arctangent( T arg ): Arguments< Arctangent, T >{ arg } { } 
     constexpr Arctangent() = default;
-
-    T _arg;
 };
 
 /// @brief arctangent of a slope expression
 /// @tparam T rise type
 /// @tparam U run type
 template< typename T, typename U >
-struct Arctangent2: ExpressionTag
+struct Arctangent2: Arguments< Arctangent2, T, U >
 { 
-    using argument_types = tuple< T >;
     // we use the result_type of a fraction here to factor units properly
     // this assumes that std::atan2 doesn't change the unit. hopefully it stays
     // true that trig functions operate only on scalars and this won't be an 
     // issue.  
     using result_type = decltype( result_t< T >{} / result_t< U >{} );
 
-    constexpr T numerator_arg() const { return _numerator; }
-    constexpr U denominator_arg() const { return _denominator; }
+    constexpr T numerator_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U denominator_arg() const { return get_argument< 1 >( *this ); }
 
     // TODO: write an eval for std::atan2 that handles units properly
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const;
 
     constexpr Arctangent2( T numerator, U denominator ):
-        _numerator{ numerator }, 
-        _denominator{ denominator } { } 
+        Arguments< Arctangent2, T, U >{ numerator, denominator } { }
     constexpr Arctangent2() = default;
-
-    T _numerator;
-    U _denominator;
 };
 
 /// @brief extract the element from a tuple-like array
@@ -1307,13 +1346,12 @@ struct Arctangent2: ExpressionTag
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Equals: ExpressionTag
+struct Equals: Arguments< Equals, T, U >
 { 
-    using argument_types = tuple< T, U >;
     using result_type = bool;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
     
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
@@ -1321,24 +1359,20 @@ struct Equals: ExpressionTag
         expressions::eval( right_arg(), params... ); }
 
     constexpr Equals( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+        Arguments< Equals, T, U >{ left, right } { }
     constexpr Equals() = default;
-    
-    T _left;
-    U _right;
 };
 
-/// @brief equality expression
+/// @brief greater than expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct GreaterThan: ExpressionTag
+struct GreaterThan: Arguments< GreaterThan, T, U >
 { 
-    using argument_types = tuple< T, U >;
     using result_type = bool;
 
-    constexpr T left_arg() const { return _left; }
-    constexpr U right_arg() const { return _right; }
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
     
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
@@ -1346,26 +1380,22 @@ struct GreaterThan: ExpressionTag
         expressions::eval( right_arg(), params... ); }
 
     constexpr GreaterThan( T left, U right ): 
-        _left{ left }, _right{ right } { } 
+        Arguments< GreaterThan, T, U >{ left, right } { }
     constexpr GreaterThan() = default;
-    
-    T _left;
-    U _right;
 };
 
 
 /// @brief logical and expression
 /// @tparam Ts... 
 template< typename... Ts >
-struct Conjunction: ExpressionTag
+struct Conjunction: Arguments< Conjunction, Ts... >
 {
-    using argument_types = tuple< Ts... >;
     static constexpr size_t arguments_size() { return sizeof...( Ts ); }
     using result_type = bool;
 
     template< size_t I >
     constexpr Ts...[ I ] arg() const
-    { return std::get< I >( _args ); }
+    { return get_argument< I >( *this ); }
 
     template< size_t... Is, typename... Params >
     constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
@@ -1375,24 +1405,21 @@ struct Conjunction: ExpressionTag
     constexpr result_type eval( Params&... params ) const
     { return eval_helper( make_seq< arguments_size() >{}, params... ); }
 
-    constexpr Conjunction( Ts... ts ): _args{ ts... } { } 
+    constexpr Conjunction( Ts... ts ): Arguments< Conjunction, Ts... >{ ts... } { } 
     constexpr Conjunction() = default;
-    
-    argument_types _args;
 };
 
 /// @brief logical or expression
 /// @tparam Ts...
 template< typename... Ts >
-struct Disjunction: ExpressionTag
+struct Disjunction: Arguments< Disjunction, Ts... >
 {
-    using argument_types = tuple< Ts... >;
     static constexpr size_t arguments_size() { return sizeof...( Ts ); }
     using result_type = bool;
 
     template< size_t I >
     constexpr Ts...[ I ] arg() const
-    { return std::get< I >( _args ); }
+    { return get_argument< I >( *this ); }
 
     template< size_t... Is, typename... Params >
     constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
@@ -1402,31 +1429,26 @@ struct Disjunction: ExpressionTag
     constexpr result_type eval( Params&... params ) const
     { return eval_helper( make_seq< arguments_size() >{}, params... ); }
 
-    constexpr Disjunction( Ts... ts ): _args{ ts... } { } 
+    constexpr Disjunction( Ts... ts ): Arguments< Disjunction, Ts... >{ ts... } { } 
     constexpr Disjunction() = default;
-    
-    argument_types _args;
 };
 
 /// @brief logical not expression
 /// @tparam T 
 /// @tparam U 
 template< typename T >
-struct Compliment: ExpressionTag
+struct Compliment: Arguments< Compliment, T >
 {
-    using argument_types = tuple< T >;
     using result_type = bool;
 
-    constexpr T arg() const { return _arg; }
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
 
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
     { return not expressions::eval( arg(), params... ); }
 
-    constexpr Compliment( T arg ): _arg{ arg } { } 
+    constexpr Compliment( T arg ): Arguments< Compliment, T >{ arg } { } 
     constexpr Compliment() = default;
-    
-    T _arg;
 };
 
 template< typename ExprT >

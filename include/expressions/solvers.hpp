@@ -57,15 +57,33 @@ using namespace normalization;
 ///
 ///
 
+
+/// @brief Represents an iterative expression. An instance of an iteration is 
+/// created by the builder types IterationInitializer and IterationUpdater
+/// @tparam UntilE is the type of the until expression when the iteration
+/// terminates. 
+/// @tparam UpdatesTuple is a tuple of N expressions which update the cor-
+/// responding variables in the VariablesTuple each iteration
+/// @tparam VariablesTuple is a tuple of N variables which will be updated
+/// and whose final values will be returned when the iteration is evaluated
 template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
 struct Iteration;
 
+/// @brief Helper class to complete the building of an Iteration expression
 template< typename UpdatesTuple, typename VariablesTuple >
 struct IterationUpdater;
 
+/// @brief Helper class to begin building an Iteration expression
 template< variable... Vars >
 struct IterationInitializer;
 
+/// @brief this is the function used to begin building an iteration. The
+/// update( exprs... ) must be called with the same number of expressions 
+/// as variables. Finally the until( expr ) must be called on the builder 
+/// object returned from the update method to complete the construction.
+/// You may also initialize the variables before the iteration begins by 
+/// calling the initial_values( values... ) method before calling update.
+/// @tparam ...Vars are the variables this iteration will update
 template< variable... Vars >
 constexpr IterationInitializer< Vars... > iteration( Vars... );
 
