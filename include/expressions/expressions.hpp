@@ -748,11 +748,6 @@ public:
     constexpr typename Substitution< Op< Args... >, Subs... >::type
     operator ()( Subs... subs );
 
-//    template< typename... Subs >
-//    requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
-//    constexpr typename Substitution< Op< Args... >, Subs... >::type
-//    operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > sub );
-
     constexpr Arguments( Args... args ): tuple< Args... >{ args... } { }
     constexpr Arguments() = default;
 };
