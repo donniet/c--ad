@@ -718,7 +718,6 @@ struct CompatibleSubstitution< ExprT, Ten >:
     CompatibleTensorSubstitution< result_t< Ten >, 
         dependent_variables_t< ExprT >>
 { };
-
  
 template< typename ExprT, typename... Subs >
 requires(( not tensor< result_t< Subs >> and ... ))
@@ -763,10 +762,10 @@ public:
     constexpr typename Substitution< Op< Args... >, Subs... >::type
     operator ()( Subs... subs );
 
-    template< typename... Subs >
-    requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
-    constexpr typename Substitution< Op< Args... >, Subs... >::type
-    operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > sub );
+//    template< typename... Subs >
+//    requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
+//    constexpr typename Substitution< Op< Args... >, Subs... >::type
+//    operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > sub );
 
     constexpr Arguments( Args... args ): tuple< Args... >{ args... } { }
     constexpr Arguments() = default;
@@ -837,6 +836,20 @@ template< size_t I, typename T >
 constexpr element_of< I, T > element( T const& arr )
 { return { arr }; }
 
+
+/// @brief predicate class for the Ith variable index
+template< size_t I >
+struct ForVariable
+{
+    // default case
+    template< typename TestT >
+    struct Is: integral_constant< bool, false > { };
+
+    // true case
+    template< typename T >
+    struct Is< Variable< I, T >>: integral_constant< bool, true > { };
+};
+
 /// @brief expression manipulator that replaces any argument in an expression
 /// with the given WithT argument.
 /// @tparam Predicate resolves to an integral_constant< bool, ... > like
@@ -894,15 +907,16 @@ private:
     { return ArgumentSub< ArgT >::value( arg, with ); }
 
 public:
-
     using type = Op< typename ArgumentSub< Args >::type... >;
-    static constexpr type value( Op< Args... > const& op, WithT const& with )
-    {
-        static auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return { sub_argument( get_argument< Is >( op ), with )... }; };
 
-        return helper( op, make_seq< sizeof...( Args )>{} ); 
-    }
+private:
+    template< size_t... Is >
+    static constexpr type value_helper( Op< Args... > const& op, WithT const& with, seq< Is... > )
+    { return { sub_argument( get_argument< Is >( op ), with )... }; }
+public:
+
+    static constexpr type value( Op< Args... > const& op, WithT const& with )
+    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
 };
 
 /// @brief expression manipulator for substitution of the variable with an 
@@ -1000,19 +1014,63 @@ struct SubstitutionHelper< ExprT, tuple< First, Rest... >, seq< J, Js... >>:
 };
 
 template< typename ExprT, typename... Args >
-struct Substitution;
+requires( sizeof...( Args ) == tuple_size_v< dependent_variables_t< ExprT >> )
+struct Substitution< ExprT, Args... > {
+private:
+    using dependent_variables_tuple = dependent_variables_t< ExprT >;
 
-template< typename ExprT, typename Ten >
-requires( tensor< result_t< Ten >> )
-struct Substitution< ExprT, Ten >:
-    SubstitutionTensor< ExprT, Ten >
-{ };
+    template< typename ExprU, typename Seq >
+    struct Helper;
 
-template< typename ExprT, typename... Args >
-requires(( not tensor< result_t< Args >> and ... ))
-struct Substitution< ExprT, Args... >: 
-    SubstitutionHelper< ExprT, tuple< Args... >, dependent_variable_id_seq< ExprT >>
-{ };
+    // null case for substitution of no arguments into an expression
+    template< typename ExprU >
+    struct Helper< ExprU, seq< >>
+    {
+        using type = ExprU;
+        static constexpr type value( ExprU const& expr, Args const&... args )
+        { return expr; }
+    };
+
+    // Ith argument substitution case is recursively defined
+    template< typename ExprU, size_t I, size_t... Is >
+    struct Helper< ExprU, seq< I, Is... >>
+    {
+    private:
+        // fetch the index of the Ith variable
+        static constexpr size_t Ith = tuple_element_t< I, dependent_variables_tuple >::index;
+        // alias for the Ith argument substitutor
+        using ith_substituter = PredicateSubstitution< ForVariable< Ith >::template Is,
+            ExprU, Args...[ I ]>;
+
+    public:
+        // recursively define our resultant type
+        using type = Helper< typename ith_substituter::type, seq< Is... >>::type;
+        // recursively define our final substitution value
+        static constexpr type value( ExprU expr, Args const&... args )
+        { return Helper< typename ith_substituter::type, seq< Is... >>::value( 
+            ith_substituter::value( expr, args...[ I ]), args... ); }
+    };
+
+    using helper_type = Helper< ExprT, make_seq< sizeof...( Args )>>;
+
+public:
+    using type = helper_type::type;
+
+    static constexpr type value( ExprT const& expr, Args const&... args )
+    { return helper_type::value( expr, args... ); }
+};
+
+//template< typename ExprT, typename Ten >
+//requires( tensor< result_t< Ten >> )
+//struct Substitution< ExprT, Ten >:
+//    SubstitutionTensor< ExprT, Ten >
+//{ };
+
+//template< typename ExprT, typename... Args >
+//requires(( not tensor< result_t< Args >> and ... ))
+//struct Substitution< ExprT, Args... >: 
+//    SubstitutionHelper< ExprT, tuple< Args... >, dependent_variable_id_seq< ExprT >>
+//{ };
 
 /// @brief substitutes arguments for the dependent variables of an expression
 /// @tparam ExprT type of the expression to be substituted into
