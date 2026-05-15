@@ -702,12 +702,18 @@ struct CompatibleSubstitutionHelper< tuple<>, tuple<> >:
 template< typename ExprT, typename... Subs >
 struct CompatibleSubstitution;
 
+template< typename ExprT, typename... Subs >
+requires( not variable< ExprT > and not compound_expression< ExprT > )
+struct CompatibleSubstitution< ExprT, Subs... >: integral_constant< bool, 
+    false > { };
+
 template< size_t I, typename T, typename U >
 struct CompatibleSubstitution< Variable< I, T >, U >:
     std::is_convertible< result_t< U >, T > { }; 
 
 template< typename ExprT, typename... Subs >
-struct CompatibleSubstitution:
+requires( compound_expression< ExprT > )
+struct CompatibleSubstitution< ExprT, Subs... >:
     CompatibleSubstitutionHelper< 
         tuple< Subs... >, dependent_variables_t< ExprT >>
 { };
