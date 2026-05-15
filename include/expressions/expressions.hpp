@@ -667,18 +667,12 @@ constexpr bool depends_on_variable_index_v =
 ///
 ///
 ///
+template< typename T >
+concept compound_expression = expression< T > and requires( T )
+{ typename T::argument_types; };
 
 template< typename SubTuple, typename VarsTuple >
 struct CompatibleSubstitutionHelper;
-
-template< typename Ten, typename VarsTuple >
-struct CompatibleTensorSubstitution;
-
-template< size_t N, typename... Subs, typename... Vars >
-struct CompatibleTensorSubstitution< Tensor< Shape< N >, Subs... >, 
-    tuple< Vars... >>: 
-        CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >>
-{ };
 
 template< typename... Subs, typename... Vars >
 requires( sizeof...( Subs ) != sizeof...( Vars ))
@@ -712,24 +706,14 @@ template< size_t I, typename T, typename U >
 struct CompatibleSubstitution< Variable< I, T >, U >:
     std::is_convertible< result_t< U >, T > { }; 
 
-template< typename ExprT, typename Ten >
-requires( tensor< result_t< Ten >> )
-struct CompatibleSubstitution< ExprT, Ten >:
-    CompatibleTensorSubstitution< result_t< Ten >, 
-        dependent_variables_t< ExprT >>
-{ };
- 
 template< typename ExprT, typename... Subs >
-requires(( not tensor< result_t< Subs >> and ... ))
-struct CompatibleSubstitution< ExprT, Subs... >:
+struct CompatibleSubstitution:
     CompatibleSubstitutionHelper< 
         tuple< Subs... >, dependent_variables_t< ExprT >>
 { };
 
 template< typename ExprT, typename... Subs >
-constexpr bool is_compatible_substitution_v = // true;
-// DEBUG: turning off substitution compatibility checking to debug substitutions
-//
+constexpr bool is_compatible_substitution_v = 
     CompatibleSubstitution< ExprT, Subs... >::value;
 
 template< typename ExprT, typename... Args >
@@ -737,10 +721,6 @@ struct Substitution;
 
 template< template< typename... > class Op, typename... Args >
 struct Arguments;
-
-template< typename T >
-concept compound_expression = expression< T > and requires( T )
-{ typename T::argument_types; };
 
 template< template< typename... > class Op, typename... Args >
 struct Arguments: ExpressionTag, tuple< Args... >
@@ -921,98 +901,6 @@ public:
 
 /// @brief expression manipulator for substitution of the variable with an 
 /// expression
-template< size_t I, typename ExprT, typename WithT >
-struct VariableSubstitution;
-
-template< size_t I, size_t J, typename ValueT, typename WithT >
-requires( I == J and std::is_convertible_v< result_t< WithT >, result_t< ValueT >> )
-struct VariableSubstitution< I, Variable< J, ValueT >, WithT >
-{
-    using type = WithT;
-    static constexpr type value( Variable< J, ValueT > const&, 
-        WithT const& with )
-    { return with; }
-};
-
-template< size_t I, typename ExprT, typename WithT >
-requires( not depends_on_variable_index_v< I, ExprT > )
-struct VariableSubstitution< I, ExprT, WithT >
-{
-    using type = ExprT;
-    static constexpr type value( ExprT const& expr, WithT const& )
-    { return expr; }
-};
-
-template< size_t I, template< typename... > class Op,
-    typename... Args, typename WithT >
-requires( expression< Op< Args... >> and 
-    depends_on_variable_index_v< I, Op< Args... >>)
-struct VariableSubstitution< I, Op< Args... >, WithT >
-{
-    using type = Op< typename VariableSubstitution< I, Args, WithT >::type... >;
-    static constexpr type value( Op< Args... > const& expr, WithT with )
-    { return value_helper( expr, with, make_seq< sizeof...( Args )>{} ); }
-
-private:
-    template< size_t... Is >
-    static constexpr type value_helper( Op< Args... > const& expr, 
-        WithT const& with, seq< Is... > )
-    { return { VariableSubstitution< I, Args...[ Is ], WithT >::value(
-        get_argument< Is >( expr ), with )... }; }
-};
-
-template< typename ExprT, typename ArgTuple, typename Seq >
-struct SubstitutionHelper;
-
-template< typename ExprT, typename Ten, typename Seq >
-struct SubstitutionTensorHelper;
-
-template< typename ExprT, typename Ten >
-struct SubstitutionTensor:
-    SubstitutionTensorHelper< ExprT, Ten, make_seq< tensor_shape_t< result_t< Ten >>::size() >>
-{ };
-
-template< typename ExprT, typename Ten, size_t... Is >
-struct SubstitutionTensorHelper< ExprT, Ten, seq< Is... >>:
-    SubstitutionHelper< ExprT, tuple< element_of< Is, Ten >... >, 
-        dependent_variable_id_seq< ExprT >>
-{
-    using helper_type = SubstitutionHelper< ExprT, tuple< element_of< Is, Ten >... >, 
-        dependent_variable_id_seq< ExprT >>;
-
-    using type = helper_type::type;
-    
-    static constexpr type value( ExprT const& expr, Ten const& ten )
-    { return helper_type::value( expr, element< Is >( ten )... ); }
-};
-
-template< typename ExprT >
-struct SubstitutionHelper< ExprT, tuple<>, seq<> >
-{
-    using type = ExprT;
-    static constexpr type value( ExprT expr )
-    { return expr; }
-};
-
-/// @brief substitutes First for Variable< J, T >, and Rest... for 
-/// Variable< Js, Ts >... 
-template< typename ExprT, typename First, typename... Rest, 
-    size_t J, size_t... Js >
-struct SubstitutionHelper< ExprT, tuple< First, Rest... >, seq< J, Js... >>:
-    SubstitutionHelper< typename VariableSubstitution< J, ExprT, First >::type,
-        tuple< Rest... >, seq< Js... >>
-{
-    using first_substitution = VariableSubstitution< J, ExprT, First >;
-    using first_substitution_type = first_substitution::type;
-    using rest_helper = SubstitutionHelper< first_substitution_type, 
-        tuple< Rest... >, seq< Js... >>;
-
-    using type = rest_helper::type;
-
-    static constexpr type value( ExprT expr, First first, Rest... rest )
-    { return rest_helper::value( first_substitution::value( expr, first ), rest... ); }
-};
-
 template< typename ExprT, typename... Args >
 requires( sizeof...( Args ) == tuple_size_v< dependent_variables_t< ExprT >> )
 struct Substitution< ExprT, Args... > {
@@ -1060,18 +948,6 @@ public:
     { return helper_type::value( expr, args... ); }
 };
 
-//template< typename ExprT, typename Ten >
-//requires( tensor< result_t< Ten >> )
-//struct Substitution< ExprT, Ten >:
-//    SubstitutionTensor< ExprT, Ten >
-//{ };
-
-//template< typename ExprT, typename... Args >
-//requires(( not tensor< result_t< Args >> and ... ))
-//struct Substitution< ExprT, Args... >: 
-//    SubstitutionHelper< ExprT, tuple< Args... >, dependent_variable_id_seq< ExprT >>
-//{ };
-
 /// @brief substitutes arguments for the dependent variables of an expression
 /// @tparam ExprT type of the expression to be substituted into
 /// @tparam Args... types of the args being substituted
@@ -1082,24 +958,21 @@ constexpr typename Substitution< ExprT, Args... >::type
 substitution( ExprT expr, Args... args )
 { return Substitution< ExprT, Args... >::value( expr, args... ); }
 
+/// @brief implementation of invocation operator on expressions with arguments
+/// is a substitution.  We may finally implement it after defining substitution
+/// above.
+/// @tparam Op is the root operation of the expression
+/// @tparam ...Args are the types of the arguments of the expression
+/// @tparam ...Subs are the types of the substitutions made into the dependent
+/// variables of the expression
+/// @returns a new expression with ...Subs substituted into the dependent
+/// variables of Op< Args... > in order
 template< template< typename... > class Op, typename... Args >
 template< typename... Subs >
 requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
 constexpr typename Substitution< Op< Args... >, Subs... >::type
 Arguments< Op, Args... >::operator ()( Subs... subs )
 { return substitution( expression(), subs... ); }
-
-//template< template< typename... > class Op, typename... Args >
-//template< typename... Subs >
-//requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
-//constexpr typename Substitution< Op< Args... >, Subs... >::type
-//Arguments< Op, Args... >::operator ()( Tensor< Shape< sizeof...( Subs )>, Subs... > ten )
-//{ 
-//    static auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-//    { return substitution( expression(), tensor_get< Is >( ten )... ); };
-//
-//    return helper( make_seq< sizeof...( Subs )>{} ); 
-//}
 
 
 ///////////////////
