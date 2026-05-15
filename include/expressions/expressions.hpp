@@ -722,12 +722,16 @@ template< typename ExprT, typename... Subs >
 constexpr bool is_compatible_substitution_v = 
     CompatibleSubstitution< ExprT, Subs... >::value;
 
+// forward declaration
 template< typename ExprT, typename... Args >
 struct Substitution;
 
-template< template< typename... > class Op, typename... Args >
-struct Arguments;
+/// forward delaration
+template< typename ExprT, typename... Args >
+constexpr typename Substitution< ExprT, Args... >::type 
+substitution( ExprT expr, Args... args );
 
+/// @brief Base class for compound operations. 
 template< template< typename... > class Op, typename... Args >
 struct Arguments: ExpressionTag, tuple< Args... >
 {
@@ -740,18 +744,36 @@ private:
     constexpr expression_type expression_helper( seq< Is... > ) const
     { return { std::get< Is >( static_cast< argument_types >( *this ))... }; }
 
+    /// @brief reconstructs the expression from arguments using the curiously
+    /// recurring template pattern
     constexpr expression_type expression() const
     { return expression_helper( make_seq< sizeof...( Args )>{} ); }
+
 public:
+    /// @brief implementation of invocation operator on expressions with arguments
+    /// is a substitution.  We may finally implement it after defining substitution
+    /// above.
+    /// @tparam Op is the root operation of the expression
+    /// @tparam ...Args are the types of the arguments of the expression
+    /// @tparam ...Subs are the types of the substitutions made into the dependent
+    /// variables of the expression
+    /// @returns a new expression with ...Subs substituted into the dependent
+    /// variables of Op< Args... > in order
     template< typename... Subs >
     requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
     constexpr typename Substitution< Op< Args... >, Subs... >::type
-    operator ()( Subs... subs );
+    operator ()( Subs... subs )
+    { return substitution( expression(), subs... ); }
 
-    constexpr Arguments( Args... args ): tuple< Args... >{ args... } { }
+protected:
+    constexpr Arguments( Args... args ): 
+        argument_types{ args... } { }
     constexpr Arguments() = default;
 };
 
+/// @brief type trait for extracting an argument from a compound expression
+/// @tparam I is the index of the argument
+/// @tparam ExprT is the type of the compound expression
 template< size_t I, typename ExprT >
 struct GetArgument
 {
@@ -783,7 +805,7 @@ struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
 {
     using result_type = tuple_element_t< I, result_t< ArrayT >>;
     
-    constexpr ArrayT arg() const { return std::get< 0 >( *this ); }
+    constexpr ArrayT arg() const { return get_argument< 0 >( *this ); }
     
     template< typename... Params >
     constexpr result_type eval( Params&... params ) const
@@ -816,7 +838,6 @@ using element_of = Element< I >::template Of< T >;
 template< size_t I, typename T >
 constexpr element_of< I, T > element( T const& arr )
 { return { arr }; }
-
 
 /// @brief predicate class for the Ith variable index
 template< size_t I >
@@ -958,22 +979,6 @@ template< typename ExprT, typename... Args >
 constexpr typename Substitution< ExprT, Args... >::type 
 substitution( ExprT expr, Args... args )
 { return Substitution< ExprT, Args... >::value( expr, args... ); }
-
-/// @brief implementation of invocation operator on expressions with arguments
-/// is a substitution.  We may finally implement it after defining substitution
-/// above.
-/// @tparam Op is the root operation of the expression
-/// @tparam ...Args are the types of the arguments of the expression
-/// @tparam ...Subs are the types of the substitutions made into the dependent
-/// variables of the expression
-/// @returns a new expression with ...Subs substituted into the dependent
-/// variables of Op< Args... > in order
-template< template< typename... > class Op, typename... Args >
-template< typename... Subs >
-requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
-constexpr typename Substitution< Op< Args... >, Subs... >::type
-Arguments< Op, Args... >::operator ()( Subs... subs )
-{ return substitution( expression(), subs... ); }
 
 
 ///////////////////
