@@ -158,9 +158,11 @@ struct Shape< First, Rest... >: Shape< Rest... >
     { return Shape< First+1, ( Rest+1 )... >{ first() < here ? first() : 1 + first(), 
             Shape< Rest... >::insert( here )}; }
 
-
     constexpr size_t first() const 
     { return element() / Shape< Rest... >::size(); }
+
+    constexpr Shape< Rest... > rest() const
+    { return *this; }
 
     constexpr size_t operator[]( size_t dim ) const
     {
@@ -1636,6 +1638,95 @@ template< shape S, typename... Ts, typename T >
 requires( not tensor< T > )
 constexpr auto operator /( Tensor< S, Ts... > const& ten, T scalar )
 { return detail::divide_scale_helper( ten, scalar, make_seq< sizeof...( Ts )>{} ); }
+
+// stacked tensor details
+namespace detail {
+
+/// @brief helper class for the Ith element of a stack of ...Tensors
+/// @tparam I is the element of the stacked tensor
+/// @tparam ...Tensors are the tensor types to be stacked
+template< size_t I, tensor... Tensors >
+requires(( is_same_v< tensor_shape_t< Tensors...[ 0 ]>, tensor_shape_t< Tensors >> and ... ))
+struct StackedElement
+{ 
+    // the shape of the new tensor is the size of the input tensors
+    // concatenated to the shape of ...Tensors.  All of the ...Tensors
+    // must have the same shape so we choose the first one
+    using shape_type = shape_cat_t< Shape< sizeof...( Tensors )>, 
+        tensor_shape_t< Tensors...[ 0 ]>>;
+
+    // get an instance of our tensor shape to use to index into the parameters
+    static constexpr shape_type element = shape_type::from_element( I );
+
+    // the index to the parameter we will pull the value of the stacked
+    // tensor from
+    static constexpr size_t parameter_index = element.first();
+
+    // type of the Ith element of the stacked tensor depends on which
+    // tensor parameter we get from the parameter_index
+    using type = tensor_element_t< element.rest(), Tensors...[ parameter_index ]>;
+
+    // value of the Ith element of the stacked tensor
+    static constexpr type value( Tensors const&... tensors )
+    { return tensor_get< element.rest() >( tensors...[ parameter_index ] ); }
+};
+
+/// @brief helper class for a stack of tensors
+/// @tparam First is the type of the first tensor
+/// @tparam ...Rest are the types of the remaining tensors
+template< tensor First, tensor... Rest >
+requires(( std::is_same_v< tensor_shape_t< First >, tensor_shape_t< Rest >> and
+    ... ))
+struct StackedTensor {
+private:
+    using shape_type = shape_cat_t< Shape< 1 + sizeof...( Rest )>, 
+        tensor_shape_t< First >>;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        using type = Tensor< shape_type, typename 
+            StackedElement< Is, First, Rest... >::type... >;
+        
+        static constexpr type value( First const& first, Rest const&... rest )
+        { return { StackedElement< Is, First, Rest... >::
+            value( first, rest... )... }; }
+    };
+
+    using helper_type = Helper< make_seq< shape_type::size() >>::type;
+
+public:
+    // type of the stacked tensor
+    using type = Helper< make_seq< shape_type::size() >>::type;
+
+    // value of a tensor stack
+    static constexpr type value( First const& first, Rest const&... rest )
+    { return helper_type::value( first, rest... ); }
+};
+} // namespace detail
+
+/// @brief create a new tensor from the given tensor by adding a new index of
+/// size 1 + sizeof...( Rest ) to the left of indices (which must be equal) of
+/// First and ...Rest
+/// @tparam First is the type of the first tensor
+/// @tparam ...Rest are the types of the remaining tensors to be stacked
+template< tensor First, tensor... Rest >
+requires(( is_same_v< tensor_shape_t< First >, tensor_shape_t< Rest >> and ... ))
+constexpr typename detail::StackedTensor< First, Rest... >::type 
+stack( First const& first, Rest const&... rest )
+{ return detail::StackedTensor< First, Rest... >::value( first, rest... ); }
+
+#ifndef NDEBUG
+static_assert( is_same_v< decltype( stack( Tensor< Shape< 2, 2 >, int, int, int, int >{},
+    Tensor< Shape< 2, 2 >, float, float, float, float >{} )), 
+        Tensor< Shape< 2, 2, 2 >, int, int, int, int, float, float, float, float >> );
+static_assert( is_same_v< decltype( stack( Tensor< Shape< 2, 1 >, int, float >{},
+    Tensor< Shape< 2, 1 >, char, bool >{} )), 
+        Tensor< Shape< 2, 2, 1 >, int, float, char, bool >> );
+#endif // DEBUG
 
 // dot product details
 namespace detail {
