@@ -55,6 +55,21 @@ and common solvers are included.
 ### Geometry
 Header-only C++ library for modelling physical objects and systems.
 
+## Definition of Terms
+
+### `trait`
+A templated class with static data members used to ascribe named characteristics to other classes.
+
+### `type maniuplator`
+A templated class with a using declaration `type` and a static method `value( T const& )` used to transform the type and/or instance of one class into another.
+
+### `tuple-like`
+A templated class, often variadic, that contains values of the template types.  It must conform to the following guidelines:
+- be default constructable
+- be constructable from a parameter pack of it's template parameters
+- support std::tuple_size_v, std::tuple_element_t, and std::get
+
+
 ## Other Names
 
 This project is also known as c--ad due to github naming rules and to welcome all C programmers despite their opinions of C++.

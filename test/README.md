@@ -1,9 +1,9 @@
 ## c++ad 
 
-c++ syntax -> dimensional objects and drawings
+c++ syntax for describing dimensional objects and drawings
 
 1) All dimensional objects should inherit `virtual Object`
-2) Objects must be managed by a Universe, and are constructed using placement new `auto box_ptr = new ( uninvers ) Box{ };`
+2) Objects must be managed by a Universe, and are constructed using placement new `auto box_ptr = new ( universe ) Box{ };`
 3) The universe will delete all managed objects when it is deleted
 4) Templates wrap the operations used to create compound shapes and parse expressions.
 5) Inheritance is used to add capabilities to an object

@@ -13,6 +13,7 @@ using namespace units;
 
 
 void test_iteration();
+void test_minimization();
 
 int main( int ac, char* av[] )
 {
@@ -102,30 +103,6 @@ int main( int ac, char* av[] )
 
     auto grad = gradient( a );
 
-    // paraboloid 
-//    auto para = ( pow< 2 >( x - 2 ) + pow< 2 >( y - 3 ) + 3 );
-//
-//    auto solver = gradient_descent( x, y );
-//    solver[ maximum_iterations ] = 1000;
-//    solver[ learning_rate ] = 1e-3;
-//
-//    solver( para );
-//    println( "solved para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
-//
-//    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
-//
-//    static_assert( is_same_v< tuple< decltype( z ), decltype( w ) >, 
-//	dependent_variables_t< decltype( para2 )>> );
-//
-//    // verify the dependent_variables_t trait works
-//    static_assert( 
-//        ( z.index < w.index and is_same_v< 
-//            tuple< decltype( z ), decltype( w )>,
-//            dependent_variables_t< decltype( para2 )>> ) or 
-//        ( w.index < z.index and is_same_v< 
-//            tuple< decltype( w ), decltype( z )>,
-//            dependent_variables_t< decltype( para2 )>> ));
-
     // eval( vec( w, z ), minimize( para2, iterations( n ), iteration_delta( d )) and n < 1000 and 
     // 
     // auto rate = 0.01_sqft;
@@ -152,7 +129,6 @@ int main( int ac, char* av[] )
 
     return EXIT_SUCCESS;
 }
-
 
 void test_iteration() 
 {
@@ -185,4 +161,37 @@ void test_iteration()
 //        initial_values( 0_ft, 0_ft, 0 ).
 //        update( w - rate * para2( w, z ) * gradw( para2 ), n + 1 ).
 //        until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
+}
+
+void test_minimization()
+{
+    //auto solver = gradient_descent( x, y );
+    //solver[ maximum_iterations ] = 1000;
+    //solver[ learning_rate ] = 1e-3;
+    //solver( para );
+    //println( "solved para({}, {}) == {}", eval( x ), eval( y ), eval( para ));
+
+    auto vars = declare_variables(
+        var< Cardinal    >( "n" ),
+        var< double      >( "x" ),
+        var< Length      >( "w" ),
+        var< Length      >( "z" ));
+
+    auto [ n, x, w, z ] = vars.all();
+
+    // parabola
+    auto para = ( pow< 2 >( x - 2 ) + 3 );
+
+    // paraboloid
+    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+
+    // verify the dependent_variables_t trait works
+    static_assert( 
+        ( z.index < w.index and is_same_v< 
+            tuple< decltype( z ), decltype( w )>,
+            dependent_variables_t< decltype( para2 )>> ) or 
+        ( w.index < z.index and is_same_v< 
+            tuple< decltype( w ), decltype( z )>,
+            dependent_variables_t< decltype( para2 )>> ));
+
 }

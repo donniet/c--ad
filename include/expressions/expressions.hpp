@@ -13,6 +13,7 @@
 #include <typeinfo>
 #include <set>
 #include <optional>
+#include <limits>
 
 // #include <string_view>
 
@@ -1513,6 +1514,290 @@ struct ArgumentMinimum: Iterative
     expression_type _expr;
 };
 
+/////////////////////////////
+/// Experiment: Calculus ///
+///////////////////////////
+///
+/// This is an experimental thought about how derivations themselves could be brought into the
+/// expression algebra. The non-gramatical, non-lazy mechanism for derivatives is below.
+
+template< typename T >
+struct Infinitesimal
+{ 
+    template< typename U >
+    friend struct Infinitesimal;
+
+    using value_type = T;
+
+    // behaves as non-zero
+    constexpr operator bool() const
+    { return true; }
+
+    constexpr operator value_type() const
+    { return _negative ? -std::numeric_limits< value_type >::denorm_min() :
+        std::numeric_limits< value_type >::denorm_min(); }
+
+    constexpr Infinitesimal< T > operator -() const
+    { return Infinitesimal< T >( true ); }
+
+    template< typename U >
+    requires( std::is_convertible_v< U, T > )
+    constexpr Infinitesimal& operator =( Infinitesimal< U > const& other )
+    { 
+        _negative = other._negative;
+        return *this;
+    }
+
+    constexpr Infinitesimal( bool negative = false ): _negative{ negative } { }
+    constexpr Infinitesimal( Infinitesimal const& other ): 
+        _negative{ other._negative } { }
+
+private:
+    bool _negative;
+};
+
+template< typename T >
+struct IsInfinitesimal: integral_constant< bool, false > { };
+
+template< typename T >
+struct IsInfinitesimal< Infinitesimal< T >>:
+    integral_constant< bool, true > { };
+
+template< typename T >
+constexpr bool is_infinitesimal_v = IsInfinitesimal< T >::value;
+
+// infinitesimals are never equal
+template< typename T, typename U >
+requires( is_convertible_v< U, T > )
+constexpr bool operator ==( Infinitesimal< T > const& left, 
+    Infinitesimal< U > const& right )
+{ return false; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > )
+constexpr bool operator !=( Infinitesimal< T > const& left, 
+    Infinitesimal< U > const& right )
+{ return true; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr bool operator ==( Infinitesimal< T > const& left, U const& right )
+{ return false; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr bool operator !=( Infinitesimal< T > const& left, U const& right )
+{ return true; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr bool operator ==( T const& left, Infinitesimal< U > const& right )
+{ return false; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr bool operator !=( T const& left, Infinitesimal< U > const& right )
+{ return true; }
+
+// infinitesimal arithmetic
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr U operator +( Infinitesimal< T > const& left, U const& right )
+{ return right; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< T > )
+constexpr T operator +( T const& left, Infinitesimal< U > const& right )
+{ return left; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr U operator -( Infinitesimal< T > const& left, U const& right )
+{ return -right; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< T > )
+constexpr T operator -( T const& left, Infinitesimal< U > const& right )
+{ return left; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< T > )
+constexpr Infinitesimal< T > operator *( T const& left, 
+    Infinitesimal< U > const& right )
+// return a negative infinitesimal if left xor right is negative
+{ return { left < static_cast< T >( 0 ) xor right < static_cast< U >( 0 ) }; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< U > )
+constexpr Infinitesimal< T > operator *( Infinitesimal< T > const& left, 
+    U const& right )
+// return a negative infinitesimal if left xor right is negative
+{ return { left < static_cast< T >( 0 ) xor right < static_cast< U >( 0 ) }; }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > )
+constexpr Infinitesimal< T > operator *( Infinitesimal< T > const& left, 
+    Infinitesimal< U > const& right )
+// we will take the physicists approach and return zero if multiplying two 
+// infinitesimals
+{ return static_cast< T >( 0 ); }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and std::numeric_limits< T >::has_quiet_NaN() )
+constexpr Infinitesimal< T > operator /( Infinitesimal< T > const& left, 
+    Infinitesimal< U > const& right )
+{ return std::numeric_limits< T >::quiet_NaN(); }
+
+template< typename T, typename U >
+requires( is_convertible_v< U, T > and not is_infinitesimal_v< T > and 
+    std::numeric_limits< T >::has_infinity() )
+constexpr T operator /( T const& left, Infinitesimal< U > const& right )
+{
+    if( left == 0 )
+        return 0;
+
+    if( left < 0 xor right < 0 )
+        return std::numeric_limits< T >::infinity();
+
+    return -std::numeric_limits< T >::infinity();
+}
+
+
+// Derivation
+template< typename ExprT >
+struct Derivation: Arguments< Derivation, ExprT >
+{ 
+    using result_type = result_t< ExprT >;
+
+    constexpr ExprT arg() const
+    { return get_argument< 0 >( *this ); }
+
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const;
+
+    constexpr Derivation( ExprT const& expr ): 
+        Arguments< Derivation, ExprT >{ expr } { }
+    constexpr Derivation() = default;
+};
+
+// Leibniz Law of Derivations
+template< typename FirstT, typename SecondT >
+struct Derivation< Product< FirstT, SecondT >>: Arguments< Derivation, Product< FirstT, SecondT >>
+{
+    using expression_type = Product< FirstT, SecondT >;
+    using result_type = result_t< expression_type >;
+
+    constexpr expression_type arg() const
+    { return get_argument< 0 >( *this ); }
+
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    {  
+        auto prod = arg();
+        auto first_expr = get_argument< 0 >( prod );
+        auto second_expr = get_argument< 1 >( prod );
+    
+        auto a = expressions::eval( first_expr, params... );
+        auto b = expressions::eval( second_expr, params... );
+        auto da = expressions::eval( Derivation< FirstT >{ first_expr }, params... );
+        auto db = expressions::eval( Derivation< SecondT >{ second_expr }, params... );
+    
+        // Leibiz law
+        return a * db + da * b;
+    }
+
+    constexpr Derivation( expression_type const& expr ): 
+        Arguments< Derivation, expression_type >{ expr } { }
+    constexpr Derivation() = default;
+};
+
+// Derivation of a Sum
+template< typename... Args >
+struct Derivation< Sum< Args... >>: Arguments< Derivation, Sum< Args... >>
+{
+    using expression_type = Sum< Args... >;
+    using result_type = result_t< expression_type >;
+
+    constexpr expression_type arg() const
+    { return get_argument< 0 >( *this ); }
+
+    template< typename... Params >
+    constexpr result_type eval( Params&... params ) const
+    { 
+        // Derivation distributes over addition
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return ( expressions::eval( Derivation< Args...[ Is ]>{ 
+            get_argument< Is >( arg() )}) + ... ); };
+    
+        return helper( make_seq< sizeof...( Args )>{} );
+    }
+
+    constexpr Derivation( expression_type const& expr ): 
+        Arguments< Derivation, expression_type >{ expr } { }
+    constexpr Derivation() = default;
+};
+
+namespace detail {
+// evaluation of a derivative
+template< size_t I, typename T, size_t J, typename U >
+struct Evaluator< Quotient< Derivation< Variable< I, T >>, 
+    Derivation< Variable< J, U >>>>
+{
+    using expression_type = Quotient< Derivation< Variable< I, T >>, 
+        Derivation< Variable< J, U >>>;
+    using result_type = result_t< Quotient< T, U >>;
+
+    template< typename... Params >
+    constexpr result_type operator ()( expression_type const& expr, 
+        Params&... params ) const
+    {
+        if constexpr( I != J )
+            return static_cast< result_type >( 0 );
+
+        return static_cast< result_type >( 1 );
+    }
+};
+
+template< typename ExprT, size_t I, typename T >
+requires( not variable< ExprT > )
+struct Evaluator< Quotient< Derivation< ExprT >, 
+    Derivation< Variable< I, T >>>>
+{
+    using expression_type = Quotient< Derivation< ExprT >, 
+        Derivation< Variable< I, T >>>;
+    using result_type = result_t< Quotient< ExprT, T >>;
+
+    template< typename... Params >
+    constexpr result_type operator ()( expression_type const& expr, 
+        Params&... params ) const
+    {
+        
+    }
+};
+} // namespace detail
+
+// DT: I'm not sure if I like the above, or if we need it.  Are the functions
+// that take the derivative just fine?  Why do we need it in the expression 
+// itself?  If we include function operators like derivations where would it
+// end?
+//
+// One thing that's hard about the function operators like a derivation is
+// that it breaks the result_type mechanism for determining the result of
+// an expression.  We don't know the result of a derivation, necessarily.
+// We could assume, as we've done here, that the operator will resolve
+// to the same type as the expression it operates on, but the d/dx operator,
+// which is the whole insperation for this thing, will have a result_type of
+// decltype( ExprT::result_type{} / x ), which is not the same if we are
+// using units.
+//
+// The good thing about it is we could include differential equations in 
+// the algebra, which is very tempting.  Also the idea of the Jacobian
+// as an operator is so fitting, and could lead to interesting solver
+// situations.
+//
+/////////////////
+    
+
 /////////////
 /// Operators
 ///
@@ -1826,38 +2111,60 @@ struct Differential
     
 };
 
+template< typename X >
+struct DifferentialFor;
+
+template< size_t I, typename T >
+struct DifferentialFor< Variable< I, T >>
+{ using type = Differential< I, T >; };
+
+template< typename X >
+using differential_for_t = DifferentialFor< X >::type;
+
 template< size_t I, typename T >
 Differential< I, T > 
 differential( Variable< I, T > const& )
 { return {}; }
 
-template< typename... Diffs >
+/// @brief represents a gradient composed of differential operators
+/// @tparam ...Diffs are the differential operator types
+template< variable... Vars >
 struct Gradient: 
-    Tensor< Shape< sizeof...( Diffs )>, Diffs... >
+    Tensor< Shape< sizeof...( Vars )>, differential_for_t< Vars >... >
 {
+private:
+    using tensor_type = Tensor< Shape< sizeof...( Vars )>, 
+        differential_for_t< Vars >... >;
+    using shape_type = tensor_type::shape_type;
+
+public:
     template< typename T >
     auto operator()( T const& expr )
-    { return make_tensor< Shape< sizeof...( Diffs ) >>( Diffs{}( expr )... ); }
+    { return make_tensor< shape_type >( 
+        differential_for_t< Vars >{}( expr )... ); }
 };
 
 template< variable... Vars >
-Gradient< Differential< Vars::index, typename Vars::value_type >... > 
-gradient( Vars const&... )
+Gradient< Vars... > gradient( Vars const&... )
 { return {}; }
 
-template< typename... Diffs >
-struct Jacobian
-{
-    template< size_t I >
-    auto get_diff() { get< I >( diffs ); }
+template< variable... Vars >
+struct JacobianTensor
+{ 
 
+};
+
+template< variable... Vars > 
+struct Jacobian: JacobianTensor< Vars... >::type
+{
     template< typename T >
     auto operator ()( T const& expr )
     { 
+        
     }
-
-    tuple< Diffs... > diffs;
 };
+
+
 
 
 
