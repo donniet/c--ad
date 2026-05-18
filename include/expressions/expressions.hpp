@@ -840,6 +840,14 @@ template< size_t I, typename T >
 constexpr element_of< I, T > element( T const& arr )
 { return { arr }; }
 
+//////////////////////////////////
+/// Substitution / Predicates ///
+////////////////////////////////
+///
+/// predicates used to identify parts of expressions to substitute
+///
+///
+
 /// @brief predicate class for the Ith variable index
 template< size_t I >
 struct ForVariable
@@ -852,6 +860,79 @@ struct ForVariable
     template< typename T >
     struct Is< Variable< I, T >>: integral_constant< bool, true > { };
 };
+
+template< typename ExprT >
+struct ForExpression;
+
+/// @brief predicate for matching an expression which contains no dependent
+/// variables
+template< typename ExprT >
+requires( tuple_size_v< dependent_variables_t< ExprT >> == 0 )
+struct ForExpression< ExprT >
+{
+    // default case
+    template< typename TestT >
+    struct Is: integral_constant< bool, false > { };
+
+    // expression matches
+    template< >
+    struct Is< ExprT >: integral_constant< bool, true > { };
+};
+
+// @brief specialization for individual variables
+template< size_t I, typename T >
+struct ForExpression< Variable< I, T >>
+{
+    // default case
+    template< typename TestT >
+    struct Is: integral_constant< bool, false > {};
+
+    // expression matches
+    template< >
+    struct Is< Variable< I, T >>: integral_constant< bool, true > {};
+};
+
+// TODO: write a pattern matcher for asts
+// template< template< typename... > class Op, typename... Args >
+// requires( isgreater( tuple_size_v< dependent_variables_t< Op< Args... >>>, 0 ))
+// struct ForExpression< Op< Args... >>
+// {
+// // private:
+//     template< typename Seq, typename... TestArgs >
+//     struct Helper;
+// 
+//     template< size_t... Js, typename... TestArgs >
+//     struct Helper< seq< Js... >, TestArgs... > {
+//     private:
+//         using matches_tuple = tuple< typename
+//             ForExpression< Args...[ Js ]>::template Is< TestArgs...[ Js ]>
+//                 ... >;
+// 
+//         using compatible_matches = CompatibleMatches< typename
+//             tuple_element_t< Js, matches_tuple >::matches_type... >;
+// 
+//     public:
+//         // we match if our arguments match, and if there are no conflicts
+//         // in the variable matches
+//         static constexpr bool value = 
+//             ( tuple_element_t< Js, matches_tuple >::value and ... ) and
+//                 compatible_matches::value;
+// 
+//         using matches_type = compatible_matches::matches_type;
+//     };
+// 
+//     // default case
+//     template< typename TestT >
+//     struct Is: integral_constant< bool, false > { };
+// 
+//     // possible match
+//     template< typename... TestArgs >
+//     requires( sizeof...( Args ) == sizeof...( TestArgs ))
+//     struct Is< Op< TestArgs... >>: 
+//         Helper< make_seq< sizeof...( Args )>, TestArgs... > 
+//     { };
+// };
+// 
 
 /// @brief expression manipulator that replaces any argument in an expression
 /// with the given WithT argument.
@@ -1514,6 +1595,14 @@ struct ArgumentMinimum: Iterative
     expression_type _expr;
 };
 
+// #ifndef NDEBUG
+// 
+// static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::
+//     Is< Sum< int, int >>::value );
+// 
+// #endif // DEBUG
+// 
+
 /////////////////////////////
 /// Experiment: Calculus ///
 ///////////////////////////
@@ -1661,7 +1750,6 @@ constexpr T operator /( T const& left, Infinitesimal< U > const& right )
 
     return -std::numeric_limits< T >::infinity();
 }
-
 
 // Derivation
 template< typename ExprT >

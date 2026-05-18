@@ -959,12 +959,37 @@ template< typename T, typename... Ts >
 requires ( ... or is_same_v< T, Ts > )
 struct TupleUnique< tuple< T, Ts... >>
 { using type = TupleUnique< tuple< Ts... >>::type; };
+
+template< typename... Tuples >
+struct MergeUniqueTuples;
+
+template< >
+struct MergeUniqueTuples< >
+{ using type = tuple<>; };
+
+template< typename... Ts >
+struct MergeUniqueTuples< tuple< Ts... >>
+{ using type = tuple< Ts... >; };
+
+template< typename... Ts, typename... Us >
+struct MergeUniqueTuples< tuple< Ts... >, tuple< Us... >>:
+    TupleUnique< tuple< Ts..., Us... >> { };
+
+template< typename First, typename... Rest >
+requires( isgreater( sizeof...( Rest ), 1 ))
+struct MergeUniqueTuples< First, Rest... >:
+    MergeUniqueTuples< First, typename MergeUniqueTuples< Rest... >::type > 
+{ };
+
 } // namespace detail
 
 /// @brief remove duplicate types from a tuple type
 /// @tparam TupleT 
 template< typename TupleT >
 using tuple_unique_t = detail::TupleUnique< TupleT >::type;
+
+template< typename... Tuples >
+using merge_unique_tuples_t = detail::MergeUniqueTuples< Tuples... >::type;
 
 namespace detail {
 

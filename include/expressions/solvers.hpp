@@ -243,7 +243,7 @@ constexpr LearningRate learning_rate = { 0.l };
 constexpr MinimumError minimum_error = { 0.l };
 
 template< typename... Parameters >
-struct Solver: tuple< Parameters... >
+struct SolutionMethod: tuple< Parameters... >
 {
     template< typename T >
     auto& operator []( T )
@@ -260,7 +260,7 @@ struct Solver: tuple< Parameters... >
 
 template< variable... Vars >
 struct GradientDescent: 
-    Solver< MaximumIterations, LearningRate, MinimumError >
+    SolutionMethod< MaximumIterations, LearningRate, MinimumError >
 {
     static constexpr size_t variables_size = sizeof...( Vars );
     static constexpr size_t default_max_iterations = 100;
