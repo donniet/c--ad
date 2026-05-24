@@ -1167,8 +1167,88 @@ using is_virtual_base_of_v = is_virtual_base_of< Base, Derived >::value;
 template< typename Derived, typename Base >
 concept virtual_base_of = is_virtual_base_of< Base, Derived >::value;
 
+/////////////////////////
+/// Tuple Formatting ///
+///////////////////////
+/// 
+namespace std {
 
+template< >
+struct formatter< tuple<>, char >
+{
+    template< typename ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { return ctx.begin(); }
 
+    template< typename FormatContext >
+    constexpr FormatContext::iterator format( tuple<> const& tup,
+        FormatContext& ctx ) const
+    { return ctx.out(); }
+};
+
+template< typename T >
+struct formatter< tuple< T >, char >:
+    formatter< T, char >
+{
+    template< typename ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { return formatter< T, char >::parse( ctx ); }
+
+    template< typename FormatContext >
+    constexpr FormatContext::iterator format( tuple< T > const& tup, FormatContext& ctx ) const
+    { return formatter< T, char >::format( get< 0 >( tup ), ctx ); }
+};
+
+template< typename T, typename... Ts >
+requires( not is_base_of_v< formatter< T, char >, formatter< tuple< Ts... >, char >> and
+    isgreater( sizeof...( Ts ), 0 ))
+struct formatter< tuple< T, Ts... >, char >:
+    formatter< T, char >, formatter< tuple< Ts... >, char >
+{
+    template< typename ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    {
+        formatter< T, char >::parse( ctx );
+        return formatter< tuple< Ts... >, char >::parse( ctx );
+    }
+
+    template< typename FormatContext >
+    constexpr FormatContext::iterator format( tuple< T, Ts... > const& tup,
+        FormatContext& ctx ) const
+    {
+        formatter< T, char >::format( tuple_first( tup ), ctx );
+        auto i = ctx.out();
+        *i++ = ' ';
+        ctx.advance_to( i );
+        return formatter< tuple< Ts... >, char >::format( tuple_rest( tup ), ctx );
+    }
+};
+
+template< typename T, typename... Ts >
+requires( is_base_of_v< formatter< T, char >, formatter< tuple< Ts... >, char >> and 
+    isgreater( sizeof...( Ts ), 0 ))
+struct formatter< tuple< T, Ts... >, char >:
+    formatter< tuple< Ts... >, char >
+{
+    template< typename ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    {
+        formatter< T, char >::parse( ctx );
+        return formatter< tuple< Ts... >, char >::parse( ctx );
+    }
+
+    template< typename FormatContext >
+    constexpr FormatContext::iterator format( tuple< T, Ts... > const& tup,
+        FormatContext& ctx ) const
+    {
+        formatter< T, char >::format( tuple_first( tup ), ctx );
+        auto i = ctx.out();
+        *i++ = ' ';
+        ctx.advance_to( i );
+        return formatter< tuple< Ts... >, char >::format( tuple_rest( tup ), ctx );
+    }
+};
+} // namespace std
 
 
 #endif

@@ -41,7 +41,6 @@ using namespace normalization;
 ///
 ///
 
-
 ///
 /// audo grad = get_gradient( para2 );
 ///
@@ -54,9 +53,17 @@ using namespace normalization;
 /// if( auto solution : solve( all_of( arithmetic_expr ), criteria_expr ))
 /// { /* ... */ }
 ///
+/// solve_by< GradientDescent >( { x, y }, minimum( arithmetic_expr ), criteria_expr )
 ///
+/// 
 ///
 
+// template< expression ExprT, tuple_of< is_variable_v > VarsTuple, 
+//     solution_method MethodT = DefaultMethod< ExprT, VarsTuple >>
+// struct Solver;
+// 
+// template< expression... Exprs, variable... Vars >
+// struct Solver< Conjunction< Exprs... >, tuple< Vars... >>;
 
 /// @brief Represents an iterative expression. An instance of an iteration is 
 /// created by the builder types IterationInitializer and IterationUpdater
@@ -131,7 +138,7 @@ IterationInitializer< Vars... >::update(
 { return { *this, updates... }; }
 
 template< expression UntilE, expression... Updates, variable... Vars >
-struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: ExpressionTag
+struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::ExpressionTag 
 {
     using argument_types = tuple< UntilE, Updates..., Vars... >;
     using result_type = tuple< result_t< Vars >... >;
@@ -147,11 +154,10 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: ExpressionTag
         return { };
     }
 
-    template< typename... Params >
-    constexpr auto eval( Params&... params ) const
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
     {
-        // create a scope for this iteration
-        auto scope = make_scope( params... );
+        auto scope = make_scope( );
 
         auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
         { (( scope.template value< Vars...[ Is ]>() = std::get< Is >( _inits )), ...); };
@@ -159,20 +165,43 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: ExpressionTag
         // scope update helper
         // TODO: enforce the tuple-type here with a requires on the IterationBuilder
         auto scope_updater = [&]< size_t... Is >( seq< Is... > )
-        { (( scope.template value< Vars...[Is]>() = expressions::eval( 
-            std::get< Is >( _updates ), scope, params... )), ... ); };
+        { (( scope.template value< Vars...[Is]>() =  
+            ( std::get< Is >( _updates ) | scope )), ... ); };
 
-        // get the initial values for the variables and update them in our scope
         scope_initializer( make_seq< sizeof...( Updates )>{} );
 
-        // loop while the until expression evals to false
-        while( not expressions::eval( until_expr(), scope ))
-            scope_updater( make_seq< sizeof...( Updates )>{} ); 
+        while( not ( until_expr() | scope ))
+            scope_updater( make_seq< sizeof...( Updates )>{} );
 
-        // return the scoped value of the vars
         return make_tuple( scope.template value< Vars >()... );
     }
-
+//
+//    template< typename... Params >
+//    constexpr auto eval( Params&... params ) const
+//    {
+//        // create a scope for this iteration
+//        auto scope = make_scope( params... );
+//
+//        auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
+//        { (( scope.template value< Vars...[ Is ]>() = std::get< Is >( _inits )), ...); };
+//
+//        // scope update helper
+//        // TODO: enforce the tuple-type here with a requires on the IterationBuilder
+//        auto scope_updater = [&]< size_t... Is >( seq< Is... > )
+//        { (( scope.template value< Vars...[Is]>() =  
+//            ( std::get< Is >( _updates ) | scope )), ... ); };
+//
+//        // get the initial values for the variables and update them in our scope
+//        scope_initializer( make_seq< sizeof...( Updates )>{} );
+//
+//        // loop while the until expression evals to false
+//        while( not expressions::eval( until_expr(), scope ))
+//            scope_updater( make_seq< sizeof...( Updates )>{} ); 
+//
+//        // return the scoped value of the vars
+//        return make_tuple( scope.template value< Vars >()... );
+//    }
+//
     constexpr Iteration() = default;
     constexpr Iteration( UntilE until_expr, tuple< Updates... > updates, 
         tuple< Vars... > vars, tuple< typename Vars::result_type... > inits ): 
@@ -195,6 +224,49 @@ IterationUpdater< tuple< Updates... >, tuple< Vars... >>::until( UntilE const& u
 template< variable... Vars >
 constexpr IterationInitializer< Vars... > iteration( Vars... vars )
 { return { vars... }; }
+
+template< expression ExprT, typename VariableTuple, typename... Params >
+result_t< VariableTuple > newtons_method( ExprT const& expr, 
+    VariableTuple const& vars, Params&... params );
+struct IterationCounter
+{
+    constexpr IterationCounter& operator++()
+    { ++_iterations; return *this; }
+
+    constexpr explicit operator size_t() const
+    { return _iterations; }
+
+    constexpr operator bool() const
+    { return _iterations < _maximum_iterations; }
+
+    constexpr IterationCounter( size_t maximum_iterations = 0 ):
+        _maximum_iterations{ maximum_iterations }, _iterations{ 0 }
+    { }
+
+    size_t _maximum_iterations;
+    size_t _iterations;
+};
+
+template< expression LeftT, expression RightT, variable Var, 
+    typename... Params >
+result_t< Var > newtons_method( Equals< LeftT, RightT > const& expr, 
+    Var const& v, Params&... params )
+{
+    auto scope = declare_variables(
+        var< typename Var::value_type >( "x" ),
+        var< size_t >( "n " ));
+
+    auto [ x, n ] = scope.variables();
+
+    auto f = ( expr.left_arg() - expr.right_arg() );
+    size_t max_iterations = 10;
+    auto df_dx = differential_for< Var >( f );
+    
+    return eval( interation( x, n ).
+        initial_values( v.value(), 0 ).
+        update( x - f(x) / df_dx( x ), n + 1 ).
+        until( n == max_iterations ), params... );
+}
 
 /// @brief trait to list the combinations of non-boolean valued boolean 
 /// expressions that must be true for the expression to be true
@@ -237,6 +309,8 @@ struct MinimumError: optional< long double >
         optional< long double >{ value } { }
     constexpr MinimumError() = default;
 };
+
+
 
 constexpr MaximumIterations maximum_iterations = { 0 };
 constexpr LearningRate learning_rate = { 0.l };

@@ -1,0 +1,7 @@
+#ifndef __EXPRESSIONS_SCOPE_HPP__
+#define __EXPRESSIONS_SCOPE_HPP__
+
+
+
+
+#endif // __EXPRESSIONS_SCOPE_HPP__

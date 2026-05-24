@@ -1904,7 +1904,6 @@ struct multiplies< units::base_unit< Id, T >>
 };
 
 // TODO: more std overloads
-
 template< units::unit_id_type uid, units::arithmetic T >
 struct formatter< units::base_unit< uid, T >, char >:
     formatter< T >
@@ -2163,6 +2162,20 @@ struct formatter< units::Time, char > : formatter< long double, char >
         return ranges::copy( units::time_unit_names[ (size_t)format_unit ], 
             ctx.out() ).out;
     }
+};
+
+template<>
+struct formatter< units::Velocity, char >: 
+    formatter< long double, char >
+{
+    template< class ParseContext >
+    constexpr ParseContext::iterator parse( ParseContext& ctx )
+    { return formatter< long double, char >::parse( ctx ); }
+
+    template< class FormatContext >
+    constexpr FormatContext::iterator format( units::Velocity const& value,
+        FormatContext& ctx ) const
+    { return formatter< long double, char >::format( value.get_value(), ctx ); }
 };
 
 template<>

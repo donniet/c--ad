@@ -27,35 +27,130 @@ using std::optional;
 
 using namespace tensors;
 
-/// @brief base class of any expression
-///
+namespace detail {
+/// @brief base class used to identify an expression
 struct ExpressionTag 
-{
-    // using result_type = ...
-    // result_type eval() const ...
-};
-
-/// @brief expressions which require iterative 
-struct Iterative: ExpressionTag
 { };
-
-template< typename T >
-constexpr bool is_iterative_v = std::is_base_of_v< Iterative, T >;
+} // namespace detail
 
 /// @brief trait to identify a type as an expression type
 /// @tparam T is the type to be checked
 template< typename T >
 struct is_expression: integral_constant< size_t, 
-    std::is_base_of_v< ExpressionTag, T >> { };
+    std::is_base_of_v< detail::ExpressionTag, T >> { };
 
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
-///
 template< typename T >
 static constexpr bool is_expression_v = is_expression< T >::value;
 
 template< typename T >
 concept expression = is_expression_v< T >;
+
+template< typename ResultT, typename ExprT = void >
+struct Expression;
+
+/// @brief base class for an expression
+template< typename ResultT, typename ExprT >
+requires( not std::is_same_v< void, ExprT > )
+struct Expression< ResultT, ExprT >: detail::ExpressionTag
+{ 
+    using result_type = ResultT;
+
+private:
+    using expression_type = ExprT;
+
+public:
+    /// @brief at the leaves of our syntax tree we call the manipulator
+    /// and return the result.
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT& manipulator ) const
+    { return manipulator( *_expr_ptr ); }
+
+    constexpr Expression( expression_type* expr_ptr ):
+        _expr_ptr{ expr_ptr } { }
+    expression_type* _expr_ptr;
+};
+
+/// @brief type erased expression container
+template< typename ResultT >
+struct Expression< ResultT, void >: detail::ExpressionTag
+{
+    using result_type = ResultT;
+
+    template< typename ExprT >
+    requires( std::is_same_v< ResultT, typename ExprT::result_type > )
+    constexpr Expression( ExprT& expr ):
+        _any_expr{ expr }
+    { }
+
+private:
+    std::any _any_expr;
+};
+
+/// @brief wrapper to turn any type into an expression
+/// @tparam T the wrapped type
+///
+template< typename T >
+requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
+struct StaticValue: Expression< T, StaticValue< T >>
+{ 
+    using value_type = T;
+    using base_type = Expression< T, StaticValue< T >>;
+
+    // casting to and from an expression should be explicit
+    explicit operator value_type() const
+    { return _value; } 
+
+    constexpr StaticValue(): base_type{ this }, _value{} { }
+    constexpr StaticValue( value_type const& other ): base_type{ this }, _value{ other } { }
+    constexpr StaticValue( StaticValue const& ) = default;
+    constexpr StaticValue( StaticValue&& ) = default;
+
+private:
+    value_type _value;
+};
+
+/// @brief helper to create expressions with unchanging values
+/// @tparam T the type of this expression
+/// @param value the value of this expression
+/// @return returns an expression that will always evaluate to value
+///
+template< typename T >
+requires( not is_expression_v< T > )
+StaticValue< T > static_expr( T const& value )
+{ return StaticValue< T >{ value }; }
+
+/// @brief a compile-time constant
+/// @tparam T the type of the constant
+/// @tparam Value of the constant
+///
+template< auto Value >
+struct Constant: Expression< std::remove_cv_t< decltype( Value )>, Constant< Value >> 
+{
+    using value_type = std::remove_cv_t< decltype( Value )>;
+    using base_type = Expression< value_type, Constant< Value >>;
+
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT& manipulator ) const
+    { return manipulator( *this ); }
+
+    static constexpr value_type value = Value;
+
+    constexpr operator value_type() const
+    { return value; }
+
+    constexpr Constant(): base_type{ this } { }
+};
+
+template< auto Value >
+using constant = Constant< Value >;
+
+// NOTE: not sure about the constants
+constexpr constant< 0.l > constant_zero = constant< 0.l >{};
+constexpr constant< 1.l > constant_one = constant< 1.l >{};
+constexpr constant< true > constant_true = constant< true >{};
+constexpr constant< false > constant_false = constant< false >{};
 
 template< size_t I, typename T >
 struct Variable;
@@ -78,7 +173,7 @@ template< typename T >
 concept variable = is_variable_v< T >;
 
 // forward decl
-template< typename... Vars >
+template< variable... Vars >
 struct Scope;
 
 template< typename T >
@@ -90,6 +185,8 @@ struct IsScope< Scope< Vars... >>: integral_constant< bool, true > { };
 template< typename T >
 constexpr bool is_scope_v = IsScope< T >::value;
 
+// scope contains details
+namespace detail {
 template< size_t I, typename ScopeT >
 struct ScopeContainsVariable;
 
@@ -101,9 +198,10 @@ template< size_t I, typename ScopeT >
 requires( is_scope_v< ScopeT >)
 struct ScopeContainsVariable< I, ScopeT >: integral_constant< bool,
     ScopeT::template has_value< Variable< I, bool >>> { };
+} // namespace detail
 
 template< size_t I, typename ScopeT >
-constexpr bool scope_contains_variable_v = ScopeContainsVariable< I, ScopeT >::value;
+constexpr bool scope_contains_variable_v = detail::ScopeContainsVariable< I, ScopeT >::value;
 
 template< typename T, size_t I >
 concept scope_containing = scope_contains_variable_v< I, T >;
@@ -113,147 +211,15 @@ concept scope_containing = scope_contains_variable_v< I, T >;
 /// @tparam T is the type of this variable
 ///
 template< size_t I, typename T >
-struct Variable: ExpressionTag
+struct Variable: Expression< T, Variable< I, T >>
 { 
     using value_type = T;
-    using result_type = value_type;
+    using base_type = Expression< T, Variable< I, T >>;
     static constexpr size_t index = I;
 
-    string name() const
-    { return _name; }
-
-    template< typename FirstParam, typename... RestParams >
-    constexpr T eval( FirstParam&, RestParams&... ) const;
-
-    constexpr T eval() const
-    { return *_ptr; }
-
-    // NOTE: this is for advanced use.  It re-wires the underlying
-    // pointer to a new value.  Since an expression may have many instances
-    // of the same variable this could make expressions inconsistent.
-    void realize( T& storage )
-    { _ptr = &storage; }
-
-    Variable& operator=( Variable const& ) = delete;
-
-    template< typename U >
-    requires( std::is_convertible_v< T, U > )
-    Variable& operator =( U const& other )
-    { 
-        *_ptr = static_cast< T >( other ); 
-        return *this;
-    }
-    Variable( T* ptr, string name ): 
-        _ptr{ ptr }, _name{ name } {}
-
-    constexpr Variable(): 
-        _ptr{ nullptr }, _name{} { }
-
-    T* _ptr;
-    string _name;
+    constexpr Variable():
+        base_type{ this } { }
 };
-
-/// @brief container for variable values
-/// @tparam ...Vars are the variables in this scope
-template< typename... Vars >
-struct Scope: tuple< typename Vars::result_type... >
-{ 
-    static constexpr size_t size = sizeof...( Vars );
-    using variables_type = tuple< Vars... >;
-
-    template< typename Var >
-    static constexpr bool has_value = (( Vars::index == Var::index ) or ... );
-
-    template< typename Var, typename Seq >
-    struct GetValueHelper;
-
-    template< size_t I, typename T, size_t J, size_t... Js >
-    requires( I == Vars...[ J ]::index )
-    struct GetValueHelper< Variable< I, T >, seq< J, Js... >>
-    {
-        static constexpr T& value( Scope& scope )
-        { return std::get< J >( scope ); }
-
-        static constexpr T const& value( Scope const& scope )
-        { return std::get< J >( scope ); }
-    };
-
-    template< size_t I, typename T, size_t J, size_t... Js >
-    requires( I != Vars...[ J ]::index )
-    struct GetValueHelper< Variable< I, T >, seq< J, Js... >>:
-        GetValueHelper< Variable< I, T >, seq< Js... >>
-    { };
-
-    template< typename Var >
-    struct GetValue;
-
-    template< size_t I, typename T >
-    requires( has_value< Variable< I, T >>)
-    struct GetValue< Variable< I, T >>:
-        GetValueHelper< Variable< I, T >, make_seq< size >> 
-    { }; 
-
-    template< typename Var >
-    constexpr typename Var::result_type& value( Var var = {} )
-    { return GetValue< Var >::value( *this ); }
-
-    template< typename Var >
-    constexpr typename Var::result_type const& value( Var var = {} ) const
-    { return GetValue< Var >::value( *this ); }
-               
-    template< size_t... Is >
-    constexpr variables_type variables_helper( seq< Is... > )
-    { return {{ &std::get< Is >( *this ), _names[ Is ] }... }; }
-
-    constexpr variables_type variables() 
-    { return variables_helper( make_seq< size >{} ); }
-
-    template< typename Var, typename... OtherVars >
-    constexpr void import_variable_value( Scope< OtherVars... > const& other )
-    {
-        using other_scope = Scope< OtherVars... >;
-
-        if( other_scope::template has_value< Var >)
-            value< Var >() = other_scope::template value< Var >();
-    }
-
-    template< typename... OtherVars, size_t I, size_t... Is >
-    constexpr void import_values_helper( Scope< OtherVars... > const& other, 
-        seq< I, Is... > )
-    {
-        using other_scope = Scope< OtherVars... >;
-
-        if( other_scope::template has_value< Vars...[ I ]> )
-            value< Vars...[ I ]>() = other_scope::template value< Vars...[ I ]>(); 
-    }
-
-    template< typename... OtherVars >
-    constexpr Scope( Scope< OtherVars... > const& other )
-    { import_values_helper( other, make_seq< size >{} ); }
-
-    constexpr Scope() = default;
-
-    std::array< string, size > _names;
-};
-
-template< size_t I, typename T >
-template< typename FirstParam, typename... RestParams >
-constexpr T Variable< I, T >::eval( FirstParam& first, RestParams&... rest ) const
-{
-    if constexpr( scope_contains_variable_v< I, FirstParam >)
-        return first.value( *this );
-
-    return eval( rest... ); 
-}
-
-template< variable Var, typename... Vars >
-constexpr typename Var::value_type scoped_value( Scope< Vars... > const& scope )
-{ return scope.variable_value( Var{} ); }
-
-
-template< size_t... Is >
-array< string, sizeof...( Is ) > default_variable_names_helper( seq< Is... > )
-{ return {( string( "var ") + std::to_string( Is ))... }; }
 
 /// @brief the declaration of a variable in a delcare_variables function
 /// @tparam T the type of the variable
@@ -277,95 +243,181 @@ template< typename T >
 VariableDeclaration< T > var( string name = "" )
 { return { name }; }
 
-template< typename T >
-struct IsVariableDeclaration: std::integral_constant< bool, false > {};
-
-template< typename T >
-struct IsVariableDeclaration< VariableDeclaration< T >>: 
-    std::integral_constant< bool, true > {};
-
-template< typename T >
-constexpr bool is_variable_declaration_v = IsVariableDeclaration< T >::value;
-
-template< typename T >
-concept variable_declaration = is_variable_declaration_v< T >;
-
-template< typename TupleT, typename Seq >
-struct VariablesTupleHelper;
-
-template< typename TupleT, size_t... Is >
-struct VariablesTupleHelper< TupleT, seq< Is... >>
-{ using type = tuple< Variable< Is, tuple_element_t< Is, TupleT >>... >; };
-
-template< typename... Ts >
+template< size_t Start, typename... Ts >
 struct VariablesTuple
-{ using type = VariablesTupleHelper< tuple< Ts... >, make_seq< sizeof...( Ts )>>::type; };
+{ 
+    template< typename Seq >
+    struct Helper;
 
-template< typename... Ts >
-using variables_tuple_t = VariablesTuple< Ts... >::type;
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    { using type = tuple< Variable< Start + Is, Ts...[ Is ]>... >; };
 
-template< typename TupleT, typename NamesT, size_t... Is >
-tuple< Variable< Is, tuple_element_t< Is, TupleT >>... >  
-variables_tuple_helper( TupleT& vals, NamesT const& names, seq< Is... > )
-{ return {{ &get< Is >( vals ), 
-    get< Is >( names ) == "" ? "var" + to_string( Is ) : get< Is >( names ) }... }; }
+    using type = Helper< make_seq< sizeof...( Ts )>>::type; 
+};
 
-template< typename... Ts >
-variables_tuple_t< Ts... > variables_tuple( tuple< Ts... >& tup, 
-    array< string, sizeof...( Ts )> const& names )
-{ return variables_tuple_helper( tup, names, make_seq< sizeof...( Ts )>{} ); }
+template< size_t Start, typename... Ts >
+using variables_tuple_t = VariablesTuple< Start, Ts... >::type;
 
-template< typename... Ts >
-array< string, sizeof...( Ts )> default_variable_names( string base = "var" )
+template< variable Var, typename ScopeT >
+struct ScopedVariable: Var
 {
-    array< string, sizeof...( Ts )> ret;
-    for( size_t i = 0; i < sizeof...( Ts ); ++i )
-        ret[ i ] = "var" + to_string( i );
-    return ret;
-}
+private:
+    using variable_type = Var;
+    using value_type = Var::value_type;
+    using scope_type = ScopeT;
+
+public:
+    template< typename T >
+    constexpr ScopedVariable& operator=( T const& other )
+    { _scope.template set< variable_type >( other ); return *this; }
+
+    constexpr value_type value() const
+    { return _scope.template get< variable_type >(); }
+
+    constexpr operator value_type() const
+    { return _scope.template get< variable_type >(); }
+
+    constexpr string const& name() const
+    { return _scope.template name< variable_type >(); }
+
+    // DT: I don't think we ever need to copy a scoped variable after construction...
+    constexpr ScopedVariable& operator=( ScopedVariable const& other ) = delete;
+    constexpr ScopedVariable( ScopedVariable const& other ):
+        _scope{ other._scope } { }
+    constexpr ScopedVariable( scope_type& scope ):
+        _scope{ scope } { }
+
+private:
+    scope_type& _scope;
+};
 
 /// @brief container and factory for Variables. 
 ///
-template< typename... Ts >
-struct VariableList: variables_tuple_t< Ts... >
+template< variable... Vars >
+struct Scope: tuple< Vars... >
 {
-    using values_tuple_type = tuple< Ts... >;
-    using variables_tuple_type = variables_tuple_t< Ts... >;
-    static constexpr size_t size = sizeof...( Ts );
+    using values_tuple_type = tuple< typename Vars::value_type... >;
+    using variables_tuple_type = tuple< Vars... >;
+    static constexpr size_t size = sizeof...( Vars );
 
-    variables_tuple_t< Ts... > all()
-    { return *this; }
+protected:
+    template< size_t I, typename Seq >
+    struct Helper;
 
-    template< typename Body >
-    auto express( Body&& method )
-    { return call_method_with_variables( method, make_seq< size >{} ); }
-  
+    template< size_t I, size_t J, size_t... Js >
+    requires( I == Vars...[ J ]::index )
+    struct Helper< I, seq< J, Js... >>
+    { 
+        static constexpr tuple_element_t< J, values_tuple_type > 
+        get( values_tuple_type const& vals )
+        { return std::get< J >( vals ); }
+
+        static constexpr void 
+        set( values_tuple_type& vals, tuple_element_t< J, values_tuple_type > const& val )
+        { std::get< J >( vals ) = val; }
+
+        static constexpr string const& name( std::array< string, size > const& names )
+        { return names[ J ]; }
+
+        static constexpr bool has_value = true; 
+    };
+
+    template< size_t I, size_t J, size_t... Js >
+    requires( I != Vars...[ J ]::index )
+    struct Helper< I, seq< J, Js... >>:
+        Helper< I, seq< Js... >>
+    { };
+
+    template< size_t I >
+    struct Helper< I, seq<>>
+    { static constexpr bool has_value = false; };
+
+    template< variable Var >
+    using helper_for = Helper< Var::index, make_seq< size >>;
+
+public:
+    /// @brief determines if the scope has a value for variable I
+    template< variable Var >
+    static constexpr bool has_value = Helper< Var::index, make_seq< size >>::has_value;
+
+    /// @brief retrieves the value of variable Var in this scope
+    template< variable Var >
+    constexpr typename Var::value_type get() const
+    { return helper_for< Var >::get( _values ); }
+
+    /// @brief assigns other to the scoped value of Var
+    template< variable Var >
+    constexpr void set( typename Var::value_type const& other )
+    { helper_for< Var >::set( _values, other ); }
+
+    /// @brief retrieves the name of variable Var in this scope
+    template< variable Var >
+    constexpr string const& name() const
+    { return helper_for< Var >::name( _names ); }
+
+    /// @brief returns a tuple of scoped variables
+    constexpr tuple< ScopedVariable< Vars, Scope >... > variables() 
+    { return { ScopedVariable< Vars, Scope >{ *this }... }; }
+
+    /// @brief invocation against a constant will return the constant's value
+    template< auto Value >
+    decltype( Value ) operator ()( Constant< Value > ) const
+    { return Value; }
+
+    /// @brief invocation against a static will return the static's value
+    template< typename T >
+    T operator ()( StaticValue< T > const& static_value ) const
+    { return static_cast< T >( static_value ); }
+
+    /// @brief invocation against a scoped variable will return the
+    /// scoped value
+    /// TODO: should this return a ScopedVariable?
+    template< size_t I, typename T >
+    requires( scope_contains_variable_v< I, Scope< Vars... >> )
+    constexpr T operator ()( Variable< I, T > const& var ) const 
+    { return helper_for< Variable< I, T >>::get( _values ); }
+ 
     template< typename... Names >
-    requires( sizeof...( Names ) == sizeof...( Ts ) )
-    VariableList( Names const&... names ): 
-        variables_tuple_type{ variables_tuple( _values, 
-            array< string, size >{ names... }) } 
+    requires( sizeof...( Names ) == size )
+    Scope( Names const&... names ): 
+        _values{}, _names{ names... }  
     { }
 
-    VariableList():
-        variables_tuple_type{ variables_tuple( _values, 
-            default_variable_names< Ts... >() ) }
-    { }
+    Scope() = default;
 
 private:
-    template< typename Body, size_t... Is >
-    auto call_method_with_variables( Body& method, seq< Is... > )
-    { return method( get< Is >( *this )... ); }
-
     values_tuple_type _values;
+    array< string, size > _names;
 };
+
+template< typename Seq, typename... Values >
+struct SimpleScopeHelper;
+
+template< size_t... Is, typename... Values >
+struct SimpleScopeHelper< seq< Is... >, Values... >
+{ 
+    using type = Scope< Variable< Is, Values...[ Is ]>... >;
+    static constexpr type value( Values const&... values )
+    {
+        type ret;
+        ( ret.template set< Variable< Is, Values...[ Is ]>>( values...[ Is ] ), ... );
+        return ret;
+    }
+};
+
+template< typename... Values >
+constexpr typename SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::type
+simple_scope( Values const&... values )
+{ return SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::value( values... ); }
 
 /// @brief method to declare a set of variables to be used in expressions
 /// @tparam ...Decls 
 /// @param ...decls 
 /// @return 
-template< variable_declaration... Decls >
-VariableList< typename Decls::value_type... >
+template< typename... Decls >
+typename SimpleScopeHelper< make_seq< sizeof...( Decls )>, 
+    typename Decls::value_type... >::type
 declare_variables( Decls... decls )
 { return { decls.name()... }; }
 
@@ -375,69 +427,31 @@ namespace detail {
 /// @tparam T the type to be evaluated
 ///
 template< typename T >
-struct Evaluator;
+struct Result;
 
 /// @brief evaluator for expressions of type T
 /// @tparam T the type of the expression
 ///
 template< typename T >
 requires( is_expression_v< T > )
-struct Evaluator< T >
-{ 
-    using result_type = T::result_type;
-
-    template< typename... Params >
-    constexpr result_type operator ()( T const& expr, Params&... params ) const
-    { return expr.eval( params... ); }
-};
+struct Result< T >
+{ using type = T::result_type; };
 
 template< typename... Ts >
-struct Evaluator< tuple< Ts... >>
-{
-    using result_type = tuple< typename Evaluator< Ts >::result_type... >;
-    using tuple_type = tuple< Ts... >;
-
-    template< size_t... Is, typename... Params >
-    constexpr result_type evaluate_helper( tuple_type const& tup, 
-        seq< Is... >, Params&... params ) const
-    { return { Evaluator< Ts...[Is] >{}( std::get< Is >( tup ), params... )... }; }
-
-    template< typename... Params >
-    constexpr result_type operator ()( tuple< Ts... > const& tup, Params&... params ) const
-    { return evaluate_helper( tup, make_seq< sizeof...( Ts )>{}, params... ); }
-};
+struct Result< tuple< Ts... >>
+{ using type = tuple< typename Result< Ts >::type... >; };
 
 template< shape S, typename... Ts >
-struct Evaluator< Tensor< S, Ts... >>
-{ 
-    using result_type = Tensor< S, typename Evaluator< Ts >::result_type... >;
-    using tensor_type = Tensor< S, Ts... >;
-
-    template< size_t... Is, typename... Params >
-    constexpr result_type evaluate_helper( Tensor< S, Ts... > const& ten, 
-        seq< Is... >, Params&... params ) const
-    { return { Evaluator< Ts...[Is] >{}( ten, params... )... }; }
-
-    // always return the value itself
-    template< typename... Params >
-    constexpr result_type operator ()( Tensor< S, Ts... > const& value, Params&... params ) const
-    { return evaluate_helper( value, make_seq< Tensor< S, Ts... >::size() >{}, params... ); }
-};
+struct Result< Tensor< S, Ts... >>
+{ using result_type = Tensor< S, typename Result< Ts >::type... >; };
 
 /// @brief evaluator for non-expression types
 /// @tparam T the type of the non-expression
 ///
 template< typename T >
 requires( not is_expression_v< T > and not is_tensor_v< T > and not is_tuple_v< T > )
-struct Evaluator< T >
-{ 
-    using result_type = T;
-
-    // always return the value itself
-    template< typename... Params >
-    constexpr result_type operator ()( T const& value, Params&... ) const
-    { return value; };
-};
+struct Result< T >
+{ using type = T; };
 
 } // namespace detail
 
@@ -445,90 +459,9 @@ struct Evaluator< T >
 /// @tparam T the tested type
 ///
 template< typename T >
-using result_t = detail::Evaluator< T >::result_type;
+using result_t = detail::Result< T >::type;
 
-/// @brief evaluates an expression given a set of variable values
-/// @tparam T the expression type
-/// @param expr the expression to be evaluated
-/// @param vars the values of variables in the expression
-/// @return the result of evaluating expression expr using values stored in vars
-///
-template< typename T, typename... Params >
-constexpr result_t< T > eval( T const& expr, Params&... params )
-{ return detail::Evaluator< T >{}( expr, params... ); }
-
-/// @brief wrapper to turn any type into an expression
-/// @tparam T the wrapped type
-///
-template< typename T >
-requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
-struct StaticValue : ExpressionTag
-{ 
-    using argument_types = tuple< >;
-    using value_type = T;
-    using result_type = value_type;
-
-    template< typename... Params >
-    constexpr result_type eval( Params&... ) const
-    { return _value; }
-
-    // casting to and from an expression should be explicit
-    explicit operator value_type() const
-    { return _value; } 
-    explicit constexpr StaticValue( value_type const& expr ): _value{ expr } { }
-
-    constexpr StaticValue() = default;
-    constexpr StaticValue( StaticValue const& ) = default;
-    constexpr StaticValue( StaticValue&& ) = default;
-
-    // template< typename Arg, typename... Args >
-    // explicit constexpr Expression( Arg&& arg, Args&&... args ): _value{ arg, args... } {}
-
-    value_type _value;
-};
-
-/// @brief helper to create expressions with unchanging values
-/// @tparam T the type of this expression
-/// @param value the value of this expression
-/// @return returns an expression that will always evaluate to value
-///
-template< typename T >
-requires( not is_expression_v< T > )
-StaticValue< T > static_expr( T const& value )
-{ return StaticValue< T >{ value }; }
-
-/// @brief a compile-time constant
-/// @tparam T the type of the constant
-/// @tparam Value of the constant
-///
-template< auto Value >
-struct Constant : ExpressionTag
-{
-    using argument_types = tuple< >;
-    using value_type = std::remove_cv_t< decltype( Value )>;
-    using result_type = value_type;
-
-    static constexpr value_type value = Value;
-
-    constexpr operator value_type() const
-    { return value; }
-
-    template< typename... Params >
-    consteval result_type eval( Params&... ) const
-    { return value; }
-};
-
-template< auto Value >
-using constant = Constant< Value >;
-
-// NOTE: not sure about the constants
-constexpr constant< 0.l > constant_zero = constant< 0.l >{};
-constexpr constant< 1.l > constant_one = constant< 1.l >{};
-constexpr constant< true > constant_true = constant< true >{};
-constexpr constant< false > constant_false = constant< false >{};
-
-namespace details {
-
+namespace detail {
 template< typename... Exprs >
 struct DependentVariableIDs;
 
@@ -650,17 +583,17 @@ template< size_t I, typename ExprT >
 struct DependsOnVariableIndex: integral_constant< bool, 
     sequence_contains_v< I, typename DependentVariableIDs< ExprT >::type >> { };
 
-} // namespace details
+} // namespace detail
 
 template< typename ExprT >
-using dependent_variables_t = details::DependentVariables< ExprT >::type;
+using dependent_variables_t = detail::DependentVariables< ExprT >::type;
 
 template< typename ExprT >
-using dependent_variable_id_seq = details::DependentVariableIDs< ExprT >::type;
+using dependent_variable_id_seq = detail::DependentVariableIDs< ExprT >::type;
 
 template< size_t I, typename ExprT >
 constexpr bool depends_on_variable_index_v = 
-    details::DependsOnVariableIndex< I, ExprT >::value;
+    detail::DependsOnVariableIndex< I, ExprT >::value;
 
 ///////////////////////////////////
 /// Substitution and Arguments ///
@@ -734,7 +667,7 @@ substitution( ExprT expr, Args... args );
 
 /// @brief Base class for compound operations. 
 template< template< typename... > class Op, typename... Args >
-struct Arguments: ExpressionTag, tuple< Args... >
+struct Arguments: detail::ExpressionTag, tuple< Args... >
 {
     using argument_types = tuple< Args... >;
 
@@ -752,8 +685,7 @@ private:
 
 public:
     /// @brief implementation of invocation operator on expressions with arguments
-    /// is a substitution.  We may finally implement it after defining substitution
-    /// above.
+    /// is a substitution.
     /// @tparam Op is the root operation of the expression
     /// @tparam ...Args are the types of the arguments of the expression
     /// @tparam ...Subs are the types of the substitutions made into the dependent
@@ -763,12 +695,26 @@ public:
     template< typename... Subs >
     requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
     constexpr typename Substitution< Op< Args... >, Subs... >::type
-    operator ()( Subs... subs )
+    operator ()( Subs... subs ) const
     { return substitution( expression(), subs... ); }
+
+    // TODO: some kind of visitor/manipulator pattern to eval, distribute, and normalize
+    // expressions.
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    {
+        // apply the manipulator to each of the arguments and return the expression
+        // operation of the results
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { return expression_type::value(( std::get< Is >( *this ) | manipulator )... ); };
+
+        return helper( make_seq< sizeof...( Args )>{} );
+    }
 
 protected:
     constexpr Arguments( Args... args ): 
         argument_types{ args... } { }
+
     constexpr Arguments() = default;
 };
 
@@ -805,12 +751,12 @@ requires( not tensor< result_t< ArrayT >> )
 struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
 {
     using result_type = tuple_element_t< I, result_t< ArrayT >>;
+
+    template< typename ArrayU >
+    static constexpr auto value( ArrayU const& arr )
+    { return std::get< I >( arr ); }
     
     constexpr ArrayT arg() const { return get_argument< 0 >( *this ); }
-    
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::get< I >( expressions::eval( arg(), params... )); }
     
     constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
     constexpr Of() = default;
@@ -823,11 +769,11 @@ struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
 {
     using result_type = tensor_element_t< I, result_t< ArrayT >>;
 
+    template< typename ArrayU >
+    static constexpr auto value( ArrayU const& arr )
+    { return std::get< I >( arr ); } 
+
     constexpr ArrayT arg() const { return std::get< 0 >( *this ); }
-        
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::get< I >( expressions::eval( arg(), params... )); }
     
     constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
     constexpr Of() = default;
@@ -1074,19 +1020,19 @@ template< typename T >
 struct Negation: Arguments< Negation, T >
 { 
     using result_type = decltype( -result_t< T >{} );
+    
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return -arg; }
 
     constexpr T arg() const 
     { return get_argument< 0 >( *this ); }
-
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return -expressions::eval( arg(), params... ); }
 
     constexpr Negation( T arg ): Arguments< Negation, T >{ arg } { } 
     constexpr Negation() = default;
 };
 
-static_assert( eval( Negation< Variable< 0, int >>{}( 5 )) == -5 );
+static_assert(( Negation< Variable< 0, int >>{} | simple_scope( 5 )) == -5 );
 
 template< typename... Ts >
 struct Sum;
@@ -1098,17 +1044,32 @@ template< typename T, typename U >
 struct Sum< T, U >: Arguments< Sum, T, U >
 { 
     using result_type = decltype( result_t< T >{} + result_t< U >{} );
-    //using dependent_vars = dependent_variables_t< argument_types >;
 
     constexpr T left_arg() const { return get_argument< 0 >( *this ); }
     constexpr U right_arg() const { return get_argument< 1 >( *this ); }
-    
-    template< typename... Params >
-    constexpr auto eval( Params&... params ) const
-    { return expressions::eval( left_arg(), params... ) + 
-        expressions::eval( right_arg(), params... ); }
+
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return left + right; }
 
     constexpr Sum( T left, U right ): Arguments< Sum, T, U >{ left, right } { } 
+    constexpr Sum() = default;
+};
+
+template< typename... Ts >
+requires( isgreater( sizeof...( Ts ), 2 ))
+struct Sum< Ts... >: Arguments< Sum, Ts... >
+{
+    using result_type = decltype(( result_t< Ts >{} + ... ));
+
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const { return get_argument< I >( *this ); }
+
+    template< typename... Us >
+    static constexpr auto value( Us const&... us )
+    { return ( us + ... ); }
+
+    constexpr Sum( Ts const&... ts ): Arguments< Sum, Ts... >{ ts... } { }
     constexpr Sum() = default;
 };
 
@@ -1126,34 +1087,71 @@ struct Difference< T, U >: Arguments< Difference, T, U >
     constexpr T left_arg() const { return get_argument< 0 >( *this ); }
     constexpr U right_arg() const { return get_argument< 1 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return expressions::eval( left_arg(), params... ) - 
-        expressions::eval( right_arg(), params... ); }
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return left - right; }
 
     constexpr Difference( T left, U right ): 
         Arguments< Difference, T, U >{ left, right } { } 
     constexpr Difference() = default;
 };
 
+template< typename... Ts >
+requires( isgreater( sizeof...( Ts ), 2 ))
+struct Difference< Ts... >: Arguments< Difference, Ts... >
+{
+    using result_type = decltype(( result_t< Ts >{} - ... ));
+
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const { return get_argument< I >( *this ); }
+
+    template< typename... Us >
+    static constexpr auto value( Us const&... us )
+    { return ( us - ... ); }
+
+    constexpr Difference( Ts const&... ts ): 
+        Arguments< Difference, Ts... >{ ts... } { }
+    constexpr Difference() = default;
+};
+
+template< typename... >
+struct Product;
+
 /// @brief product expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Product: Arguments< Product, T, U > 
+struct Product< T, U >: Arguments< Product, T, U > 
 { 
     using result_type = decltype( result_t< T >{} * result_t< U >{} );
 
     constexpr T left_arg() const { return get_argument< 0 >( *this ); }
     constexpr U right_arg() const { return get_argument< 1 >( *this );; }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return expressions::eval( left_arg(), params... ) * 
-        expressions::eval( right_arg(), params... ); }
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left * right ); }
 
     constexpr Product( T left, U right ): 
         Arguments< Product, T, U >{ left, right } { }
+    constexpr Product() = default;
+};
+
+template< typename... Ts >
+requires( isgreater( sizeof...( Ts ), 2 ))
+struct Product< Ts... >: Arguments< Product, Ts... >
+{
+    using result_type = decltype(( result_t< Ts >{} * ... ));
+
+    template< size_t I >
+    constexpr Ts...[ I ] arg() const { return get_argument< I >( *this ); }
+
+    template< typename... Us >
+    static constexpr auto value( Us const&... us )
+    { return ( us * ... ); }
+
+    constexpr Product( Ts const&... ts ): 
+        Arguments< Product, Ts... >{ ts... } { }
     constexpr Product() = default;
 };
 
@@ -1168,10 +1166,9 @@ struct Quotient: Arguments< Quotient, T, U >
     constexpr T numerator_arg() const { return get_argument< 0 >( *this ); }
     constexpr U denominator_arg() const { return get_argument< 1 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return expressions::eval( numerator_arg(), params... ) / 
-        expressions::eval( denominator_arg(), params... ); }
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left / right ); }
 
     constexpr Quotient( T numerator, U denominator ):
         Arguments< Quotient, T, U >{ numerator, denominator } { }
@@ -1187,9 +1184,9 @@ struct SquareRoot: Arguments< SquareRoot, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::sqrt( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::sqrt( arg ); }
 
     constexpr SquareRoot( T arg ):  
         Arguments< SquareRoot, T >{ arg } { }
@@ -1208,10 +1205,10 @@ struct Power
         using result_type = decltype( std::pow< Exp >( result_t< T >{} ));
 
         constexpr T arg() const { return get_argument< 0 >( *this ); }
-   
-        template< typename... Params >
-        constexpr result_type eval( Params&... params ) const
-        { return std::pow< Exp >( expressions::eval( arg(), params... )); }
+
+        template< typename U >
+        static constexpr auto value( U const& arg )
+        { return std::pow< Exp >( arg ); }
 
         constexpr Of( T arg ): Arguments< Of, T >{ arg } {} 
         constexpr Of() = default;
@@ -1230,9 +1227,9 @@ struct Sine: Arguments< Sine, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::sin( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::sin( arg ); }
 
     constexpr Sine( T arg ): Arguments< Sine, T >{ arg } { } 
     constexpr Sine() = default;
@@ -1247,9 +1244,9 @@ struct Cosine: Arguments< Cosine, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::cos( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::cos( arg ); }
 
     constexpr Cosine( T arg ): Arguments< Cosine, T >{ arg } { } 
     constexpr Cosine() = default;
@@ -1266,9 +1263,9 @@ struct Tangent: Arguments< Tangent, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::tan( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::tan( arg ); }
 
     constexpr Tangent( T arg ): Arguments< Tangent, T >{ arg } { } 
     constexpr Tangent() = default;
@@ -1283,9 +1280,9 @@ struct Arcsine: Arguments< Arcsine, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::asin( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::asin( arg ); }
 
     constexpr Arcsine( T arg ): Arguments< Arcsine, T >{ arg } { } 
     constexpr Arcsine() = default;
@@ -1300,9 +1297,9 @@ struct Arccosine: Arguments< Arccosine, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::acos( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::acos( arg ); }
 
     constexpr Arccosine( T arg ): Arguments< Arccosine, T >{ arg } { } 
     constexpr Arccosine() = default;
@@ -1317,9 +1314,9 @@ struct Arctangent: Arguments< Arctangent, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return std::atan( expressions::eval( arg(), params... )); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return std::atan( arg ); }
 
     constexpr Arctangent( T arg ): Arguments< Arctangent, T >{ arg } { } 
     constexpr Arctangent() = default;
@@ -1341,8 +1338,8 @@ struct Arctangent2: Arguments< Arctangent2, T, U >
     constexpr U denominator_arg() const { return get_argument< 1 >( *this ); }
 
     // TODO: write an eval for std::atan2 that handles units properly
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const;
+    template< typename V, typename W >
+    static constexpr auto value( V const& num, W const& den );
 
     constexpr Arctangent2( T numerator, U denominator ):
         Arguments< Arctangent2, T, U >{ numerator, denominator } { }
@@ -1372,10 +1369,9 @@ struct Equals: Arguments< Equals, T, U >
     constexpr T left_arg() const { return get_argument< 0 >( *this ); }
     constexpr U right_arg() const { return get_argument< 1 >( *this ); }
     
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return expressions::eval( left_arg(), params... ) == 
-        expressions::eval( right_arg(), params... ); }
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left == right ); } 
 
     constexpr Equals( T left, U right ): 
         Arguments< Equals, T, U >{ left, right } { }
@@ -1393,10 +1389,9 @@ struct GreaterThan: Arguments< GreaterThan, T, U >
     constexpr T left_arg() const { return get_argument< 0 >( *this ); }
     constexpr U right_arg() const { return get_argument< 1 >( *this ); }
     
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return expressions::eval( left_arg(), params... ) >
-        expressions::eval( right_arg(), params... ); }
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left > right ); } 
 
     constexpr GreaterThan( T left, U right ): 
         Arguments< GreaterThan, T, U >{ left, right } { }
@@ -1416,13 +1411,9 @@ struct Conjunction: Arguments< Conjunction, Ts... >
     constexpr Ts...[ I ] arg() const
     { return get_argument< I >( *this ); }
 
-    template< size_t... Is, typename... Params >
-    constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
-    { return ( expressions::eval( arg< Is >(), params... ) and ... ); }
-
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return eval_helper( make_seq< arguments_size() >{}, params... ); }
+    template< typename... Us >
+    static constexpr auto value( Us const&... us )
+    { return ( us and ... ); }
 
     constexpr Conjunction( Ts... ts ): Arguments< Conjunction, Ts... >{ ts... } { } 
     constexpr Conjunction() = default;
@@ -1440,13 +1431,9 @@ struct Disjunction: Arguments< Disjunction, Ts... >
     constexpr Ts...[ I ] arg() const
     { return get_argument< I >( *this ); }
 
-    template< size_t... Is, typename... Params >
-    constexpr result_type eval_helper( seq< Is... >, Params&... params ) const
-    { return ( expressions::eval( arg< Is >(), params... ) or ... ); }
-
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return eval_helper( make_seq< arguments_size() >{}, params... ); }
+    template< typename... Us >
+    static constexpr auto value( Us const&... us )
+    { return ( us or ... ); }
 
     constexpr Disjunction( Ts... ts ): Arguments< Disjunction, Ts... >{ ts... } { } 
     constexpr Disjunction() = default;
@@ -1462,9 +1449,9 @@ struct Compliment: Arguments< Compliment, T >
 
     constexpr T arg() const { return get_argument< 0 >( *this ); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { return not expressions::eval( arg(), params... ); }
+    template< typename U >
+    static constexpr auto value( U const& arg )
+    { return not arg; }
 
     constexpr Compliment( T arg ): Arguments< Compliment, T >{ arg } { } 
     constexpr Compliment() = default;
@@ -1555,46 +1542,46 @@ constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
 ///////////////
 /// Aggregates
 ///
-
-template< typename ExprT >
-struct Minimum: Iterative 
-{
-    using expression_type = ExprT;
-    using argument_types = tuple< expression_type >;
-    using result_type = result_t< ExprT >;
-
-    constexpr expression_type expr() const { return _expr; }
-
-    constexpr Minimum( expression_type expr ): _expr{ expr } { }
-    constexpr Minimum() = default;
-    
-    expression_type _expr;
-};
-
-template< typename ExprT >
-struct ArgumentMinimum: Iterative
-{
-    using expression_type = ExprT;
-    using argument_types = tuple< expression_type >;
-    using variable_types = dependent_variables_t< ExprT >;
-
-    template< typename TupleT >
-    struct ResultHelper;
-
-    template< typename... Vars >
-    struct ResultHelper< tuple< Vars... >>
-    { using type = tuple< result_t< Vars >... >; };
-
-    using result_type = ResultHelper< variable_types >::type;
-
-    constexpr expression_type expr() const { return _expr; }
-
-    constexpr ArgumentMinimum( expression_type expr ): _expr{ expr } { }
-    constexpr ArgumentMinimum() = default;
-
-    expression_type _expr;
-};
-
+// 
+// template< typename ExprT >
+// struct Minimum: Iterative 
+// {
+//     using expression_type = ExprT;
+//     using argument_types = tuple< expression_type >;
+//     using result_type = result_t< ExprT >;
+// 
+//     constexpr expression_type expr() const { return _expr; }
+// 
+//     constexpr Minimum( expression_type expr ): _expr{ expr } { }
+//     constexpr Minimum() = default;
+//     
+//     expression_type _expr;
+// };
+// 
+// template< typename ExprT >
+// struct ArgumentMinimum: Iterative
+// {
+//     using expression_type = ExprT;
+//     using argument_types = tuple< expression_type >;
+//     using variable_types = dependent_variables_t< ExprT >;
+// 
+//     template< typename TupleT >
+//     struct ResultHelper;
+// 
+//     template< typename... Vars >
+//     struct ResultHelper< tuple< Vars... >>
+//     { using type = tuple< result_t< Vars >... >; };
+// 
+//     using result_type = ResultHelper< variable_types >::type;
+// 
+//     constexpr expression_type expr() const { return _expr; }
+// 
+//     constexpr ArgumentMinimum( expression_type expr ): _expr{ expr } { }
+//     constexpr ArgumentMinimum() = default;
+// 
+//     expression_type _expr;
+// };
+// 
 // #ifndef NDEBUG
 // 
 // static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::
@@ -1752,6 +1739,7 @@ constexpr T operator /( T const& left, Infinitesimal< U > const& right )
 }
 
 // Derivation
+// NOTE: this is an experiment
 template< typename ExprT >
 struct Derivation: Arguments< Derivation, ExprT >
 { 
@@ -1768,102 +1756,140 @@ struct Derivation: Arguments< Derivation, ExprT >
     constexpr Derivation() = default;
 };
 
-// Leibniz Law of Derivations
-template< typename FirstT, typename SecondT >
-struct Derivation< Product< FirstT, SecondT >>: Arguments< Derivation, Product< FirstT, SecondT >>
-{
-    using expression_type = Product< FirstT, SecondT >;
-    using result_type = result_t< expression_type >;
+template< typename NumT, typename DenT >
+struct QuotientOfDerivations: 
+    Quotient< Derivation< NumT >, Derivation< DenT >> {
+private:
+    using quotient_type = Quotient< Derivation< NumT >, Derivation< DenT >>;
 
-    constexpr expression_type arg() const
-    { return get_argument< 0 >( *this ); }
+public:
+    constexpr NumT numerator_arg() const
+    { return quotient_type::numerator_arg().arg(); }
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    {  
-        auto prod = arg();
-        auto first_expr = get_argument< 0 >( prod );
-        auto second_expr = get_argument< 1 >( prod );
-    
-        auto a = expressions::eval( first_expr, params... );
-        auto b = expressions::eval( second_expr, params... );
-        auto da = expressions::eval( Derivation< FirstT >{ first_expr }, params... );
-        auto db = expressions::eval( Derivation< SecondT >{ second_expr }, params... );
-    
-        // Leibiz law
-        return a * db + da * b;
-    }
+    constexpr DenT denominator_arg() const
+    { return quotient_type::denominator_arg().arg(); }
 
-    constexpr Derivation( expression_type const& expr ): 
-        Arguments< Derivation, expression_type >{ expr } { }
-    constexpr Derivation() = default;
+    constexpr QuotientOfDerivations( NumT const& numerator, 
+        DenT const& denominator ): quotient_type{{ numerator }, { denominator }}
+    { }
+    constexpr QuotientOfDerivations() = default;
 };
 
-// Derivation of a Sum
-template< typename... Args >
-struct Derivation< Sum< Args... >>: Arguments< Derivation, Sum< Args... >>
+template< typename NumT, typename Var >
+using derivative_of = QuotientOfDerivations< NumT, Var >;
+
+template< typename ExprT >
+struct Distribute;
+
+template< template< typename > class Op, typename ArgT, typename Var >
+struct Distribute< derivative_of< Op< ArgT >, Var >>
 {
-    using expression_type = Sum< Args... >;
-    using result_type = result_t< expression_type >;
+    using left_type = Distribute< derivative_of< Op< ArgT >, ArgT >>::type;
+    using right_type = Distribute< derivative_of< ArgT, Var >>::type;
 
-    constexpr expression_type arg() const
-    { return get_argument< 0 >( *this ); }
+    using type = Product< left_type, right_type >;
 
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const
-    { 
-        // Derivation distributes over addition
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return ( expressions::eval( Derivation< Args...[ Is ]>{ 
-            get_argument< Is >( arg() )}) + ... ); };
-    
-        return helper( make_seq< sizeof...( Args )>{} );
-    }
-
-    constexpr Derivation( expression_type const& expr ): 
-        Arguments< Derivation, expression_type >{ expr } { }
-    constexpr Derivation() = default;
+    static constexpr type value( derivative_of< Op< ArgT >, Var > const& expr )
+    { return { left_type::value({ expr.numerator_arg(), expr.numerator_arg().arg() }), 
+        right_type::value({ expr.numerator_arg().arg(), expr.denominator_arg() }) }; } 
 };
-
-namespace detail {
-// evaluation of a derivative
-template< size_t I, typename T, size_t J, typename U >
-struct Evaluator< Quotient< Derivation< Variable< I, T >>, 
-    Derivation< Variable< J, U >>>>
-{
-    using expression_type = Quotient< Derivation< Variable< I, T >>, 
-        Derivation< Variable< J, U >>>;
-    using result_type = result_t< Quotient< T, U >>;
-
-    template< typename... Params >
-    constexpr result_type operator ()( expression_type const& expr, 
-        Params&... params ) const
-    {
-        if constexpr( I != J )
-            return static_cast< result_type >( 0 );
-
-        return static_cast< result_type >( 1 );
-    }
-};
-
-template< typename ExprT, size_t I, typename T >
-requires( not variable< ExprT > )
-struct Evaluator< Quotient< Derivation< ExprT >, 
-    Derivation< Variable< I, T >>>>
-{
-    using expression_type = Quotient< Derivation< ExprT >, 
-        Derivation< Variable< I, T >>>;
-    using result_type = result_t< Quotient< ExprT, T >>;
-
-    template< typename... Params >
-    constexpr result_type operator ()( expression_type const& expr, 
-        Params&... params ) const
-    {
-        
-    }
-};
-} // namespace detail
-
+// 
+// // Leibniz Law of Derivations
+// template< typename FirstT, typename SecondT >
+// struct Derivation< Product< FirstT, SecondT >>: Arguments< Derivation, Product< FirstT, SecondT >>
+// {
+//     using expression_type = Product< FirstT, SecondT >;
+//     using result_type = result_t< expression_type >;
+// 
+//     constexpr expression_type arg() const
+//     { return get_argument< 0 >( *this ); }
+// 
+//     template< typename... Params >
+//     constexpr result_type eval( Params&... params ) const
+//     {  
+//         auto prod = arg();
+//         auto first_expr = get_argument< 0 >( prod );
+//         auto second_expr = get_argument< 1 >( prod );
+//     
+//         auto a = expressions::eval( first_expr, params... );
+//         auto b = expressions::eval( second_expr, params... );
+//         auto da = expressions::eval( Derivation< FirstT >{ first_expr }, params... );
+//         auto db = expressions::eval( Derivation< SecondT >{ second_expr }, params... );
+//     
+//         // Leibiz law
+//         return a * db + da * b;
+//     }
+// 
+//     constexpr Derivation( expression_type const& expr ): 
+//         Arguments< Derivation, expression_type >{ expr } { }
+//     constexpr Derivation() = default;
+// };
+// 
+// // Derivation of a Sum
+// template< typename... Args >
+// struct Derivation< Sum< Args... >>: Arguments< Derivation, Sum< Args... >>
+// {
+//     using expression_type = Sum< Args... >;
+//     using result_type = result_t< expression_type >;
+// 
+//     constexpr expression_type arg() const
+//     { return get_argument< 0 >( *this ); }
+// 
+//     template< typename... Params >
+//     constexpr result_type eval( Params&... params ) const
+//     { 
+//         // Derivation distributes over addition
+//         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+//         { return ( expressions::eval( Derivation< Args...[ Is ]>{ 
+//             get_argument< Is >( arg() )}) + ... ); };
+//     
+//         return helper( make_seq< sizeof...( Args )>{} );
+//     }
+// 
+//     constexpr Derivation( expression_type const& expr ): 
+//         Arguments< Derivation, expression_type >{ expr } { }
+//     constexpr Derivation() = default;
+// };
+// 
+// namespace detail {
+// // evaluation of a derivative
+// template< size_t I, typename T, size_t J, typename U >
+// struct Evaluator< Quotient< Derivation< Variable< I, T >>, 
+//     Derivation< Variable< J, U >>>>
+// {
+//     using expression_type = Quotient< Derivation< Variable< I, T >>, 
+//         Derivation< Variable< J, U >>>;
+//     using result_type = result_t< Quotient< T, U >>;
+// 
+//     template< typename... Params >
+//     constexpr result_type operator ()( expression_type const& expr, 
+//         Params&... params ) const
+//     {
+//         if constexpr( I != J )
+//             return static_cast< result_type >( 0 );
+// 
+//         return static_cast< result_type >( 1 );
+//     }
+// };
+// 
+// template< typename ExprT, size_t I, typename T >
+// requires( not variable< ExprT > )
+// struct Evaluator< Quotient< Derivation< ExprT >, 
+//     Derivation< Variable< I, T >>>>
+// {
+//     using expression_type = Quotient< Derivation< ExprT >, 
+//         Derivation< Variable< I, T >>>;
+//     using result_type = result_t< Quotient< ExprT, T >>;
+// 
+//     template< typename... Params >
+//     constexpr result_type operator ()( expression_type const& expr, 
+//         Params&... params ) const
+//     {
+//         
+//     }
+// };
+// } // namespace detail
+// 
 // DT: I'm not sure if I like the above, or if we need it.  Are the functions
 // that take the derivative just fine?  Why do we need it in the expression 
 // itself?  If we include function operators like derivations where would it
@@ -2093,14 +2119,14 @@ template< expression T >
 constexpr auto operator not( T const& arg )
 { return Compliment< T >{ arg }; }
 
-template< typename ExprT >
-constexpr auto min( ExprT const& expr )
-{ return Minimum< ExprT >{ expr }; }
-
-template< typename ExprT >
-constexpr auto argmin( ExprT const& expr )
-{ return ArgumentMinimum< ExprT >{ expr }; }
-
+// template< typename ExprT >
+// constexpr auto min( ExprT const& expr )
+// { return Minimum< ExprT >{ expr }; }
+// 
+// template< typename ExprT >
+// constexpr auto argmin( ExprT const& expr )
+// { return ArgumentMinimum< ExprT >{ expr }; }
+// 
 template< size_t I, typename T >
 struct Differential
 {
@@ -2214,6 +2240,10 @@ Differential< I, T >
 differential( Variable< I, T > const& )
 { return {}; }
 
+template< variable Var, expression Expr >
+auto differential_for( Expr const& expr )
+{ return differential_for_t< Var >{}( expr ); }
+
 /// @brief represents a gradient composed of differential operators
 /// @tparam ...Diffs are the differential operator types
 template< variable... Vars >
@@ -2263,6 +2293,28 @@ namespace std {
 template< expressions::expression ExprT >
 constexpr auto sqrt( ExprT const& expr )
 { return expressions::sqrt( expr ); }
+
+template< size_t I, typename T, typename ScopeT >
+std::ostream& operator <<( std::ostream& os, expressions::ScopedVariable< 
+        expressions::Variable< I, T >, ScopeT > const& adapt )
+{ return os << adapt.value(); }
+
+template< size_t I, typename T, typename ScopeT >
+struct formatter< expressions::ScopedVariable< 
+    expressions::Variable< I, T >, ScopeT >, char >: formatter< T, char >
+{
+    using value_type = expressions::ScopedVariable< expressions::Variable< I, T >, ScopeT >;
+    
+    template< typename ParseContext >
+    constexpr typename ParseContext::iterator parse( ParseContext& ctx )
+    { return formatter< T, char >::parse( ctx ); }
+
+    template< typename FormatContext >
+    constexpr FormatContext::iterator format( value_type const& value, 
+        FormatContext& ctx ) const
+    { return formatter< T, char >::format( value.value(), ctx ); }
+};
+
 
 } // namespace std 
 
