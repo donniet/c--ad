@@ -83,7 +83,7 @@ int main( int ac, char* av[] )
 
     v = 2_mm / 1_s;
 
-    //assert( eq | vars );
+    assert( eq | vars );
     println( "{} == {} => {}", t1, t2, eq | vars );
     assert(( s1 == s2 ) | vars );
 
@@ -126,43 +126,45 @@ int main( int ac, char* av[] )
 //    solver2( para2 );
 //    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
-     //test_iteration();
+    test_iteration();
 
     return EXIT_SUCCESS;
 }
-// 
-// void test_iteration() 
-// {
-//     using std::println;
-// 
-//     auto vars = declare_variables(
-//         var< uniform_vector_t< 2, Length >>( "p" ),
-//         var< Cardinal    >( "n" ),
-//         var< Cardinal    >( "m" ),
-//         var< Length      >( "w" ),
-//         var< Length      >( "z" ));
-// 
-//     auto [ p, n, m, z, w ] = vars.variables();
-// 
-// //    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
-//     
-//     // sum of the first n integers
-//     auto [ s, steps ] = eval( iteration( m, n ).
-//         initial_values( 0, 1 ).
-//         update( m + n, n + 1 ).
-//         until( n > 100 ));
-// 
-//     println( std::runtime_format( "sum of first {} integers: {}" ), steps, s );
-// 
-// //    auto gradw = gradient( w );
-// //    auto gradz = gradient( z );
-// //    auto rate = 1.0 / 100.0_sqft;
-// //
-// //    auto [ min_value, steps ] = eval( iteration( w, z, n ).
-// //        initial_values( 0_ft, 0_ft, 0 ).
-// //        update( w - rate * para2( w, z ) * gradw( para2 ), n + 1 ).
-// //        until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
-// }
+
+void test_iteration() 
+{
+    using std::println;
+
+    auto vars = declare_variables(
+        var< uniform_vector_t< 2, Length >>( "p" ),
+        var< Cardinal    >( "n" ),
+        var< Cardinal    >( "m" ),
+        var< Length      >( "w" ),
+        var< Length      >( "z" ));
+
+    auto [ p, n, m, z, w ] = vars.variables();
+
+//    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+    
+    // sum of the first n integers
+    auto first_n = iteration( m, n ).
+        initial_values( 0, 1 ).
+        update( m + n, n + 1 ).
+        until( n > 100 );
+
+    auto [ s, steps ] = first_n | vars;
+
+    println( std::runtime_format( "sum of first {} integers: {}" ), steps, s );
+
+//    auto gradw = gradient( w );
+//    auto gradz = gradient( z );
+//    auto rate = 1.0 / 100.0_sqft;
+//
+//    auto [ min_value, steps ] = eval( iteration( w, z, n ).
+//        initial_values( 0_ft, 0_ft, 0 ).
+//        update( w - rate * para2( w, z ) * gradw( para2 ), n + 1 ).
+//        until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
+}
 // 
 // void test_minimization()
 // {

@@ -91,8 +91,10 @@ struct IterationInitializer;
 /// You may also initialize the variables before the iteration begins by 
 /// calling the initial_values( values... ) method before calling update.
 /// @tparam ...Vars are the variables this iteration will update
-template< variable... Vars >
-constexpr IterationInitializer< Vars... > iteration( Vars... );
+template< typename... Vars >
+requires(( variable_traits< Vars >::is_variable and ... ))
+constexpr IterationInitializer< typename 
+    variable_traits< Vars >::variable_type... > iteration( Vars... );
 
 template< variable... Vars >
 struct IterationInitializer
@@ -147,33 +149,25 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
     constexpr tuple< Updates... > updates() const{ return _updates; }
     constexpr tuple< Vars... > vars() const { return _vars; }
 
-    template< typename... Params >
-    constexpr Scope< Vars... > make_scope( Params&... params ) const
-    { 
-        // TODO: find a scope parameter and use it as the parent scope
-        return { };
-    }
-
     template< typename ManipulatorT >
     constexpr auto operator |( ManipulatorT const& manipulator ) const
     {
-        auto scope = make_scope( );
+        auto scope = Scope< Vars... >{};
 
         auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
-        { (( scope.template value< Vars...[ Is ]>() = std::get< Is >( _inits )), ...); };
+        { ( scope.template set< Vars...[ Is ]>( std::get< Is >( _inits )), ...); };
 
         // scope update helper
         // TODO: enforce the tuple-type here with a requires on the IterationBuilder
         auto scope_updater = [&]< size_t... Is >( seq< Is... > )
-        { (( scope.template value< Vars...[Is]>() =  
-            ( std::get< Is >( _updates ) | scope )), ... ); };
+        { (( scope.template set< Vars...[Is]>( std::get< Is >( _updates ) | scope )), ... ); };
 
         scope_initializer( make_seq< sizeof...( Updates )>{} );
 
         while( not ( until_expr() | scope ))
             scope_updater( make_seq< sizeof...( Updates )>{} );
 
-        return make_tuple( scope.template value< Vars >()... );
+        return vars() | scope;
     }
 //
 //    template< typename... Params >
@@ -221,9 +215,10 @@ IterationUpdater< tuple< Updates... >, tuple< Vars... >>::until( UntilE const& u
 { return { until_expr, _updates, IterationInitializer< Vars... >::_vars, 
     IterationInitializer< Vars... >::_inits }; }
 
-template< variable... Vars >
-constexpr IterationInitializer< Vars... > iteration( Vars... vars )
-{ return { vars... }; }
+template< typename... Vars >
+requires(( variable_traits< Vars >::is_variable and ... ))
+constexpr IterationInitializer< typename variable_traits< Vars >::variable_type... > iteration( Vars... )
+{ return { variable_traits< Vars >::variable()... }; }
 
 template< expression ExprT, typename VariableTuple, typename... Params >
 result_t< VariableTuple > newtons_method( ExprT const& expr, 

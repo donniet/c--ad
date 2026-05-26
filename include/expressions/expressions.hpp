@@ -80,6 +80,10 @@ struct StaticValue: detail::ExpressionTag
     explicit operator value_type() const
     { return _value; } 
 
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    { return manipulator( *this ); }
+
     constexpr StaticValue(): _value{} { }
     constexpr StaticValue( value_type const& other ): _value{ other } { }
     constexpr StaticValue( StaticValue const& ) = default;
@@ -114,6 +118,10 @@ struct Constant: detail::ExpressionTag
     constexpr operator value_type() const
     { return value; }
 
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    { return manipulator( *this ); }
+
     constexpr Constant() = default;
 };
 
@@ -133,12 +141,10 @@ struct Variable;
 /// @tparam T the type to be tested
 ///
 template< typename T >
-struct IsVariable
-{ static constexpr bool value = false; };
+struct IsVariable: integral_constant< bool, false > { };
 
 template< size_t I, typename T >
-struct IsVariable< Variable< I, T >>
-{ static constexpr bool value = true; };
+struct IsVariable< Variable< I, T >>: integral_constant< bool, true > { };
 
 template< typename T >
 constexpr bool is_variable_v = IsVariable< T >::value;
@@ -191,7 +197,25 @@ struct Variable: detail::ExpressionTag
     using result_type = value_type;
     static constexpr size_t index = I;
 
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    { return manipulator( *this ); }
+
     constexpr Variable() = default;
+};
+
+template< typename Var >
+struct variable_traits
+{ static constexpr bool is_variable = false; };
+
+template< size_t I, typename T >
+struct variable_traits< Variable< I, T >>
+{
+    static constexpr bool is_variable = true;
+    using value_type = T;
+    static constexpr size_t index = I;
+    using variable_type = Variable< index, value_type >;
+    static constexpr variable_type variable() { return {}; }
 };
 
 /// @brief the declaration of a variable in a delcare_variables function
@@ -233,14 +257,12 @@ template< size_t Start, typename... Ts >
 using variables_tuple_t = VariablesTuple< Start, Ts... >::type;
 
 template< variable Var, typename ScopeT >
-struct ScopedVariable: Var
+struct ScopedVariable: Var 
 {
-private:
-    using variable_type = Var;
     using value_type = Var::value_type;
+    using variable_type = Var;
     using scope_type = ScopeT;
 
-public:
     template< typename T >
     constexpr ScopedVariable& operator=( T const& other )
     { _scope.template set< variable_type >( other ); return *this; }
@@ -254,8 +276,6 @@ public:
     constexpr string const& name() const
     { return _scope.template name< variable_type >(); }
 
-    // DT: I don't think we ever need to copy a scoped variable after construction...
-    constexpr ScopedVariable& operator=( ScopedVariable const& other ) = delete;
     constexpr ScopedVariable( ScopedVariable const& other ):
         _scope{ other._scope } { }
     constexpr ScopedVariable( scope_type& scope ):
@@ -265,7 +285,23 @@ private:
     scope_type& _scope;
 };
 
-/// @brief container and factory for Variables. 
+template< variable Var, typename ScopeT >
+struct variable_traits< ScopedVariable< Var, ScopeT >>
+{
+    static constexpr bool is_variable = true;
+    using value_type = Var::value_type;
+    static constexpr size_t index = Var::index;
+    using variable_type = Variable< index, value_type >;
+    static constexpr variable_type variable() { return {}; }
+};
+
+//template< variable Var, typename ScopeT >
+//struct IsVariable< ScopedVariable< Var, ScopeT >>: integral_constant< bool,
+//    true > { };
+
+/// @brief container and factory for Variables.  Scope is a manipulator and
+/// application of scope via operator| evaluates dependent variables against
+/// scoped values.
 ///
 template< variable... Vars >
 struct Scope: tuple< Vars... >
@@ -656,24 +692,6 @@ private:
     constexpr expression_type expression() const
     { return expression_helper( make_seq< sizeof...( Args )>{} ); }
 
-protected:
-    template< typename CompoundT, typename ManipulatorT >
-    requires requires { typename CompoundT::argument_types; }
-    static constexpr auto apply( CompoundT const& compound, ManipulatorT const& manipulator ) 
-    { return compound | manipulator; }
-
-    template< auto Value, typename ManipulatorT >
-    static constexpr auto apply( Constant< Value > c, ManipulatorT const& manipulator ) 
-    { return manipulator( c ); }
-
-    template< typename T, typename ManipulatorT >
-    static constexpr auto apply( StaticValue< T > const& value, ManipulatorT const& manipulator )
-    { return manipulator( value ); }
-
-    template< size_t I, typename T, typename ManipulatorT >
-    static constexpr auto apply( Variable< I, T > const& variable, ManipulatorT const& manipulator )
-    { return manipulator( variable ); }
-
 public:
     /// @brief substitution via invocation operator
     /// @tparam Op is the root operation of the expression
@@ -696,8 +714,7 @@ public:
         // apply the manipulator to each of the arguments and return the expression
         // operation of the results
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value( 
-            apply( std::get< Is >( *this ), manipulator )... ); };
+        { return expression_type::value(( std::get< Is >( *this ) | manipulator )... ); };
 
         return helper( make_seq< sizeof...( Args )>{} );
     }
@@ -708,6 +725,24 @@ protected:
 
     constexpr Arguments() = default;
 };
+
+template< expression... Exprs, typename ManipulatorT >
+constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const& manipulator )
+{
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+    { return std::make_tuple(( std::get< Is >( expr_tup ) | manipulator )... ); };
+
+    return helper( make_seq< sizeof...( Exprs )>{} );
+}
+
+template< typename ShapeT, expression... Exprs, typename ManipulatorT >
+constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT const& manipulator )
+{
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+    { return make_tensor< ShapeT >(( tensor_get< Is >( expr_ten ) | manipulator )... ); };
+
+    return helper( make_seq< sizeof...( Exprs )>{} );
+}
 
 /// @brief type trait for extracting an argument from a compound expression
 /// @tparam I is the index of the argument
