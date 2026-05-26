@@ -111,10 +111,9 @@ int main( int ac, char* av[] )
     assert( 5_m / 1_s * 5_s / 1_m == 25 and
             5_m / 1_s * 5_s / 1_m == 25_scalar );
 
-    assert( 5_m % 3_m == 2 and 
-            5_m % 3_m == 2_scalar );
+    assert( 5_m % 3_m == 2_m );
 
-    assert( 5_m * 3_m % 2_m == 1_m );
+    assert( 5_m * 3_m % 2_m == 1_m2 );
 
     
     

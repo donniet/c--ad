@@ -3,7 +3,7 @@
 ////////////////////
 ///
 /// Types and operators for physical units based on international standards.
-/// The type system enforce physicality in formulae and operators maniulate the
+/// The type system enforces physicality in formulae and operators maniulate the
 /// units properly. Basic formatting of units is pro/* IN PROGRESS */. All
 /// expressions will be constexpr.
 ///
@@ -569,13 +569,6 @@ constexpr Scalar degrees< unsigned long long >( unsigned long long x )
 //////////////////////
 ///
 ///
-constexpr Scalar operator ""_deg( unsigned long long x )
-{ return degrees< long long >( x ); }
-constexpr Scalar operator ""_rad( long double x )
-{ return radians( x ); }
-constexpr Scalar operator ""_rad( unsigned long long x )
-{ return radians( x ); }
-
 constexpr Cardinal operator ""_cardinal( unsigned long long n )
 { return { n }; }
 constexpr Cardinal cardinal( Scalar x )
@@ -584,18 +577,23 @@ constexpr Cardinal cardinal( long double x )
 { return { (unsigned long long)x }; }
 constexpr Cardinal cardinal( unsigned long long n )
 { return { n }; }
-
-// literals and construction methods for scalars
 constexpr Scalar operator ""_scalar( long double x )
 { return { x }; }
 constexpr Scalar operator ""_scalar( unsigned long long x )
 { return { (long double)x }; }
-Scalar scalar( long double x )
-{ return { x }; }
+constexpr Scalar operator ""_deg( unsigned long long x )
+{ return degrees< long long >( x ); }
+constexpr Scalar operator ""_rad( long double x )
+{ return radians( x ); }
+constexpr Scalar operator ""_rad( unsigned long long x )
+{ return radians( x ); }
 constexpr Scalar operator ""_percent( long double x )
 { return { 0.01 * x }; }
 constexpr Scalar operator ""_percent( unsigned long long x )
 { return { 0.01 * (long double)x }; }
+
+Scalar scalar( long double x )
+{ return { x }; }
 Scalar percent( Cardinal n )
 { return { 0.01 * (long double)n.value }; }
 Scalar percent( unsigned long long n )
@@ -603,6 +601,12 @@ Scalar percent( unsigned long long n )
 Scalar percent( long double x )
 { return { 0.01 * x }; }
 
+///////////////////
+/// Operations ///
+/////////////////
+/// 
+/// multiplication
+///
 template< unit LeftU, unit RightU >
 constexpr unit_product_t< LeftU, RightU > operator *( LeftU left, RightU right )
 { return unit_product_t< LeftU, RightU >{ left.get_value() * right.get_value() }; }
@@ -617,6 +621,8 @@ requires( not unit< T > and is_arithmetic_v< T >  )
 constexpr LeftU operator *( LeftU left, T right )
 { return LeftU{ left.get_value() * right }; }
 
+/// division
+///
 template< unit LeftU, unit RightU >
 constexpr unit_quotient_t< LeftU, RightU > operator /( LeftU left, RightU right )
 { return unit_quotient_t< LeftU, RightU >{ left.get_value() / right.get_value() }; }
@@ -631,27 +637,36 @@ requires( not unit< T > and is_arithmetic_v< T > )
 constexpr unit_inverse_t< RightU > operator /( T left, RightU right )
 { return unit_inverse_t< RightU >{ left / right.get_value() }; }
 
+/// addition
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator +( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() + right.get_value() }; }
 
+/// subtraction
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator -( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() - right.get_value() }; }
 
+/// negation
+///
 template< unit U >
 requires( unit_traits< U >::is_continuous )
 constexpr U operator-( U const& arg )
 { return U{ -arg.get_value() }; }
 
+/// modulus
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_continuous or unit_traits< RightU >::is_continuous )
-constexpr unit_quotient_t< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return unit_quotient_t< LeftU, RightU >{ mod( left.get_value(), right.get_value() )}; }
+constexpr LeftU operator %( LeftU left, RightU right )
+{ return LeftU{ mod( left.get_value(), right.get_value() )}; }
 
-// assignment operators
+/// addition assigment
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU& operator +=( LeftU& left, RightU const& right )
@@ -660,6 +675,8 @@ constexpr LeftU& operator +=( LeftU& left, RightU const& right )
     return left;
 }
 
+/// subtraction assignment
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU& operator -=( LeftU& left, RightU const& right )
@@ -668,20 +685,29 @@ constexpr LeftU& operator -=( LeftU& left, RightU const& right )
     return left;
 }
 
-// product and quotient assignment operators only work on scalars
-// otherwise the units will not be the same.
+/// product assignment
+/// 
+/// NOTE: product and quotient assignment operators only work on scalars
+/// otherwise the units will not be the same.
+///
 template< unit U >
 constexpr U& operator *=( U& left, Scalar const& right )
 {
     left.get_value() *= right.get_value();
     return left;
 }
+
+/// quotient assigment
+///
 template< unit U >
 constexpr U& operator /=( U& left, Scalar const& right )
 {
     left.get_value() /= right.get_value();
     return left;
 }
+
+/// modulus assignment
+///
 template< unit U >
 constexpr U& operator %=( U& left, Scalar const& right )
 {
@@ -689,7 +715,8 @@ constexpr U& operator %=( U& left, Scalar const& right )
     return left;
 }
 
-// discrete operators
+/// compliment
+///
 template< unit U >
 requires( unit_traits< U >::is_discrete )
 constexpr U operator ~( U const& arg )
@@ -698,35 +725,42 @@ constexpr U operator ~( U const& arg )
 constexpr Boolean operator ~( Boolean const& arg )
 { return Boolean{ not arg.get_value() }; }
 
+/// discrete modulus
+///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete )
-constexpr unit_quotient_t< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return unit_quotient_t< LeftU, RightU >{ left.get_value() % right.get_value() }; }
+constexpr LeftU operator %( LeftU left, RightU right )
+{ return LeftU{ left.get_value() % right.get_value() }; }
 
+/// bitwise or
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
     and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator |( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() | right.get_value() }; }
 
+/// bitwise and
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
     and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator &( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() & right.get_value() }; }
 
+/// bitwise xor
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
     and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator ^( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() ^ right.get_value() }; }
 
+/// shift right
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
     and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator >>( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() >> right.get_value() }; }
 
+/// shift left
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
     and unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
@@ -737,44 +771,55 @@ constexpr LeftU operator <<( LeftU const& left, RightU const& right )
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
     not is_same_v< typename unit_traits< LeftU >::scalar_type, long double >)
-Boolean operator ==( LeftU const& left, RightU const& right )
+bool operator ==( LeftU const& left, RightU const& right )
 { return left.get_value() == right.get_value(); }
+
+template< typename U, typename RightT >
+requires( not unit< RightT > and requires( U l, RightT r) { l == r; } )
+bool operator ==( base_unit< scalar_unit_id, U > const& left, RightT const& right )
+{ return left.get_value() == right; }
 
 // DT: if we are using long doubles, then equality is when the square
 // of the distance between them is less than this system's epislon
+// TODO: analyze this to ensure stable equality
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
     is_same_v< typename unit_traits< LeftU >::scalar_type, long double > )
-Boolean operator ==( LeftU const& left, RightU const& right )
+bool operator ==( LeftU const& left, RightU const& right )
 { 
     static constexpr long double eps = std::numeric_limits< double >::min();
 
     return  std::abs( left.get_value() - right.get_value() ) < eps;
 }
 
+/// not equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-Boolean operator !=( LeftU const& left, RightU const& right )
+bool operator !=( LeftU const& left, RightU const& right )
 { return left.get_value() != right.get_value(); }
 
+/// less than
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-Boolean operator <( LeftU const& left, RightU const& right )
+bool operator <( LeftU const& left, RightU const& right )
 { return left.get_value() < right.get_value(); }
 
+/// less than or equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-Boolean operator <=( LeftU const& left, RightU const& right )
+bool operator <=( LeftU const& left, RightU const& right )
 { return left.get_value() <= right.get_value(); }
 
+/// greater than
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-Boolean operator >( LeftU const& left, RightU const& right )
+bool operator >( LeftU const& left, RightU const& right )
 { return left.get_value() > right.get_value(); }
 
+/// greater than or equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-Boolean operator >=( LeftU const& left, RightU const& right )
+bool operator >=( LeftU const& left, RightU const& right )
 { return left.get_value() >= right.get_value(); }
 
 // powers (compile time)
@@ -782,6 +827,7 @@ template< int Power, unit U >
 constexpr unit_power_t< Power, U > pow( U const& u )
 { return unit_power_t< Power, U >{ std::pow( u.get_value(), Power )}; }
 
+/// trigonometry
 constexpr auto sin( Scalar const& u )
 { return Scalar{ std::sin( u.get_value() )}; }
 constexpr auto cos( Scalar const& u )
@@ -801,9 +847,10 @@ requires( unit_traits< NumeratorU >::unit_id == unit_traits< DenominatorU >::uni
 constexpr auto atan2( NumeratorU const& num, DenominatorU const& den )
 { return Scalar{ std::atan2( num.get_value(), den.get_value()) }; }
 
-/**
- * represents a length in meters
- */
+///////////////
+/// Length ///
+/////////////
+///
 using Length = base_unit< length_unit_id, long double >;
 
 constexpr Length::scalar_type meters( Length length ) 
@@ -928,9 +975,10 @@ constexpr long double length_value( Length length, length_unit u )
     }
 }
 
-/**
- * represents an area as a length squared  
- */
+/////////////
+/// Area ///
+///////////
+///
 using Area = base_unit< length_unit_id * length_unit_id, long double >;
 
 // area is stored in square meter units
@@ -1005,9 +1053,10 @@ constexpr long double area_value( Area area, area_unit u )
     }
 } 
 
-/**
- * represents a volume or length cubed
- */
+///////////////
+/// Volume ///
+/////////////
+///
 using Volume = base_unit< length_unit_id * length_unit_id * length_unit_id,
     long double >;
 
@@ -1110,9 +1159,10 @@ static constexpr const char* volume_unit_long_names[] =
     "cubic_miles", "cubic_feet", "cubic_inches", "gallons", "cups", "us_fluid_ounces",
     "tablespoons", "teaspoons" };
 
-/**
- * represents an amount of time in seconds
- */
+/////////////
+/// Time ///
+///////////
+///
 // TODO: interop with std::duration
 using Time = base_unit< time_unit_id, long double >;
 
@@ -1190,9 +1240,10 @@ constexpr long double time_value( Time time, time_unit u )
     }
 }
 
-/**
- * represents a velocity or speed in meters per second
- */
+/////////////////
+/// Velocity ///
+///////////////
+///
 using Velocity = base_unit< length_unit_id / time_unit_id, long double >;
 
 constexpr long double meters_per_second( Velocity const& v )
@@ -1236,10 +1287,11 @@ constexpr long double velocity_value( Velocity v, velocity_unit_type u )
     }
 }
 
-
-/**
- * represents an electric current in Amperes
- */
+/////////////////////////
+/// Electric Current ///
+///////////////////////
+///
+/// 
 using Current = base_unit< current_unit_id, long double >;
 
 constexpr auto operator""_A ( long double amperes )
@@ -1276,9 +1328,11 @@ constexpr long double current_value( Current c, current_unit_type u )
     }
 }
 
-/**
- * represents a unit of electric charge in coulombs ( amp seconds )
- */
+
+////////////////////////
+/// Electric Charge ///
+//////////////////////
+/// 
 using Charge = base_unit< current_unit_id * time_unit_id, long double >;
 
 constexpr auto operator""_C ( long double coulombs )
@@ -1304,9 +1358,10 @@ constexpr long double charge_value( Charge c, charge_unit_type u )
     }
 }
 
-/**
- * represents a mass in kilograms
- */
+/////////////
+/// Mass ///
+///////////
+///
 using Mass = base_unit< mass_unit_id, long double >;
 
 Mass::scalar_type kilograms( Mass mass )
@@ -1421,9 +1476,10 @@ constexpr long double mass_value( Mass mass, mass_unit u )
     }
 }
 
-/**
- * Acceleration in meters per second squared
- */
+/////////////////////
+/// Acceleration ///
+///////////////////
+///
 using Acceleration = base_unit< length_unit_id / time_unit_id / time_unit_id, long double >;
 
 constexpr auto operator""_mps2( long double meters_per_second_squared )
@@ -1451,10 +1507,10 @@ constexpr long double acceleration_value( Acceleration a, acceleration_unit_type
     }
 }
 
-
-/**
- * a unit of force in kilogram meters per second squared
- */
+//////////////
+/// Force ///
+////////////
+///
 using Force = base_unit< mass_unit_id * Acceleration::unit_id, long double >;
 
 constexpr auto operator""_N( long double newtons )
@@ -1485,10 +1541,10 @@ constexpr long double force_value( Force f, force_unit_type u )
     }
 }
 
-
-/**
- *  a unit of energy in newton meters
- */
+///////////////
+/// Energy ///
+/////////////
+///
 using Energy = base_unit< Force::unit_id * Length::unit_id, long double >;
 
 constexpr auto operator""_J( long double joules )
@@ -1513,9 +1569,10 @@ constexpr long double energy_value( Energy e, energy_unit_type u )
     }
 }
 
-/** 
- * a unit of power in watts
- */
+//////////////
+/// Power ///
+////////////
+///
 using Power = base_unit< Energy::unit_id / Time::unit_id, long double >;
 
 constexpr auto operator""_W( long double watts )
@@ -1540,9 +1597,10 @@ constexpr long double power_value( Power p, power_unit_type u )
     }
 }
 
-/**
- * electric potential in volts
- */
+///////////////////////////
+/// Electric Potential ///
+/////////////////////////
+///
 using ElectricPotential = base_unit< Power::unit_id / Current::unit_id, long double >;
 
 constexpr auto operator""_V( long double volts )
@@ -1568,9 +1626,10 @@ constexpr long double electric_potential_value( ElectricPotential v,
     }
 }
 
-/**
- * electrical resistance ohms
- */
+////////////////////////////
+/// Electric Resistance ///
+//////////////////////////
+///
 using Resistance = base_unit< ElectricPotential::unit_id / Current::unit_id, long double >;
 
 constexpr auto operator""_Ω( long double ohms )
@@ -1595,9 +1654,10 @@ constexpr long double resistance_value( Resistance r, resistance_unit_type u )
     }
 }
 
-/**
- * electrical inductance henries
- */
+///////////////////
+/// Inductance ///
+/////////////////
+///
 using Inductance = base_unit< Resistance::unit_id * Time::unit_id, long double >;
 
 constexpr auto operator""_H( long double henries )
@@ -1626,9 +1686,10 @@ constexpr long double inductance_value( Inductance c, inductance_unit_type u )
     }
 } 
 
-/**
- * electrical capacitance in farads
- */
+////////////////////
+/// Capacitance ///
+//////////////////
+///
 using Capacitance = base_unit< Charge::unit_id / ElectricPotential::unit_id, long double >;
 
 constexpr auto operator""_F( long double farads )
@@ -1672,9 +1733,10 @@ constexpr long double capacitance_value( Capacitance c, capacitance_unit_type u 
     }
 } 
 
-/**
- * magnetic flux in webers
- */
+//////////////////////
+/// Magnetic Flux ///
+////////////////////
+///
 using MagneticFlux = base_unit< ElectricPotential::unit_id * Time::unit_id, long double >;
 
 constexpr auto operator""_Wb( long double webers )
@@ -1697,9 +1759,10 @@ constexpr long double magnetic_flux_value( MagneticFlux m,
     }
 }
 
-/**
- * magnetic flux density in teslas
- */
+//////////////////////////////
+/// Magnetic Flux Density ///
+////////////////////////////
+///
 using MagneticFluxDensity = base_unit< MagneticFlux::unit_id / Area::unit_id, long double >;
 
 constexpr auto operator""_T( long double teslas )
@@ -1726,9 +1789,10 @@ constexpr long double magnetic_flux_density_value( MagneticFluxDensity m,
     }
 }
 
-/**
- * frequency in hertz
- */
+//////////////////
+/// Frequency ///
+////////////////
+///
 using Frequency = base_unit< Scalar::unit_id / Time::unit_id, long double >;
 
 constexpr auto operator""_Hz( long double hertz )
@@ -1768,10 +1832,10 @@ constexpr auto operator""_pHz( long double picohertz )
 constexpr auto operator""_pHz( unsigned long long picohertz )
 { return Frequency{ (long double)picohertz * 1e12 }; }
 
-
-/**
- * Luminous intensity in candelas
- */
+///////////////////////////
+/// Luminous Intensity ///
+/////////////////////////
+///
 using LuminousIntensity = base_unit< luminous_intensity_unit_id, long double >;
 
 constexpr auto operator""_cd( long double candelas )
@@ -1801,9 +1865,10 @@ constexpr long double luminous_intensity_value( LuminousIntensity lums,
     }
 }
 
-/** 
- * pressure in pascals, ie: newtons per meter squared 
- */
+/////////////////
+/// Pressure ///
+///////////////
+///
 using Pressure = base_unit< Force::unit_id / Area::unit_id, long double >;
 
 constexpr auto operator""_Pa( long double pascals )
@@ -1863,9 +1928,10 @@ constexpr long double pressure_value( Pressure p, pressure_unit_type u )
     }
 }
 
-/**
- * Thermodynamic temperature in Kelvin
- */
+////////////////////
+/// Temperature ///
+//////////////////
+///
 using Temperature = base_unit< temperature_unit_id, long double >;
 
 constexpr auto operator""_K( long double kelvin )
@@ -1911,11 +1977,16 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
     }
 }
 
+////////////////////
+/// Information ///
+//////////////////
+///
 using Information = base_unit< information_unit_id, long double >;
 
 std::ostream& operator <<( std::ostream& os, unit_id_type const& id )
 { return os << unit_id_name( id ); }
 
+/// TEMPORARY: raw output of a unit to an ostream by value
 template< unit_id_type Id, arithmetic T >
 std::ostream& operator <<( std::ostream& os, base_unit< Id, T > const& u )
 { return os << u.get_value() << Id; }
