@@ -50,28 +50,6 @@ concept expression = is_expression_v< T >;
 template< typename ResultT, typename ExprT = void >
 struct Expression;
 
-/// @brief base class for an expression
-template< typename ResultT, typename ExprT >
-requires( not std::is_same_v< void, ExprT > )
-struct Expression< ResultT, ExprT >: detail::ExpressionTag
-{ 
-    using result_type = ResultT;
-
-private:
-    using expression_type = ExprT;
-
-public:
-    /// @brief at the leaves of our syntax tree we call the manipulator
-    /// and return the result.
-    template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT& manipulator ) const
-    { return manipulator( *_expr_ptr ); }
-
-    constexpr Expression( expression_type* expr_ptr ):
-        _expr_ptr{ expr_ptr } { }
-    expression_type* _expr_ptr;
-};
-
 /// @brief type erased expression container
 template< typename ResultT >
 struct Expression< ResultT, void >: detail::ExpressionTag
@@ -93,17 +71,17 @@ private:
 ///
 template< typename T >
 requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
-struct StaticValue: Expression< T, StaticValue< T >>
+struct StaticValue: detail::ExpressionTag
 { 
     using value_type = T;
-    using base_type = Expression< T, StaticValue< T >>;
+    using result_type = value_type;
 
     // casting to and from an expression should be explicit
     explicit operator value_type() const
     { return _value; } 
 
-    constexpr StaticValue(): base_type{ this }, _value{} { }
-    constexpr StaticValue( value_type const& other ): base_type{ this }, _value{ other } { }
+    constexpr StaticValue(): _value{} { }
+    constexpr StaticValue( value_type const& other ): _value{ other } { }
     constexpr StaticValue( StaticValue const& ) = default;
     constexpr StaticValue( StaticValue&& ) = default;
 
@@ -126,29 +104,25 @@ StaticValue< T > static_expr( T const& value )
 /// @tparam Value of the constant
 ///
 template< auto Value >
-struct Constant: Expression< std::remove_cv_t< decltype( Value )>, Constant< Value >> 
+struct Constant: detail::ExpressionTag
 {
     using value_type = std::remove_cv_t< decltype( Value )>;
-    using base_type = Expression< value_type, Constant< Value >>;
-
-    template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT& manipulator ) const
-    { return manipulator( *this ); }
+    using result_type = value_type;
 
     static constexpr value_type value = Value;
 
     constexpr operator value_type() const
     { return value; }
 
-    constexpr Constant(): base_type{ this } { }
+    constexpr Constant() = default;
 };
 
 template< auto Value >
 using constant = Constant< Value >;
 
 // NOTE: not sure about the constants
-constexpr constant< 0.l > constant_zero = constant< 0.l >{};
-constexpr constant< 1.l > constant_one = constant< 1.l >{};
+constexpr constant< 0 > constant_zero = constant< 0 >{};
+constexpr constant< 1 > constant_one = constant< 1 >{};
 constexpr constant< true > constant_true = constant< true >{};
 constexpr constant< false > constant_false = constant< false >{};
 
@@ -211,14 +185,13 @@ concept scope_containing = scope_contains_variable_v< I, T >;
 /// @tparam T is the type of this variable
 ///
 template< size_t I, typename T >
-struct Variable: Expression< T, Variable< I, T >>
+struct Variable: detail::ExpressionTag
 { 
     using value_type = T;
-    using base_type = Expression< T, Variable< I, T >>;
+    using result_type = value_type;
     static constexpr size_t index = I;
 
-    constexpr Variable():
-        base_type{ this } { }
+    constexpr Variable() = default;
 };
 
 /// @brief the declaration of a variable in a delcare_variables function
@@ -683,9 +656,26 @@ private:
     constexpr expression_type expression() const
     { return expression_helper( make_seq< sizeof...( Args )>{} ); }
 
+protected:
+    template< typename CompoundT, typename ManipulatorT >
+    requires requires { typename CompoundT::argument_types; }
+    static constexpr auto apply( CompoundT const& compound, ManipulatorT const& manipulator ) 
+    { return compound | manipulator; }
+
+    template< auto Value, typename ManipulatorT >
+    static constexpr auto apply( Constant< Value > c, ManipulatorT const& manipulator ) 
+    { return manipulator( c ); }
+
+    template< typename T, typename ManipulatorT >
+    static constexpr auto apply( StaticValue< T > const& value, ManipulatorT const& manipulator )
+    { return manipulator( value ); }
+
+    template< size_t I, typename T, typename ManipulatorT >
+    static constexpr auto apply( Variable< I, T > const& variable, ManipulatorT const& manipulator )
+    { return manipulator( variable ); }
+
 public:
-    /// @brief implementation of invocation operator on expressions with arguments
-    /// is a substitution.
+    /// @brief substitution via invocation operator
     /// @tparam Op is the root operation of the expression
     /// @tparam ...Args are the types of the arguments of the expression
     /// @tparam ...Subs are the types of the substitutions made into the dependent
@@ -706,7 +696,8 @@ public:
         // apply the manipulator to each of the arguments and return the expression
         // operation of the results
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value(( std::get< Is >( *this ) | manipulator )... ); };
+        { return expression_type::value( 
+            apply( std::get< Is >( *this ), manipulator )... ); };
 
         return helper( make_seq< sizeof...( Args )>{} );
     }
