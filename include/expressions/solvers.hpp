@@ -169,33 +169,7 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
 
         return vars() | scope;
     }
-//
-//    template< typename... Params >
-//    constexpr auto eval( Params&... params ) const
-//    {
-//        // create a scope for this iteration
-//        auto scope = make_scope( params... );
-//
-//        auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
-//        { (( scope.template value< Vars...[ Is ]>() = std::get< Is >( _inits )), ...); };
-//
-//        // scope update helper
-//        // TODO: enforce the tuple-type here with a requires on the IterationBuilder
-//        auto scope_updater = [&]< size_t... Is >( seq< Is... > )
-//        { (( scope.template value< Vars...[Is]>() =  
-//            ( std::get< Is >( _updates ) | scope )), ... ); };
-//
-//        // get the initial values for the variables and update them in our scope
-//        scope_initializer( make_seq< sizeof...( Updates )>{} );
-//
-//        // loop while the until expression evals to false
-//        while( not expressions::eval( until_expr(), scope ))
-//            scope_updater( make_seq< sizeof...( Updates )>{} ); 
-//
-//        // return the scoped value of the vars
-//        return make_tuple( scope.template value< Vars >()... );
-//    }
-//
+
     constexpr Iteration() = default;
     constexpr Iteration( UntilE until_expr, tuple< Updates... > updates, 
         tuple< Vars... > vars, tuple< typename Vars::result_type... > inits ): 
@@ -220,9 +194,13 @@ requires(( variable_traits< Vars >::is_variable and ... ))
 constexpr IterationInitializer< typename variable_traits< Vars >::variable_type... > iteration( Vars... )
 { return { variable_traits< Vars >::variable()... }; }
 
+
+
 template< expression ExprT, typename VariableTuple, typename... Params >
 result_t< VariableTuple > newtons_method( ExprT const& expr, 
     VariableTuple const& vars, Params&... params );
+
+
 struct IterationCounter
 {
     constexpr IterationCounter& operator++()

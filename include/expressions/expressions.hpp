@@ -482,6 +482,10 @@ template< size_t I, typename T >
 struct DependentVariableIDs< Variable< I, T >>
 { using type = seq< I >; };
 
+template< size_t I, typename T, typename ScopeT >
+struct DependentVariableIDs< ScopedVariable< Variable< I, T >, ScopeT >>
+{ using type = seq< I >; };
+
 template< typename T >
 struct DependentVariableIDs< StaticValue< T >>
 { using type = seq< >; };
@@ -560,6 +564,16 @@ struct VariableType< I, Variable< J, T >>
 template< size_t I, size_t J, typename T >
 requires( I != J )
 struct VariableType< I, Variable< J, T >>
+{ using type = void; };
+
+template< size_t I, size_t J, typename T, typename ScopeT >
+requires( I == J )
+struct VariableType< I, ScopedVariable< Variable< J, T >, ScopeT >>
+{ using type = T; };
+
+template< size_t I, size_t J, typename T, typename ScopeT >
+requires( I != J )
+struct VariableType< I, ScopedVariable< Variable< J, T >, ScopeT >>
 { using type = void; };
 
 template< size_t I, typename T >
