@@ -1,3 +1,20 @@
+//////////////////////
+/// Units Library ///
+////////////////////
+///
+/// Types and operators for physical units based on international standards.
+/// The type system enforce physicality in formulae and operators maniulate the
+/// units properly. Basic formatting of units is pro/* IN PROGRESS */. All
+/// expressions will be constexpr.
+///
+/// Diversions from standards: std::pow accepts it's exponent as a parameter, 
+/// but we need to manipulate our units with this exponent.  Currently the unit
+/// conversion model is embedded in a pair of template size_t parameters. I'm 
+/// sure we can figure a way around that later, but for now we'll have
+/// units::pow< Exp >( base )
+///
+///  
+
 #ifndef __UNITS_HPP__
 #define __UNITS_HPP__
 
@@ -42,11 +59,11 @@ constexpr long double meters_per_mile = meters_per_foot * 5280.;
 constexpr long double acres_per_square_mile = 640.;
 constexpr long double cubic_meters_per_liter = 1e-3l;
 // constexpr long double cups_per_milliliter = 240.;
-constexpr long double cubic_inces_per_gallon = 231.;
+constexpr long double cubic_inches_per_gallon = 231.;
 constexpr long double fluid_ounces_per_cup = 16.;
 constexpr long double cups_per_gallon = 16.;
 constexpr long double cups_per_milliliter = cups_per_gallon / 
-    cubic_inces_per_gallon / meters_per_inch / meters_per_inch / meters_per_inch *
+    cubic_inches_per_gallon / meters_per_inch / meters_per_inch / meters_per_inch *
     cubic_meters_per_liter / 1000.;
 // static_assert( cups_per_milliliter == 1.l/236.58823l );
 constexpr long double light_speed = 299'792'458; // c
@@ -57,7 +74,9 @@ constexpr long double seconds_per_week = seconds_per_day * 7.;
 constexpr long double seconds_per_year = seconds_per_day * 365.242199;
 constexpr long double kilograms_per_ounce = 0.028'349'523'125;
 constexpr long double kilograms_per_pound = kilograms_per_ounce * 16.;
+#ifndef NDEBUG
 static_assert( kilograms_per_pound == 0.453'592'37 );
+#endif // DEBUG
 constexpr long double kilograms_per_long_ton = kilograms_per_pound * 2240.;
 constexpr long double kilograms_per_ton = kilograms_per_pound * 2000.;
 constexpr long double radians_per_degree = pi / 180.l;
@@ -69,14 +88,14 @@ constexpr long double zero_celsius_in_kelvin = 273.15; /* K */
 constexpr long double celsius_per_fahrenheit = 5.l / 9.l;
 constexpr long double fahrenheit_at_zero_celsius = 32.l;
 
-// start with 7 units including scalars
+/// total base units supported
 constexpr size_t total_units = 8;
 using ull_t = unsigned long long;
 
-// powers of higher units will be severely limited due to Godel numbering
 constexpr std::array< ull_t, total_units > primes = 
-/*0  1  2  3  4   5   6   7         8   9  10  11  12  13  14  15  16 */
-{ 1, 2, 3, 5, 7, 11, 13, 17 }; //, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+/* 0  1  2  3  4   5   6   7         8   9  10  11  12  13  14  15  16 */
+{  1, 2, 3, 5, 7, 11, 13, 17 }; //, 19, 23, 31, 37, 41, 47, 53, 61, 67 };
+
 constexpr std::array< string, total_units > base_unit_names =
 { "", "m", "s", "kg", "A", "K", "cd", "bit" };
 constexpr std::array< string, total_units > base_unit_long_names =
@@ -94,13 +113,20 @@ using prime_unit_t = prime_unit< I >::type;
 // struct automatic_t { };
 // constexpr const automatic_t automatic = {};
 
-/**
- * A unit_id is a fraction of two unsigned integers.  
- * 
- * TODO: handle null units (automatics)
- */
+////////////////
+/// Unit ID ///
+//////////////
+/// 
+/// A unit_id is a fraction of two unsigned integers stored as a pair
+///
+/// TODO: handle NULL units as automatics
+///
 using unit_id_type = pair< unsigned long long, unsigned long long >;
 
+/// each standard base-unit is assigned a prime, similar to Godel numbering, 
+/// and the unit_id is a fraction of two numbers.  Multiplication, division and
+/// other operations are taken on the unit_id fraction as well.  When factored
+/// this fraction can reconstitute the proper unit of the operation
 constexpr unit_id_type scalar_unit_id =             { primes[0], 1 };
 constexpr unit_id_type length_unit_id =             { primes[1], 1 };
 constexpr unit_id_type time_unit_id =               { primes[2], 1 };
@@ -110,19 +136,33 @@ constexpr unit_id_type temperature_unit_id =        { primes[5], 1 };
 constexpr unit_id_type luminous_intensity_unit_id = { primes[6], 1 };
 constexpr unit_id_type information_unit_id =        { primes[7], 1 };
 
-constexpr unit_id_type operator* ( unit_id_type left, unit_id_type right )
-{ return { left.first / gcd( left.first, right.second ) * right.first / gcd( right.first, left.second ),
-    left.second / gcd( left.second, right.first ) * right.second / gcd( right.second, left.first ) }; }
+/// @brief Multiplication of two units will multiply their unit ids.  The
+/// unit_id fraction is kept in simplified form.
+constexpr unit_id_type operator *( unit_id_type left, unit_id_type right )
+{
+    auto [ left_num, left_den ] = left;
+    auto [ right_num, right_den ] = right;
 
-consteval unit_id_type operator/ ( unit_id_type left, unit_id_type right )
+    return { 
+        left_num / gcd( left_num, right_den ) * 
+            right_num / gcd( right_num, left_den ),
+        left_den / gcd( left_den, right_num ) * 
+            right_den / gcd( right_den, left_num ) }; 
+}
+
+/// @brief Division of two units will divide their unit ids, which is the same
+/// as multiplying by the inverse.
+consteval unit_id_type operator /( unit_id_type left, unit_id_type right )
 { return left * unit_id_type{ right.second, right.first }; }
 
+#ifndef NDEBUG
 static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 });
 static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 });
 static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 }) == unit_id_type{ 2, 3 });
 static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 }) == unit_id_type{ 4, 3 });
+#endif // DEBUG
 
-// factor the unit id into it's prime factors
+/// @brief calculate the unit id into signed exponents of it's prime factors
 constexpr std::array< int, total_units > factor( unit_id_type uid )
 {
     std::array< int, total_units > ret;
@@ -149,6 +189,7 @@ constexpr std::array< int, total_units > factor( unit_id_type uid )
     return ret;
 }
 
+/// @brief recreate a unit_id from a signed list of prime factor exponents
 constexpr unit_id_type reconstitute( std::array< int, total_units > factors )
 {
     unsigned long long num = 1;
@@ -166,6 +207,7 @@ constexpr unit_id_type reconstitute( std::array< int, total_units > factors )
     return { num, den };
 }
 
+#ifndef NDEBUG
 static_assert( factor( scalar_unit_id ) == 
     std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 0 } );
 static_assert( factor( length_unit_id ) == 
@@ -182,7 +224,9 @@ static_assert( factor( luminous_intensity_unit_id ) ==
     std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 1 } );
 static_assert( factor( luminous_intensity_unit_id * length_unit_id * length_unit_id ) == 
     std::array< int, total_units >{ 1, 2, 0, 0, 0, 0, 1 } );
+#endif // DEBUG
 
+/// @brief determine if this unit is the square of base units
 constexpr bool is_square_unit_id( unit_id_type uid )
 {
     auto factors = factor( uid );
@@ -195,6 +239,7 @@ constexpr bool is_square_unit_id( unit_id_type uid )
     return true;
 }
 
+/// @brief take the square root of a unit_id
 constexpr unit_id_type unit_id_square_root( unit_id_type uid )
 {
     auto factors = factor( uid );
@@ -203,6 +248,7 @@ constexpr unit_id_type unit_id_square_root( unit_id_type uid )
     return reconstitute( factors );
 }
 
+/// @brief 
 template< int Exp >
 constexpr unit_id_type unit_id_power( unit_id_type uid )
 { 
@@ -217,6 +263,7 @@ constexpr unit_id_type unit_id_power( unit_id_type uid )
 struct unit_format_type
 { 
 };
+
 
 constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
 {
@@ -238,7 +285,6 @@ constexpr string unit_id_name( unit_id_type uid, unit_format_type = {} )
         name << " " << base_unit_names[i];
         if( powers[i] == 1 )
             continue;
-
     
         name << "^" << powers[i];
     }
@@ -323,21 +369,24 @@ struct base_unit< scalar_unit_id, T >
     scalar_type value;
 };
 
-/**
- * unit traits are defined on types that are considered units.  Must declare
- * a static ull member `id` which is a prime number.  Godel numbering will be
- * used to create unique ids for powers of units.  quotients of units will be 
- * 
- * This will ensure that compound units will have unique ids.  
- * 
- * the IDs of scalars and cardinal numbers will be 1 so that raised to any power
- * they stay 1. 
- * 
- * TODO: IDs of automatic expressions will be 0
- */
+////////////////////
+/// Unit Traits ///
+//////////////////
+///
+/// unit traits are defined on types that are considered units.  Must declare
+/// a static ull member `id` which is a prime number.  Godel numbering will be
+/// used to create unique ids for powers of units.  quotients of units will be 
+/// 
+/// This will ensure that compound units will have unique ids.  
+/// 
+/// the IDs of scalars and cardinal numbers will be 1 so that raised to any power
+/// they stay 1. 
+/// 
+/// TODO: IDs of automatic expressions will be 0
 template< typename T >
 struct unit_traits;
 
+/// @brief traits of a base unit are calculated from the std numeric traits
 template< unit_id_type Id, arithmetic T >
 struct unit_traits< base_unit< Id, T >>
 {
@@ -347,42 +396,36 @@ struct unit_traits< base_unit< Id, T >>
     static constexpr bool is_continuous = not is_discrete;
 };
 
+namespace detail {
 template< typename T >
-struct is_unit: integral_constant< bool, false > { }; 
+struct IsUnit: integral_constant< bool, false > { }; 
 
 template< unit_id_type Id, arithmetic T >
-struct is_unit< base_unit< Id, T >>: integral_constant< bool, true > { };
+struct IsUnit< base_unit< Id, T >>: integral_constant< bool, true > { };
+} // namespace detail
 
+/// @brief concept of a unit
 template< typename T >
-concept unit = is_unit< T >::value;
+concept unit = detail::IsUnit< T >::value;
 
+namespace detail {
 template< unit... Us >
 struct UnitProduct
 { using type = base_unit< ( unit_traits< Us >::unit_id * ... ), 
         std::common_type_t< typename unit_traits< Us >::scalar_type... >>; };
 
 template< unit... Us >
-using unit_product = UnitProduct< Us... >::type;
-
-template< unit... Us >
 struct UnitQuotient
 { using type = base_unit< ( unit_traits< Us >::unit_id / ... ), 
         std::common_type_t< typename unit_traits< Us >::scalar_type... >>; };
-
-template< unit... Us >
-using unit_quotient = UnitQuotient< Us... >::type;
 
 template< unit U >
 struct UnitInverse
 { 
     static constexpr unit_id_type unit_id = unit_traits< U >::unit_id;
     using scalar_type = unit_traits< U >::scalar_type;
-
     using type = base_unit< { unit_id.second, unit_id.first }, scalar_type >;
 };
-
-template< unit U >
-using unit_inverse = UnitInverse< U >::type;
 
 template< unit U >
 struct UnitSquareRoot
@@ -390,12 +433,8 @@ struct UnitSquareRoot
     static constexpr unit_id_type unit_id = 
         unit_id_square_root( unit_traits< U >::unit_id );
     using scalar_type = unit_traits< U >::scalar_type;
-
     using type = base_unit< unit_id, scalar_type >;
 };
-
-template< unit U >
-using unit_square_root_t = UnitSquareRoot< U >::type;
 
 template< int Exp, unit U >
 struct UnitPower
@@ -406,80 +445,30 @@ struct UnitPower
     using type = base_unit< unit_id, scalar_type >;
 };
 
-template< int Exp, unit U >
-using unit_power_t = UnitPower< Exp, U >::type;
-
-static_assert( is_same_v< unit_power_t< 2, base_unit< unit_id_type{ 2, 1 }, long double >>, base_unit< unit_id_type{ 4, 1 }, long double >> );
-
-/// @brief a continuous, unitless value
-using Scalar = base_unit< scalar_unit_id, long double >;
-
-/// @brief a discrete, unitless value
-using Cardinal = base_unit< scalar_unit_id, unsigned long long >;
-
-/// @brief a true or false value
-using Boolean = base_unit< scalar_unit_id, bool >;
-
 template< unit U, typename Seq >
 struct PositivePowerUnitHelper;
 
 template< unit U, size_t... Is >
 struct PositivePowerUnitHelper< U, seq< Is... >>
-{ using type = unit_product< conditional_t< Is == Is, U, U >... >; };
+{ using type = UnitProduct< conditional_t< Is == Is, U, U >... >::type; };
 
 template< unit U, typename Seq >
 struct NegativePowerUnitHelper;
 
 template< unit U, size_t... Is >
 struct NegativePowerUnitHelper< U, seq< Is... >>
-{ using type = unit_inverse< unit_product< conditional_t< Is == Is, U, U >... >>; };
+{ using type = UnitInverse< typename UnitProduct< 
+    conditional_t< Is == Is, U, U >... >::type >::type; };
 
-template< int Power, unit U >
-struct PowerUnit;
+} // namespace detail
 
-template< int Power, unit U >
-requires( isgreater( Power, 0 ))
-struct PowerUnit< Power, U >
-{ using type = typename PositivePowerUnitHelper< U, make_seq< (size_t)Power >>::type; };
-
-template< int Power, unit U >
-requires( isless( Power, 0 ))
-struct PowerUnit< Power, U >
-{ using type = typename NegativePowerUnitHelper< U, make_seq< (size_t)-Power >>::type; };
-
-template< unit U >
-struct PowerUnit< 0, U >
-{ using type = Scalar; };
-
-template< int Power, unit U >
-using power_unit_t = PowerUnit< Power, U >::type;
-
-// true and false expressions
-constexpr Boolean true_bool = Boolean{ true };
-constexpr Boolean false_bool = Boolean{ false };
-
-// literals and construction methods for scalars
-constexpr Scalar operator ""_scalar( long double x )
-{ return { x }; }
-constexpr Scalar operator ""_scalar( unsigned long long x )
-{ return { (long double)x }; }
-Scalar scalar( long double x )
-{ return { x }; }
-constexpr Scalar operator ""_percent( long double x )
-{ return { 0.01 * x }; }
-constexpr Scalar operator ""_percent( unsigned long long x )
-{ return { 0.01 * (long double)x }; }
-Scalar percent( Cardinal n )
-{ return { 0.01 * (long double)n.value }; }
-Scalar percent( unsigned long long n )
-{ return { 0.01 * (long double)n }; }
-Scalar percent( long double x )
-{ return { 0.01 * x }; }
-
+/// @brief remainder by division
 template< typename T >
 constexpr auto mod( T k, T n )
-{ return ((k %= n) < 0) ? k + n : k; }
+{ return (( k %= n ) < 0 ) ? k + n : k; }
 
+/// @brief remainder by division of floating point values is the fractional
+/// part of the division k/n multiplied by n.
 template< >
 constexpr auto mod< long double >( long double k, long double n )
 { 
@@ -496,10 +485,61 @@ constexpr auto mod< double >( double k, double n )
 template< >
 constexpr auto mod< float >( float k, float n )
 { return mod< long double >( k, n ); }
+// general unit arithmetic
+template< unit U >
+constexpr bool is_positive( U const& u )
+{ return u.get_value() > 0; }
 
+template< unit U >
+constexpr bool is_negative( U const& u )
+{ return u.get_value() < 0; }
+
+////////////////
+/// Scalars ///
+//////////////
+///
+/// Scalars have a unit_id of 1
+///
+///
+/// @brief a continuous, unitless value
+using Scalar = base_unit< scalar_unit_id, long double >;
+
+/// @brief a discrete, unitless value
+using Cardinal = base_unit< scalar_unit_id, unsigned long long >;
+
+/// @brief a true or false value
+using Boolean = base_unit< scalar_unit_id, bool >;
+
+template< unit... Us >
+using unit_product_t = detail::UnitProduct< Us... >::type;
+
+template< unit... Us >
+using unit_quotient_t = detail::UnitQuotient< Us... >::type;
+
+template< unit U >
+using unit_inverse_t = detail::UnitInverse< U >::type;
+
+template< unit U >
+using unit_square_root_t = detail::UnitSquareRoot< U >::type;
+
+template< int Exp, unit U >
+using unit_power_t = detail::UnitPower< Exp, U >::type;
+
+#ifndef NDEBUG
+static_assert( is_same_v< 
+    unit_power_t< 2, base_unit< unit_id_type{ 2, 1 }, long double >>, 
+    base_unit< unit_id_type{ 4, 1 }, long double >> );
+#endif // DEBUG
+
+// true and false expressions
+constexpr Boolean true_bool = Boolean{ true };
+constexpr Boolean false_bool = Boolean{ false };
+
+/// @brief radians are a scalar base type
 constexpr Scalar radians( long double x )
 { return mod( x, two_pi ); }
 
+/// @brief degrees are a scalar type
 template< typename T >
 constexpr Scalar degrees( T x )
 { return radians( (long double)x * radians_per_degree ); }
@@ -524,6 +564,11 @@ template< >
 constexpr Scalar degrees< unsigned long long >( unsigned long long x )
 { return degrees< long long >( x ); }
 
+////////////////////////
+/// Scalar Literals ///
+//////////////////////
+///
+///
 constexpr Scalar operator ""_deg( unsigned long long x )
 { return degrees< long long >( x ); }
 constexpr Scalar operator ""_rad( long double x )
@@ -531,7 +576,6 @@ constexpr Scalar operator ""_rad( long double x )
 constexpr Scalar operator ""_rad( unsigned long long x )
 { return radians( x ); }
 
-// literals and construction methods for cardinals
 constexpr Cardinal operator ""_cardinal( unsigned long long n )
 { return { n }; }
 constexpr Cardinal cardinal( Scalar x )
@@ -541,18 +585,27 @@ constexpr Cardinal cardinal( long double x )
 constexpr Cardinal cardinal( unsigned long long n )
 { return { n }; }
 
-// general unit arithmetic
-template< unit U >
-constexpr bool is_positive( U const& u )
-{ return u.get_value() > 0; }
-
-template< unit U >
-constexpr bool is_negative( U const& u )
-{ return u.get_value() < 0; }
+// literals and construction methods for scalars
+constexpr Scalar operator ""_scalar( long double x )
+{ return { x }; }
+constexpr Scalar operator ""_scalar( unsigned long long x )
+{ return { (long double)x }; }
+Scalar scalar( long double x )
+{ return { x }; }
+constexpr Scalar operator ""_percent( long double x )
+{ return { 0.01 * x }; }
+constexpr Scalar operator ""_percent( unsigned long long x )
+{ return { 0.01 * (long double)x }; }
+Scalar percent( Cardinal n )
+{ return { 0.01 * (long double)n.value }; }
+Scalar percent( unsigned long long n )
+{ return { 0.01 * (long double)n }; }
+Scalar percent( long double x )
+{ return { 0.01 * x }; }
 
 template< unit LeftU, unit RightU >
-constexpr unit_product< LeftU, RightU > operator *( LeftU left, RightU right )
-{ return unit_product< LeftU, RightU >{ left.get_value() * right.get_value() }; }
+constexpr unit_product_t< LeftU, RightU > operator *( LeftU left, RightU right )
+{ return unit_product_t< LeftU, RightU >{ left.get_value() * right.get_value() }; }
 
 template< typename T, unit RightU >
 requires( not unit< T > and is_arithmetic_v< T >  )
@@ -565,8 +618,8 @@ constexpr LeftU operator *( LeftU left, T right )
 { return LeftU{ left.get_value() * right }; }
 
 template< unit LeftU, unit RightU >
-constexpr unit_quotient< LeftU, RightU > operator /( LeftU left, RightU right )
-{ return unit_quotient< LeftU, RightU >{ left.get_value() / right.get_value() }; }
+constexpr unit_quotient_t< LeftU, RightU > operator /( LeftU left, RightU right )
+{ return unit_quotient_t< LeftU, RightU >{ left.get_value() / right.get_value() }; }
 
 template< unit LeftU, typename T >
 requires( not unit< T > and is_arithmetic_v< T >  )
@@ -575,8 +628,8 @@ constexpr LeftU operator /( LeftU left, T right )
 
 template< typename T, unit RightU >
 requires( not unit< T > and is_arithmetic_v< T > )
-constexpr unit_inverse< RightU > operator /( T left, RightU right )
-{ return unit_inverse< RightU >{ left / right.get_value() }; }
+constexpr unit_inverse_t< RightU > operator /( T left, RightU right )
+{ return unit_inverse_t< RightU >{ left / right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
@@ -595,8 +648,8 @@ constexpr U operator-( U const& arg )
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_continuous or unit_traits< RightU >::is_continuous )
-constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return unit_quotient< LeftU, RightU >{ mod( left.get_value(), right.get_value() )}; }
+constexpr unit_quotient_t< LeftU, RightU > operator %( LeftU left, RightU right )
+{ return unit_quotient_t< LeftU, RightU >{ mod( left.get_value(), right.get_value() )}; }
 
 // assignment operators
 template< unit LeftU, unit RightU >
@@ -647,8 +700,8 @@ constexpr Boolean operator ~( Boolean const& arg )
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete )
-constexpr unit_quotient< LeftU, RightU > operator %( LeftU left, RightU right )
-{ return unit_quotient< LeftU, RightU >{ left.get_value() % right.get_value() }; }
+constexpr unit_quotient_t< LeftU, RightU > operator %( LeftU left, RightU right )
+{ return unit_quotient_t< LeftU, RightU >{ left.get_value() % right.get_value() }; }
 
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::is_discrete and unit_traits< RightU >::is_discrete 
@@ -726,8 +779,8 @@ Boolean operator >=( LeftU const& left, RightU const& right )
 
 // powers (compile time)
 template< int Power, unit U >
-constexpr power_unit_t< Power, U > pow( U const& u )
-{ return power_unit_t< Power, U >{ std::pow( u.get_value(), Power )}; }
+constexpr unit_power_t< Power, U > pow( U const& u )
+{ return unit_power_t< Power, U >{ std::pow( u.get_value(), Power )}; }
 
 constexpr auto sin( Scalar const& u )
 { return Scalar{ std::sin( u.get_value() )}; }
@@ -756,8 +809,8 @@ using Length = base_unit< length_unit_id, long double >;
 constexpr Length::scalar_type meters( Length length ) 
 { return length.get_value(); }
 
-static_assert( unit_traits< unit_product< Length, Length >>::unit_id == unit_id_type{ 4, 1 } );
-static_assert( unit_traits< unit_quotient< Length, Length >>::unit_id == unit_traits< Scalar >::unit_id );
+static_assert( unit_traits< unit_product_t< Length, Length >>::unit_id == unit_id_type{ 4, 1 } );
+static_assert( unit_traits< unit_quotient_t< Length, Length >>::unit_id == unit_traits< Scalar >::unit_id );
 
 // length measurement units
 constexpr auto operator""_m(long double meters)
@@ -884,7 +937,7 @@ using Area = base_unit< length_unit_id * length_unit_id, long double >;
 constexpr Area::scalar_type square_meters( Area area )
 { return area.get_value(); }
 
-static_assert( unit_traits< unit_product< Length, Length >>::unit_id == 
+static_assert( unit_traits< unit_product_t< Length, Length >>::unit_id == 
     unit_traits< Area >::unit_id );
 
 constexpr auto operator""_km2( long double sqkm )
@@ -966,7 +1019,7 @@ constexpr Volume::scalar_type liters( Volume volume )
 constexpr Volume::scalar_type milliliters( Volume volume )
 { return volume.get_value() / cubic_meters_per_liter * 1000.; }
 
-static_assert( unit_traits< unit_product< Length, Length, Length >>::unit_id == 
+static_assert( unit_traits< unit_product_t< Length, Length, Length >>::unit_id == 
     unit_traits< Volume >::unit_id );
 
 constexpr auto operator""_km3( long double cubic_kilometers )
@@ -1014,10 +1067,10 @@ constexpr auto operator""_in3( unsigned long long cubic_inches )
     meters_per_inch}; }
 
 constexpr auto operator""_gal( long double gallons )
-{ return Volume{ gallons / cubic_inces_per_gallon * meters_per_inch * 
+{ return Volume{ gallons / cubic_inches_per_gallon * meters_per_inch * 
     meters_per_inch * meters_per_inch }; }
 constexpr auto operator""_gal( unsigned long long gallons )
-{ return Volume{ (long double)gallons / cubic_inces_per_gallon * meters_per_inch * 
+{ return Volume{ (long double)gallons / cubic_inches_per_gallon * meters_per_inch * 
     meters_per_inch * meters_per_inch }; }
 constexpr auto operator""_cp( long double cups )
 { return Volume{ cups / cups_per_milliliter / 1000.l / 
