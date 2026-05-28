@@ -185,6 +185,8 @@ void test_minimization()
     // parabola
     auto para = ( pow< 2 >( x - 2 ) + 3 );
 
+    auto x0 = para | min_arg( x );
+
     // paraboloid
     auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
 

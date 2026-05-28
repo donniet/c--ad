@@ -185,16 +185,45 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
 template< expression... Updates, variable... Vars >
 template< expression UntilE >
 Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> 
-IterationUpdater< tuple< Updates... >, tuple< Vars... >>::until( UntilE const& until_expr ) const
+IterationUpdater< tuple< Updates... >, tuple< Vars... >>::
+    until( UntilE const& until_expr ) const
 { return { until_expr, _updates, IterationInitializer< Vars... >::_vars, 
     IterationInitializer< Vars... >::_inits }; }
 
 template< typename... Vars >
 requires(( variable_traits< Vars >::is_variable and ... ))
-constexpr IterationInitializer< typename variable_traits< Vars >::variable_type... > iteration( Vars... )
+constexpr IterationInitializer< typename 
+    variable_traits< Vars >::variable_type... > iteration( Vars... )
 { return { variable_traits< Vars >::variable()... }; }
 
 
+
+template< expression ExprT, variable... Vars >
+struct ArgumentMinimum: Arguments< ArgumentMinimum, ExprT >
+{
+    using variables_tuple = tuple< Vars... >;
+    using expression_type = ExprT;
+
+    // DT: how should we handle iterative
+    template< typename ManipulatorT >
+    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    {
+        // evaluate the expression against the manipulator
+        auto value = _expr | manipulator;
+
+        
+    }
+
+    constexpr ArgumentMinimum( expression_type const& expr, Vars const&... ):
+        _expr{ expr } { }
+    constexpr ArgumentMinimum() = default;
+
+    expression_type _expr;
+};
+
+template< expression ExprT, typename... Vars >
+ArgumentMinimum< ExprT, Vars... > argmin( ExprT const& expr, Vars const&... vars )
+{ return { expr, vars... }; }
 
 template< expression ExprT, typename VariableTuple, typename... Params >
 result_t< VariableTuple > newtons_method( ExprT const& expr, 
@@ -227,7 +256,7 @@ result_t< Var > newtons_method( Equals< LeftT, RightT > const& expr,
 {
     auto scope = declare_variables(
         var< typename Var::value_type >( "x" ),
-        var< size_t >( "n " ));
+        var< size_t >( "n" ));
 
     auto [ x, n ] = scope.variables();
 

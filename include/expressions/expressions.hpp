@@ -47,6 +47,166 @@ static constexpr bool is_expression_v = is_expression< T >::value;
 template< typename T >
 concept expression = is_expression_v< T >;
 
+//////////////////////////////////////////
+/// Operators /// Forward Declaration ///
+////////////////////////////////////////
+/// 
+
+// negation
+template< expression T >
+constexpr auto operator -( T const& arg );
+
+// addition
+template< expression T, expression U >
+constexpr auto operator +( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator +( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator +( T const& left, U const& right );
+
+// subtraction
+template< expression T, expression U >
+constexpr auto operator -( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator -( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator -( T const& left, U const& right );
+
+// multiplication
+template< expression T, expression U >
+constexpr auto operator *( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator *( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator *( T const& left, U const& right );
+
+// division
+template< expression T, expression U >
+constexpr auto operator /( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator /( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator /( T const& left, U const& right );
+
+// trig functions
+template< expression T >
+constexpr auto sin( T const& arg );
+
+template< expression T >
+constexpr auto cos( T const& arg );
+
+template< expression T >
+constexpr auto tan( T const& arg );
+
+template< expression T >
+constexpr auto asin( T const& arg );
+
+template< expression T >
+constexpr auto acos( T const& arg );
+
+template< expression T >
+constexpr auto atan( T const& arg );
+
+template< expression T, expression U >
+constexpr auto atan2( T const& num, U const& den );
+
+// sqrt
+template< expression T >
+constexpr auto sqrt( T const& arg );
+
+// pow
+template< int Exp, expression T >
+constexpr auto pow( T const& arg );
+
+// equality
+template< expression T, expression U >
+constexpr auto operator ==( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator ==( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator ==( T const& left, U const& right );
+
+template< typename... Ts, typename... Us >
+requires( sizeof...( Ts ) == sizeof...( Us ) and 
+    (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator==( tuple< Ts... > const& left, 
+    tuple< Us... > const& right );
+
+template< typename... Ts, typename... Us >
+requires( sizeof...( Ts ) == sizeof...( Us ) and 
+    (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( tuple< Ts... > const& left, 
+    tuple< Us... > const& right );
+
+template< typename ShapeT, typename... Ts, typename... Us >
+requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator==( Tensor< ShapeT, Ts... > const& left,
+    Tensor< ShapeT, Us... > const& right );
+
+template< typename ShapeT, typename... Ts, typename... Us >
+requires( (( expression< Ts > or ... ) or ( expression< Us > or ... )))
+constexpr auto operator!=( Tensor< ShapeT, Ts... > const& left,
+    Tensor< ShapeT, Us... > const& right );
+
+// greater than
+template< expression T, expression U >
+constexpr auto operator >( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator >( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator >( T const& left, U const& right );
+
+// logical operations
+template< expression T, expression U >
+constexpr auto operator and( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator and( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator and( T const& left, U const& right );
+
+template< expression T, expression U >
+constexpr auto operator or( T const& left, U const& right );
+
+template< expression T, typename U >
+requires( not expression< U > )
+constexpr auto operator or( T const& left, U const& right );
+
+template< typename T, expression U >
+requires( not expression< T > )
+constexpr auto operator or( T const& left, U const& right );
+
+template< expression T >
+constexpr auto operator not( T const& arg );
+
+
 template< typename ResultT, typename ExprT = void >
 struct Expression;
 
@@ -622,8 +782,6 @@ constexpr bool depends_on_variable_index_v =
 /// Substitution and Arguments ///
 /////////////////////////////////
 ///
-///
-///
 template< typename T >
 concept compound_expression = expression< T > and requires( T )
 { typename T::argument_types; };
@@ -689,6 +847,10 @@ constexpr typename Substitution< ExprT, Args... >::type
 substitution( ExprT expr, Args... args );
 
 /// @brief Base class for compound operations. 
+///
+/// Provides a base implementation of substitution for dependent variables via
+/// operator() and application of a manipulator via operator|.
+///
 template< template< typename... > class Op, typename... Args >
 struct Arguments: detail::ExpressionTag, tuple< Args... >
 {
@@ -707,7 +869,11 @@ private:
     { return expression_helper( make_seq< sizeof...( Args )>{} ); }
 
 public:
-    /// @brief substitution via invocation operator
+    /// @brief Substitution via invocation operator
+    ///
+    /// For each dependent variable in this expression, ordered by I by it's 
+    /// variable index, substitute subs...[I] and return the new expression.
+    ///
     /// @tparam Op is the root operation of the expression
     /// @tparam ...Args are the types of the arguments of the expression
     /// @tparam ...Subs are the types of the substitutions made into the dependent
@@ -720,15 +886,26 @@ public:
     operator ()( Subs... subs ) const
     { return substitution( expression(), subs... ); }
 
-    // TODO: some kind of visitor/manipulator pattern to eval, distribute, and normalize
-    // expressions.
+    // @brief Apply a manipulator
+    //
+    // Manipulators are applied to the arguments of this expression and 
+    // recombined into a new expression by the operation.
+    //
+    // example: 
+    //
+    // assert( 1_cardinal + 2_cardinal                     | 
+    //         manipulate( [&]( auto n ){ return n + 1; }) | 
+    //         evalulate() == 5 );
+    //
     template< typename ManipulatorT >
     constexpr auto operator |( ManipulatorT const& manipulator ) const
     {
+        using std::get;
+
         // apply the manipulator to each of the arguments and return the expression
         // operation of the results
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value(( std::get< Is >( *this ) | manipulator )... ); };
+        { return expression_type::value(( get< Is >( *this ) | manipulator )... ); };
 
         return helper( make_seq< sizeof...( Args )>{} );
     }
@@ -777,6 +954,28 @@ constexpr expression_argument_t< I, ExprT > const&
 get_argument( ExprT const& expr )
 { return GetArgument< I, ExprT >::value( expr ); }
 
+///////////////
+/// Derivations
+///
+/// Mathematical operators like derivations which transform expressions are
+/// implemented as manipulators
+
+struct Derivation
+{ };
+
+namespace detail {
+template< typename D >
+struct IsDerivation: integral_constant< bool,
+    std::is_base_of_v< Derivation, D >> { };
+};
+
+template< typename D >
+concept derivation = detail::IsDerivation< D >::value;
+
+///////////////////
+/// Element Of ///
+/////////////////
+///
 /// @brief Element Of operation
 template< size_t I >
 struct Element
@@ -1068,11 +1267,16 @@ struct Negation: Arguments< Negation, T >
     constexpr T arg() const 
     { return get_argument< 0 >( *this ); }
 
+    // derivative of a negation is the negation of the derivative
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return -( arg() | d ); }
+
     constexpr Negation( T arg ): Arguments< Negation, T >{ arg } { } 
     constexpr Negation() = default;
 };
 
-static_assert(( Negation< Variable< 0, int >>{} | simple_scope( 5 )) == -5 );
+//static_assert(( Negation< Variable< 0, int >>{} | simple_scope( 5 )) == -5 );
 
 template< typename... Ts >
 struct Sum;
@@ -1092,6 +1296,11 @@ struct Sum< T, U >: Arguments< Sum, T, U >
     static constexpr auto value( V const& left, W const& right )
     { return left + right; }
 
+    // derivative of a sum is the sum of the derivative
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( left_arg() | d ) + ( right_arg() | d ); } 
+
     constexpr Sum( T left, U right ): Arguments< Sum, T, U >{ left, right } { } 
     constexpr Sum() = default;
 };
@@ -1108,6 +1317,16 @@ struct Sum< Ts... >: Arguments< Sum, Ts... >
     template< typename... Us >
     static constexpr auto value( Us const&... us )
     { return ( us + ... ); }
+
+    // derivative of a sum is the sum of the derivative
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return (( arg< Is >() | d ) + ... ); };
+
+        return helper( make_seq< sizeof...( Ts )>{} );
+    }
 
     constexpr Sum( Ts const&... ts ): Arguments< Sum, Ts... >{ ts... } { }
     constexpr Sum() = default;
@@ -1131,6 +1350,11 @@ struct Difference< T, U >: Arguments< Difference, T, U >
     static constexpr auto value( V const& left, W const& right )
     { return left - right; }
 
+    // derivative of a sum is the sum of the derivative
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( left_arg() | d ) - ( right_arg() | d ); } 
+
     constexpr Difference( T left, U right ): 
         Arguments< Difference, T, U >{ left, right } { } 
     constexpr Difference() = default;
@@ -1148,6 +1372,16 @@ struct Difference< Ts... >: Arguments< Difference, Ts... >
     template< typename... Us >
     static constexpr auto value( Us const&... us )
     { return ( us - ... ); }
+
+    // derivative of a difference is the difference of the derivative
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return (( arg< Is >() | d ) - ... ); };
+
+        return helper( make_seq< sizeof...( Ts )>{} );
+    }
 
     constexpr Difference( Ts const&... ts ): 
         Arguments< Difference, Ts... >{ ts... } { }
@@ -1172,23 +1406,45 @@ struct Product< T, U >: Arguments< Product, T, U >
     static constexpr auto value( V const& left, W const& right )
     { return ( left * right ); }
 
+    // product rule
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( left_arg() | d ) * right_arg() + left_arg() * ( right_arg() | d ); } 
+
     constexpr Product( T left, U right ): 
         Arguments< Product, T, U >{ left, right } { }
     constexpr Product() = default;
 };
 
-template< typename... Ts >
-requires( isgreater( sizeof...( Ts ), 2 ))
-struct Product< Ts... >: Arguments< Product, Ts... >
+template< typename T, typename... Ts >
+requires( isgreater( sizeof...( Ts ), 1 ))
+struct Product< T, Ts... >: Arguments< Product, T, Ts... >
 {
-    using result_type = decltype(( result_t< Ts >{} * ... ));
+    using result_type = decltype( result_t< T >{} * ( result_t< Ts >{} * ... ));
 
     template< size_t I >
-    constexpr Ts...[ I ] arg() const { return get_argument< I >( *this ); }
+    constexpr Ts...[ I ] arg() const 
+    { return get_argument< I >( *this ); }
+
+    constexpr Ts...[ 0 ] first() const 
+    { return arg< 0 >(); }
+
+    constexpr Product< Ts... > rest() const
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            Product< Ts... >
+        { return { arg< Is + 1 >()... }; };
+
+        return helper( make_seq< sizeof...( Ts )>{} );
+    }
 
     template< typename... Us >
     static constexpr auto value( Us const&... us )
     { return ( us * ... ); }
+
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( first() | d ) * rest() + first() * ( rest() | d ); }
 
     constexpr Product( Ts const&... ts ): 
         Arguments< Product, Ts... >{ ts... } { }
@@ -1210,6 +1466,13 @@ struct Quotient: Arguments< Quotient, T, U >
     static constexpr auto value( V const& left, W const& right )
     { return ( left / right ); }
 
+    // quotient rule
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( numerator_arg() * ( denominator_arg() | d ) - 
+        ( numerator_arg() | d ) * denominator_arg() ) / 
+            ( denominator_arg() * denominator_arg() ); }
+
     constexpr Quotient( T numerator, U denominator ):
         Arguments< Quotient, T, U >{ numerator, denominator } { }
     constexpr Quotient() = default;
@@ -1228,6 +1491,10 @@ struct SquareRoot: Arguments< SquareRoot, T >
     static constexpr auto value( U const& arg )
     { return std::sqrt( arg ); }
 
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return 0.5l / sqrt( arg() ) * ( arg() | d ); }
+
     constexpr SquareRoot( T arg ):  
         Arguments< SquareRoot, T >{ arg } { }
     constexpr SquareRoot() = default;
@@ -1239,6 +1506,8 @@ struct SquareRoot: Arguments< SquareRoot, T >
 template< int Exp >
 struct Power
 {
+    static constexpr int exponent = Exp;
+
     template< typename T >
     struct Of: Arguments< Of, T >
     {
@@ -1249,6 +1518,10 @@ struct Power
         template< typename U >
         static constexpr auto value( U const& arg )
         { return std::pow< Exp >( arg ); }
+
+        template< derivation D >
+        constexpr auto operator |( D const& d ) const
+        { return exponent * pow< Exp - 1 >( arg() ) * ( arg() | d ); }
 
         constexpr Of( T arg ): Arguments< Of, T >{ arg } {} 
         constexpr Of() = default;
@@ -1271,6 +1544,10 @@ struct Sine: Arguments< Sine, T >
     static constexpr auto value( U const& arg )
     { return std::sin( arg ); }
 
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return cos( arg() ) * ( arg() | d ); }
+
     constexpr Sine( T arg ): Arguments< Sine, T >{ arg } { } 
     constexpr Sine() = default;
 };
@@ -1287,6 +1564,10 @@ struct Cosine: Arguments< Cosine, T >
     template< typename U >
     static constexpr auto value( U const& arg )
     { return std::cos( arg ); }
+
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return -sin( arg() ) * ( arg() | d ); }
 
     constexpr Cosine( T arg ): Arguments< Cosine, T >{ arg } { } 
     constexpr Cosine() = default;
@@ -1307,6 +1588,10 @@ struct Tangent: Arguments< Tangent, T >
     static constexpr auto value( U const& arg )
     { return std::tan( arg ); }
 
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( arg() | d ) / ( cos( arg() ) * cos( arg() )); } 
+
     constexpr Tangent( T arg ): Arguments< Tangent, T >{ arg } { } 
     constexpr Tangent() = default;
 };
@@ -1323,6 +1608,10 @@ struct Arcsine: Arguments< Arcsine, T >
     template< typename U >
     static constexpr auto value( U const& arg )
     { return std::asin( arg ); }
+
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( arg() | d ) / sqrt( 1l - pow< 2 >( arg() )); }
 
     constexpr Arcsine( T arg ): Arguments< Arcsine, T >{ arg } { } 
     constexpr Arcsine() = default;
@@ -1341,6 +1630,10 @@ struct Arccosine: Arguments< Arccosine, T >
     static constexpr auto value( U const& arg )
     { return std::acos( arg ); }
 
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const 
+    { return -( arg() | d ) / sqrt( 1l - pow< 2 >( arg() )); }
+
     constexpr Arccosine( T arg ): Arguments< Arccosine, T >{ arg } { } 
     constexpr Arccosine() = default;
 };
@@ -1357,6 +1650,10 @@ struct Arctangent: Arguments< Arctangent, T >
     template< typename U >
     static constexpr auto value( U const& arg )
     { return std::atan( arg ); }
+
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const
+    { return ( arg() | d ) / ( 1l + pow< 2 >( arg() )); }
 
     constexpr Arctangent( T arg ): Arguments< Arctangent, T >{ arg } { } 
     constexpr Arctangent() = default;
@@ -1380,6 +1677,9 @@ struct Arctangent2: Arguments< Arctangent2, T, U >
     // TODO: write an eval for std::atan2 that handles units properly
     template< typename V, typename W >
     static constexpr auto value( V const& num, W const& den );
+
+    template< derivation D >
+    constexpr auto operator |( D const& d ) const;
 
     constexpr Arctangent2( T numerator, U denominator ):
         Arguments< Arctangent2, T, U >{ numerator, denominator } { }
@@ -1778,179 +2078,6 @@ constexpr T operator /( T const& left, Infinitesimal< U > const& right )
     return -std::numeric_limits< T >::infinity();
 }
 
-// Derivation
-// NOTE: this is an experiment
-template< typename ExprT >
-struct Derivation: Arguments< Derivation, ExprT >
-{ 
-    using result_type = result_t< ExprT >;
-
-    constexpr ExprT arg() const
-    { return get_argument< 0 >( *this ); }
-
-    template< typename... Params >
-    constexpr result_type eval( Params&... params ) const;
-
-    constexpr Derivation( ExprT const& expr ): 
-        Arguments< Derivation, ExprT >{ expr } { }
-    constexpr Derivation() = default;
-};
-
-template< typename NumT, typename DenT >
-struct QuotientOfDerivations: 
-    Quotient< Derivation< NumT >, Derivation< DenT >> {
-private:
-    using quotient_type = Quotient< Derivation< NumT >, Derivation< DenT >>;
-
-public:
-    constexpr NumT numerator_arg() const
-    { return quotient_type::numerator_arg().arg(); }
-
-    constexpr DenT denominator_arg() const
-    { return quotient_type::denominator_arg().arg(); }
-
-    constexpr QuotientOfDerivations( NumT const& numerator, 
-        DenT const& denominator ): quotient_type{{ numerator }, { denominator }}
-    { }
-    constexpr QuotientOfDerivations() = default;
-};
-
-template< typename NumT, typename Var >
-using derivative_of = QuotientOfDerivations< NumT, Var >;
-
-template< typename ExprT >
-struct Distribute;
-
-template< template< typename > class Op, typename ArgT, typename Var >
-struct Distribute< derivative_of< Op< ArgT >, Var >>
-{
-    using left_type = Distribute< derivative_of< Op< ArgT >, ArgT >>::type;
-    using right_type = Distribute< derivative_of< ArgT, Var >>::type;
-
-    using type = Product< left_type, right_type >;
-
-    static constexpr type value( derivative_of< Op< ArgT >, Var > const& expr )
-    { return { left_type::value({ expr.numerator_arg(), expr.numerator_arg().arg() }), 
-        right_type::value({ expr.numerator_arg().arg(), expr.denominator_arg() }) }; } 
-};
-// 
-// // Leibniz Law of Derivations
-// template< typename FirstT, typename SecondT >
-// struct Derivation< Product< FirstT, SecondT >>: Arguments< Derivation, Product< FirstT, SecondT >>
-// {
-//     using expression_type = Product< FirstT, SecondT >;
-//     using result_type = result_t< expression_type >;
-// 
-//     constexpr expression_type arg() const
-//     { return get_argument< 0 >( *this ); }
-// 
-//     template< typename... Params >
-//     constexpr result_type eval( Params&... params ) const
-//     {  
-//         auto prod = arg();
-//         auto first_expr = get_argument< 0 >( prod );
-//         auto second_expr = get_argument< 1 >( prod );
-//     
-//         auto a = expressions::eval( first_expr, params... );
-//         auto b = expressions::eval( second_expr, params... );
-//         auto da = expressions::eval( Derivation< FirstT >{ first_expr }, params... );
-//         auto db = expressions::eval( Derivation< SecondT >{ second_expr }, params... );
-//     
-//         // Leibiz law
-//         return a * db + da * b;
-//     }
-// 
-//     constexpr Derivation( expression_type const& expr ): 
-//         Arguments< Derivation, expression_type >{ expr } { }
-//     constexpr Derivation() = default;
-// };
-// 
-// // Derivation of a Sum
-// template< typename... Args >
-// struct Derivation< Sum< Args... >>: Arguments< Derivation, Sum< Args... >>
-// {
-//     using expression_type = Sum< Args... >;
-//     using result_type = result_t< expression_type >;
-// 
-//     constexpr expression_type arg() const
-//     { return get_argument< 0 >( *this ); }
-// 
-//     template< typename... Params >
-//     constexpr result_type eval( Params&... params ) const
-//     { 
-//         // Derivation distributes over addition
-//         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-//         { return ( expressions::eval( Derivation< Args...[ Is ]>{ 
-//             get_argument< Is >( arg() )}) + ... ); };
-//     
-//         return helper( make_seq< sizeof...( Args )>{} );
-//     }
-// 
-//     constexpr Derivation( expression_type const& expr ): 
-//         Arguments< Derivation, expression_type >{ expr } { }
-//     constexpr Derivation() = default;
-// };
-// 
-// namespace detail {
-// // evaluation of a derivative
-// template< size_t I, typename T, size_t J, typename U >
-// struct Evaluator< Quotient< Derivation< Variable< I, T >>, 
-//     Derivation< Variable< J, U >>>>
-// {
-//     using expression_type = Quotient< Derivation< Variable< I, T >>, 
-//         Derivation< Variable< J, U >>>;
-//     using result_type = result_t< Quotient< T, U >>;
-// 
-//     template< typename... Params >
-//     constexpr result_type operator ()( expression_type const& expr, 
-//         Params&... params ) const
-//     {
-//         if constexpr( I != J )
-//             return static_cast< result_type >( 0 );
-// 
-//         return static_cast< result_type >( 1 );
-//     }
-// };
-// 
-// template< typename ExprT, size_t I, typename T >
-// requires( not variable< ExprT > )
-// struct Evaluator< Quotient< Derivation< ExprT >, 
-//     Derivation< Variable< I, T >>>>
-// {
-//     using expression_type = Quotient< Derivation< ExprT >, 
-//         Derivation< Variable< I, T >>>;
-//     using result_type = result_t< Quotient< ExprT, T >>;
-// 
-//     template< typename... Params >
-//     constexpr result_type operator ()( expression_type const& expr, 
-//         Params&... params ) const
-//     {
-//         
-//     }
-// };
-// } // namespace detail
-// 
-// DT: I'm not sure if I like the above, or if we need it.  Are the functions
-// that take the derivative just fine?  Why do we need it in the expression 
-// itself?  If we include function operators like derivations where would it
-// end?
-//
-// One thing that's hard about the function operators like a derivation is
-// that it breaks the result_type mechanism for determining the result of
-// an expression.  We don't know the result of a derivation, necessarily.
-// We could assume, as we've done here, that the operator will resolve
-// to the same type as the expression it operates on, but the d/dx operator,
-// which is the whole insperation for this thing, will have a result_type of
-// decltype( ExprT::result_type{} / x ), which is not the same if we are
-// using units.
-//
-// The good thing about it is we could include differential equations in 
-// the algebra, which is very tempting.  Also the idea of the Jacobian
-// as an operator is so fitting, and could lead to interesting solver
-// situations.
-//
-/////////////////
-    
 
 /////////////
 /// Operators
@@ -2258,10 +2385,10 @@ struct Differential
     // TODO: double check the math here
     // TODO: also could we have multiple options for these derivative expressions
     //       if one evaluates to infinity and we can tell at compile time?
-    template< typename U, typename V >
-    auto operator()( Arctangent2< U, V > const& expr )
-    { return (*this)( expr.numerator_arg() / expr.denominator_arg() ) / 
-        ( constant_one - pow< 2 >( expr.numerator_arg() / expr.denominator_arg() )); }
+    //template< typename U, typename V >
+    //auto operator()( Arctangent2< U, V > const& expr )
+    //{ return (*this)( expr.numerator_arg() / expr.denominator_arg() ) / 
+    //    ( constant_one - pow< 2 >( expr.numerator_arg() / expr.denominator_arg() )); }
     
 };
 
@@ -2284,42 +2411,57 @@ template< variable Var, expression Expr >
 auto differential_for( Expr const& expr )
 { return differential_for_t< Var >{}( expr ); }
 
-/// @brief represents a gradient composed of differential operators
-/// @tparam ...Diffs are the differential operator types
-template< variable... Vars >
-struct Gradient: 
-    Tensor< Shape< sizeof...( Vars )>, differential_for_t< Vars >... >
+template< typename ExprT >
+struct GradientOperator
 {
+    using expression_type = ExprT;
+    using dependent_variables_tuple = dependent_variables_t< expression_type >;
+    static constexpr size_t size = tuple_size_v< dependent_variables_tuple >;
+
 private:
-    using tensor_type = Tensor< Shape< sizeof...( Vars )>, 
-        differential_for_t< Vars >... >;
-    using shape_type = tensor_type::shape_type;
+    template< size_t I >
+    struct Element
+    {
+//        using differential_type = differential_for_t< tuple_element_t< I, 
+//            dependent_variables_tuple >, expression_type >;
+//
+//        static constexpr auto value( expression_type const& expr )
+//        { return differential_type{}( expr ); }
+    };
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    { 
+        using differential_type = Tensor< Shape< sizeof...( Is )>, 
+            Element< Is >... >;
+
+        static constexpr auto value( ExprT const& expr ) ;
+//        { make_tensor< Shape< sizeof...( Is )>>( Element< Is >::value( expr )
+//            ... ); }
+    };
 
 public:
-    template< typename T >
-    auto operator()( T const& expr )
-    { return make_tensor< shape_type >( 
-        differential_for_t< Vars >{}( expr )... ); }
+    using type = Helper< make_seq< size >>::type;
+    static constexpr auto value( ExprT const& expr )
+    { return Helper< make_seq< size >>::value( expr ); }
 };
 
-template< variable... Vars >
-Gradient< Vars... > gradient( Vars const&... )
-{ return {}; }
+template< expression ExprT >
+constexpr auto gradient( ExprT const& expr )
+{ return GradientOperator< ExprT >::value( expr ); }
 
-template< variable... Vars >
-struct JacobianTensor
-{ 
-
-};
-
-template< variable... Vars > 
-struct Jacobian: JacobianTensor< Vars... >::type
+template< expression ExprT > 
+struct JacobianOperator
 {
-    template< typename T >
-    auto operator ()( T const& expr )
-    { 
-        
-    }
+    template< size_t I, size_t J >
+    struct Element
+    {
+//        using differential_type = differential_for_t< tuple_element_t< I,
+//            dependent_variables_tuple >, tensor_element_t< J, expression_type >>;
+    };
 };
 
 

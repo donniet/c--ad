@@ -550,7 +550,95 @@ requires( I != J )
 struct SequenceContains< I, seq< J, Js... >>:
     SequenceContains< I, seq< Js... >> { };
 
+template< typename Seq, bool Inclusive = true >
+struct SequencePrefixSum;
+
+template< >
+struct SequencePrefixSum< seq<>, false >
+{ using type = seq< 0 >; };
+
+template< size_t... Is >
+requires( isgreater( sizeof...( Is ), 0 ))
+struct SequencePrefixSum< seq< Is... >, false > {
+private:
+    template< typename Seq >
+    struct SumElements;
+
+    template< size_t... Js >
+    struct SumElements< seq< Js... >>: integral_constant< size_t,
+        ( Is...[ Js ] + ... + 0 )> { };
+
+    template< size_t J >
+    struct Element: SumElements< make_seq< J >> { };
+
+    template< >
+    struct Element< 0 >: integral_constant< size_t, 0 > { };
+
+    template< typename Seq >
+    struct PrefixSum;
+
+    template< size_t... Js >
+    struct PrefixSum< seq< Js... >>
+    { using type = seq< Element< Js >::value... >; };
+
+public:
+    using type = PrefixSum< make_seq< 1 + sizeof...( Is )>>::type;
+};
+
+template< typename Seq >
+struct SequencePrefixSum< Seq, true >
+{ 
+    template< typename SumSeq >
+    struct Convert;
+
+    template< size_t I, size_t... Is >
+    struct Convert< seq< I, Is... >>
+    { using type = seq< Is... >; };
+
+    using type = Convert< typename SequencePrefixSum< Seq, false >::type >::type;
+};
+
+template< size_t I, typename Seq >
+struct SequenceLowerBound;
+
+template< size_t I >
+struct SequenceLowerBound< I, seq< >>: integral_constant< size_t, 0 > { };
+
+template< size_t I, size_t J, size_t... Js >
+requires( not isgreater( I, J ))
+struct SequenceLowerBound< I, seq< J, Js... >>: integral_constant< size_t,
+    0 > { };
+
+template< size_t I, size_t J0, size_t J1, size_t... Js >
+requires( isgreater( I, J0 ) and isless( I, J1 ))
+struct SequenceLowerBound< I, seq< J0, J1, Js... >>: integral_constant< size_t,
+    0 > { };
+
+template< size_t I, size_t J0, size_t J1, size_t... Js >
+requires( isgreater( I, J0 ) and not isless( I, J1 ))
+struct SequenceLowerBound< I, seq< J0, J1, Js... >>: integral_constant< size_t,
+    1 + SequenceLowerBound< I, seq< J1, Js... >>::value > { };
+
 } // namespace detail
+
+template< typename Seq, bool Inclusive = true >
+using seq_prefix_sum_t = detail::SequencePrefixSum< Seq, Inclusive >::type;
+
+template< size_t I, typename Seq >
+constexpr size_t seq_lower_bound_v = detail::SequenceLowerBound< I, Seq >::value;
+
+#ifndef NDEBUG
+static_assert( is_same_v< seq< 5 >, seq_prefix_sum_t< seq< 5 >, true >> );
+static_assert( is_same_v< seq< 0, 5 >, seq_prefix_sum_t< seq< 5 >, false >> );
+static_assert( is_same_v< seq< 1, 2, 3 >, seq_prefix_sum_t< seq< 1, 1, 1 >>> );
+static_assert( is_same_v< seq< 0, 1, 2, 3 >, seq_prefix_sum_t< seq< 1, 1, 1 >, false>> );
+static_assert( seq_lower_bound_v< 0, seq< 0, 1, 2, 3 >> == 0 );
+static_assert( seq_lower_bound_v< 1, seq< 0, 1, 2, 3 >> == 1 );
+static_assert( seq_lower_bound_v< 2, seq< 0, 1, 2, 3 >> == 2 );
+static_assert( seq_lower_bound_v< 2, seq< 0, 2, 4 >> == 1 );
+static_assert( seq_lower_bound_v< 3, seq< 0, 2, 4 >> == 1 );
+static_assert( seq_lower_bound_v< 4, seq< 0, 2, 4 >> == 2 );
+#endif // DEBUG
 
 /// @brief trait to determine of a sequence contains an index
 /// @tparam I is the index to search for
@@ -1167,6 +1255,86 @@ using is_virtual_base_of_v = is_virtual_base_of< Base, Derived >::value;
 template< typename Derived, typename Base >
 concept virtual_base_of = is_virtual_base_of< Base, Derived >::value;
 
+template< typename T >
+struct FlattenTuple
+{ using type = std::tuple< T >; };
+
+template< typename... Ts >
+struct FlattenTuple< std::tuple< Ts... >>
+{
+    // the sizes of any tuple arguments or 1
+    using tuple_sizes_seq = seq< tuple_size_v< typename 
+        FlattenTuple< Ts >::type >... >;
+
+    // the prefix sum of our tuple sizes
+    using cumulative_tuple_sizes_seq = seq_prefix_sum_t< tuple_sizes_seq, false >;
+
+    template< typename Seq >
+    struct SumSeq;
+
+    template< size_t... Is >
+    struct SumSeq< seq< Is... >>: integral_constant< size_t, 
+        ( Is + ... + 0 )> { };
+
+    static constexpr size_t flattened_tuple_size = 
+        SumSeq< tuple_sizes_seq >::value;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        template< size_t I >
+        static constexpr size_t tuple_index = seq_lower_bound_v< I, 
+            cumulative_tuple_sizes_seq >;
+
+        template< size_t >
+        struct Remainder;
+
+        template< size_t I >
+        struct Remainder: integral_constant< size_t, 
+            I - sequence_at< tuple_index< I >, cumulative_tuple_sizes_seq >> { };
+//
+//        template< size_t I >
+//        requires( isless(
+//            I, sequence_at< tuple_index< I >, cumulative_tuple_sizes_seq >))
+//        struct Remainder< I >: integral_constant< size_t, I > { };
+//
+        template< size_t I >
+        static constexpr size_t remainder = Remainder< I >::value;
+
+        template< size_t I >
+        using flattener = FlattenTuple< Ts...[ tuple_index< I > ]>;
+
+        using type = std::tuple< tuple_element_t< remainder< Is >,
+            typename flattener< Is >::type >... >;
+
+        static constexpr type value( std::tuple< Ts... > const& tup )
+        { return { std::get< remainder< Is >>( flattener< Is >::value( 
+            std::get< tuple_index< Is >>( tup )))... }; }
+    };
+
+    using type = Helper< make_seq< flattened_tuple_size >>::type;
+    static constexpr type value( std::tuple< Ts... > const& tup )
+    { return Helper< make_seq< flattened_tuple_size >>::value( tup ); }
+};
+
+template< typename T >
+using flatten_tuple_t = FlattenTuple< T >::type;
+
+template< typename T >
+constexpr flatten_tuple_t< T > flatten_tuple( T const& tup )
+{ return FlattenTuple< T >::value( tup ); }
+
+#ifndef NDEBUG
+static_assert( is_same_v< tuple< char >, flatten_tuple_t< tuple< char >>> );
+static_assert( is_same_v< tuple< char, int, float >, flatten_tuple_t< 
+    tuple< tuple< char, int >, float >>> );
+static_assert( is_same_v< tuple< char, int, float >, flatten_tuple_t<
+    tuple< char, tuple< int, float >>>> );
+#endif // DEBUG
+
 /////////////////////////
 /// Tuple Formatting ///
 ///////////////////////
@@ -1186,66 +1354,63 @@ struct formatter< tuple<>, char >
     { return ctx.out(); }
 };
 
-template< typename T >
-struct formatter< tuple< T >, char >:
-    formatter< T, char >
-{
-    template< typename ParseContext >
-    constexpr ParseContext::iterator parse( ParseContext& ctx )
-    { return formatter< T, char >::parse( ctx ); }
+template< typename Tup, typename CharT >
+struct FormatterTupleBase {
+private:
+    template< typename FlatTup >
+    struct Helper;
 
-    template< typename FormatContext >
-    constexpr FormatContext::iterator format( tuple< T > const& tup, FormatContext& ctx ) const
-    { return formatter< T, char >::format( get< 0 >( tup ), ctx ); }
+    template< >
+    struct Helper< tuple< >> { };
+
+    template< typename T, typename... Ts >
+    requires( not ( is_same_v< T, Ts > or ... ))
+    struct Helper< tuple< T, Ts... >>:
+        formatter< T, CharT >, Helper< tuple< Ts... >> { };
+
+    template< typename T, typename... Ts >
+    requires(( is_same_v< T, Ts > or ... ))
+    struct Helper< tuple< T, Ts... >>:
+        Helper< tuple< Ts... >> { };
+
+public:
+    using type = Helper< flatten_tuple_t< Tup >>;
 };
 
-template< typename T, typename... Ts >
-requires( not is_base_of_v< formatter< T, char >, formatter< tuple< Ts... >, char >> and
-    isgreater( sizeof...( Ts ), 0 ))
-struct formatter< tuple< T, Ts... >, char >:
-    formatter< T, char >, formatter< tuple< Ts... >, char >
+template< typename... Ts >
+struct formatter< tuple< Ts... >, char >:
+    FormatterTupleBase< tuple< Ts... >, char >::type
 {
+    using flat_tuple_type = flatten_tuple_t< tuple< Ts... >>;
+
+    template< typename ParseContext, typename... Us >
+    constexpr ParseContext::iterator parse_unique( ParseContext& ctx, 
+        tuple< Us... > )
+    { return ( formatter< Us, char >::parse( ctx ), ... ); }
+
     template< typename ParseContext >
     constexpr ParseContext::iterator parse( ParseContext& ctx )
-    {
-        formatter< T, char >::parse( ctx );
-        return formatter< tuple< Ts... >, char >::parse( ctx );
-    }
+    { return parse_unique( ctx, flat_tuple_type{} ); }
 
     template< typename FormatContext >
-    constexpr FormatContext::iterator format( tuple< T, Ts... > const& tup,
+    constexpr FormatContext::iterator format( tuple< Ts... > const& tup,
         FormatContext& ctx ) const
-    {
-        formatter< T, char >::format( tuple_first( tup ), ctx );
-        auto i = ctx.out();
-        *i++ = ' ';
-        ctx.advance_to( i );
-        return formatter< tuple< Ts... >, char >::format( tuple_rest( tup ), ctx );
-    }
-};
+    { 
+        auto flat = flatten_tuple( tup );
 
-template< typename T, typename... Ts >
-requires( is_base_of_v< formatter< T, char >, formatter< tuple< Ts... >, char >> and 
-    isgreater( sizeof...( Ts ), 0 ))
-struct formatter< tuple< T, Ts... >, char >:
-    formatter< tuple< Ts... >, char >
-{
-    template< typename ParseContext >
-    constexpr ParseContext::iterator parse( ParseContext& ctx )
-    {
-        formatter< T, char >::parse( ctx );
-        return formatter< tuple< Ts... >, char >::parse( ctx );
-    }
+        auto format_ith = [&]< size_t I >( seq< I > ) constexpr
+        {
+            format( get< I >( flat ), ctx );
+            auto i = ctx.out();
+            *i++ = ' ';
+            ctx.advance_to( i );
+            return i;
+        };
 
-    template< typename FormatContext >
-    constexpr FormatContext::iterator format( tuple< T, Ts... > const& tup,
-        FormatContext& ctx ) const
-    {
-        formatter< T, char >::format( tuple_first( tup ), ctx );
-        auto i = ctx.out();
-        *i++ = ' ';
-        ctx.advance_to( i );
-        return formatter< tuple< Ts... >, char >::format( tuple_rest( tup ), ctx );
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { return ( format_ith( seq< Is >{} ), ... ); };
+
+        return helper( make_seq< tuple_size_v< flat_tuple_type >>{} );
     }
 };
 } // namespace std
