@@ -1,3 +1,32 @@
+////////////////////////////
+/// Expressions Library ///
+//////////////////////////
+///
+/// Lazily evaluated arithmetic expressions with autodifferentiation.
+///
+/// # Concepts
+/// - expression< T >: must be true for types that can be composed into
+///   expressions in this library.
+/// - compound_expression< T >: is an expression with arguments
+/// - variable< V >: is a Variable< I, T > expression placeholder
+///
+/// # Base Types
+/// - Constant< value > is a template-aware constant expression
+/// - StaticValue< T > is a typed expression with an unchanging value
+/// - Variable< I, T > is a placeholder uniquely identified by the size_t 
+///   template argument I called the exposed as Variable< I, T >::index
+/// - Scope< Vars... > is a tuple-like object that stores names and values
+///   of Variable< I, T > placeholder types and acts as a manipulator
+///   such that the application of a Scope<> to an expression evaluates the 
+///   placeholders against the scoped values.
+/// - Arguments< Op, Args... > is the base class for compound expressions
+///
+/// # Operators
+/// - operator ()( Subs... ) is overloaded by Arguments< Op, Args... > and 
+///   substitutes ...Subs for the dependent variables of the parent expression
+///   
+
+
 #ifndef __EXPRESSIONS_EXPRESSIONS_HPP__
 #define __EXPRESSIONS_EXPRESSIONS_HPP__
 
@@ -805,8 +834,6 @@ public:
     {
         using std::get;
 
-        //static_assert( is_same_v< ManipulatorT, void > );
-
         // apply the manipulator to each of the arguments and return the expression
         // operation of the results
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
@@ -822,6 +849,10 @@ protected:
     constexpr Arguments() = default;
 };
 
+template< compound_expression ExprT, typename ManipulatorT >
+constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
+{ return expr.apply( manipulator ); }
+
 template< expression... Exprs, typename ManipulatorT >
 //requires( not compound_expression< tuple< Exprs... >> )
 constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const& manipulator )
@@ -831,14 +862,6 @@ constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const
 
     return helper( make_seq< sizeof...( Exprs )>{} );
 }
-
-
-template< compound_expression ExprT, typename ManipulatorT >
-constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
-{ return expr.apply( manipulator ); }
-//
-//template< expression ExprT, typename ManipulatorT >
-//constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator );
 
 template< typename ShapeT, expression... Exprs, typename ManipulatorT >
 constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT const& manipulator )
