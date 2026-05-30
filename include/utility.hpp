@@ -1257,7 +1257,11 @@ concept virtual_base_of = is_virtual_base_of< Base, Derived >::value;
 
 template< typename T >
 struct FlattenTuple
-{ using type = std::tuple< T >; };
+{ 
+    using type = std::tuple< T >; 
+    static constexpr type value( T const& val )
+    { return { val }; }
+};
 
 template< typename... Ts >
 struct FlattenTuple< std::tuple< Ts... >>
@@ -1398,9 +1402,10 @@ struct formatter< tuple< Ts... >, char >:
     { 
         auto flat = flatten_tuple( tup );
 
-        auto format_ith = [&]< size_t I >( seq< I > ) constexpr
+        auto format_ith = [&, this]< size_t I >( seq< I > ) constexpr
         {
-            format( get< I >( flat ), ctx );
+            using element_type = tuple_element_t< I, flat_tuple_type >;
+            formatter< element_type, char >::format( get< I >( flat ), ctx );
             auto i = ctx.out();
             *i++ = ' ';
             ctx.advance_to( i );

@@ -46,13 +46,13 @@ int main( int ac, char* av[] )
     auto f = ( 5 + zero + one );
 
     println( "{}", f | vars );
-    println( "{}", x );
-    println( "{}", x * one );
-    println( "{}", x + one );
-    println( "{}", x - one );
-    println( "{}", -x );
-    println( "{}", ( x == one ) );
-    println( "{}", ( x == one and x == zero ) );
+    println( "{}", x | vars );
+    println( "{}", ( x * one )| vars );
+    println( "{}", ( x + one )| vars );
+    println( "{}", ( x - one )| vars );
+    println( "{}", ( -x )| vars );
+    println( "{}", ( x == one )| vars );
+    println( "{}", ( x == one and x == zero )| vars );
     
     x = 8.l;
 
@@ -68,7 +68,7 @@ int main( int ac, char* av[] )
 
     auto h = ( 1_sqft - l * l ) / 254_mm;
     println( std::runtime_format( "h({}) == {}" ), l, h );
-    println( "h({}) == {:ft}", 12_in, h | vars );
+    println( std::runtime_format( "h({}) == {:ft}" ), 12_in, h | vars );
 
     auto dh = d_l( h );
     println( "{}", dh );
@@ -98,10 +98,14 @@ int main( int ac, char* av[] )
 
     a = 1_scalar;
 
-    println( "det(1,-1,1,1) == {}", det( m1 ) | vars );
-    assert(( det( m1 ) | vars ) == 2_scalar );
-    assert(( d_a( det( m1 )) | vars ) == 4_scalar );
-
+    assert(( static_expr( 1 ) + static_expr( 2 )   | 
+        manipulate( [&]( auto n ){ return n + 1; }) | 
+        eval()) == 5 );
+ 
+//    println( "det(1,-1,1,1) == {}", det( m1 ) | vars );
+//    assert(( det( m1 ) | vars ) == 2_scalar );
+//    assert(( d_a( det( m1 )) | vars ) == 4_scalar );
+//
     //auto grad = gradient( a );
 
     // eval( vec( w, z ), minimize( para2, iterations( n ), iteration_delta( d )) and n < 1000 and 
@@ -185,10 +189,13 @@ void test_minimization()
     // parabola
     auto para = ( pow< 2 >( x - 2 ) + 3 );
 
-    auto x0 = para | min_arg( x );
+    auto x0 = argmin( para, x );
+
 
     // paraboloid
     auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+
+    //assert( para2( 2_ft, 3_ft ) == 3_ft * 1_ft );
 
     // verify the dependent_variables_t trait works
 //    static_assert( 

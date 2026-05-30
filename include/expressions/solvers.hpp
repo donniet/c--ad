@@ -155,12 +155,12 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
         auto scope = Scope< Vars... >{};
 
         auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
-        { ( scope.template set< Vars...[ Is ]>( std::get< Is >( _inits )), ...); };
+        { ( scope.template set_value< Vars...[ Is ]>( std::get< Is >( _inits )), ...); };
 
         // scope update helper
         // TODO: enforce the tuple-type here with a requires on the IterationBuilder
         auto scope_updater = [&]< size_t... Is >( seq< Is... > )
-        { (( scope.template set< Vars...[Is]>( std::get< Is >( _updates ) | scope )), ... ); };
+        { (( scope.template set_value< Vars...[Is]>( std::get< Is >( _updates ) | scope )), ... ); };
 
         scope_initializer( make_seq< sizeof...( Updates )>{} );
 
