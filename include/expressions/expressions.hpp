@@ -839,10 +839,19 @@ protected:
     constexpr Arguments() = default;
 };
 
+/// @brief Manipulation operator for compound expressions
+///
+/// @tparam ExprT is the type of the expression to be manipulated
+/// @tparam ManipulatorT is the type of the manipulator
+/// @param expr is the expression value
+/// @param manipulator is the manipulator value
+/// @returns the result of calling apply on expr with the manipulator parameter
 template< compound_expression ExprT, typename ManipulatorT >
 constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
 { return expr.apply( manipulator ); }
 
+/// @brief Manipulation operator for tuples of expressions
+///
 template< expression... Exprs, typename ManipulatorT >
 //requires( not compound_expression< tuple< Exprs... >> )
 constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const& manipulator )
@@ -853,6 +862,8 @@ constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const
     return helper( make_seq< sizeof...( Exprs )>{} );
 }
 
+/// @brief Manipulation operator for tensors of expressions
+///
 template< typename ShapeT, expression... Exprs, typename ManipulatorT >
 constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT const& manipulator )
 {
@@ -881,6 +892,10 @@ constexpr expression_argument_t< I, ExprT > const&
 get_argument( ExprT const& expr )
 { return GetArgument< I, ExprT >::value( expr ); }
 
+template< typename ScopeT = void >
+struct Evaluator;
+
+namespace detail {
 template< typename FuncT >
 struct ManipulatorFunctor 
 {
@@ -894,9 +909,6 @@ struct ManipulatorFunctor
     functor_type _func;
 };
 
-template< typename ScopeT = void >
-struct Evaluator;
-
 struct EvaluatorBase
 {
     template< auto Value >
@@ -909,9 +921,10 @@ struct EvaluatorBase
     operator ()( StaticValue< T > const& static_value ) const
     { return static_value.get_value(); }
 };
+} // namespace detail
 
 template< typename ScopeT >
-struct Evaluator: EvaluatorBase
+struct Evaluator: detail::EvaluatorBase
 {
     using scope_type = ScopeT;
 
@@ -924,11 +937,11 @@ struct Evaluator: EvaluatorBase
 };
 
 template< >
-struct Evaluator< void >: EvaluatorBase
+struct Evaluator< void >: detail::EvaluatorBase
 { };
 
 template< typename FuncT >
-ManipulatorFunctor< FuncT > manipulate( FuncT&& func )
+detail::ManipulatorFunctor< FuncT > manipulate( FuncT&& func )
 { return { func }; }
 
 template< typename ScopeT >
