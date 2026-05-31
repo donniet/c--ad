@@ -9,12 +9,14 @@
 ///   expressions in this library.
 /// - compound_expression< T >: is an expression with arguments
 /// - variable< V >: is a Variable< I, T > expression placeholder
+/// - derivation< D >: a manipulator that obeys the product and chain rules
+///   of differentiation.
 ///
 /// # Base Types
 /// - Constant< value > is a template-aware constant expression
 /// - StaticValue< T > is a typed expression with an unchanging value
 /// - Variable< I, T > is a placeholder uniquely identified by the size_t 
-///   template argument I called the exposed as Variable< I, T >::index
+///   template argument I exposed as Variable< I, T >::index
 /// - Scope< Vars... > is a tuple-like object that stores names and values
 ///   of Variable< I, T > placeholder types and acts as a manipulator
 ///   such that the application of a Scope<> to an expression evaluates the 
@@ -24,6 +26,10 @@
 /// # Operators
 /// - operator ()( Subs... ) is overloaded by Arguments< Op, Args... > and 
 ///   substitutes ...Subs for the dependent variables of the parent expression
+/// - operator |( Manipulator ) applies a Manipulator to an expression.  An
+///   evaluator is a type of manipulator that, and Scope<...> evaluates
+///   the placeholder variables against it's stored values when used as a
+///   manipulator.
 ///   
 
 
@@ -76,12 +82,10 @@ static constexpr bool is_expression_v = is_expression< T >::value;
 template< typename T >
 concept expression = is_expression_v< T >;
 
-template< typename ResultT, typename ExprT = void >
-struct Expression;
-
 /// @brief type erased expression container
+/// TODO: build a stack representation of the expression
 template< typename ResultT >
-struct Expression< ResultT, void >: detail::ExpressionTag
+struct Expression: detail::ExpressionTag
 {
     using result_type = ResultT;
 
