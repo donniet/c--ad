@@ -339,20 +339,6 @@ struct VariablesTuple
 template< size_t Start, typename... Ts >
 using variables_tuple_t = VariablesTuple< Start, Ts... >::type;
 
-//template< variable Var, typename ScopeT >
-//struct variable_traits< ScopedVariable< Var, ScopeT >>
-//{
-//    static constexpr bool is_variable = true;
-//    using value_type = Var::value_type;
-//    static constexpr size_t index = Var::index;
-//    using variable_type = Variable< index, value_type >;
-//    static constexpr variable_type variable() { return {}; }
-//};
-//
-//template< variable Var, typename ScopeT >
-//struct IsVariable< ScopedVariable< Var, ScopeT >>: integral_constant< bool,
-//    true > { };
-
 template< variable Var >
 struct ScopedVariableByPointer: virtual ScopedVariable< Var > {
 private:
