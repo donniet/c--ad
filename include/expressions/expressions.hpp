@@ -64,8 +64,7 @@ using namespace tensors;
 
 namespace detail {
 /// @brief base class used to identify an expression
-struct ExpressionTag 
-{ };
+struct ExpressionTag { };
 } // namespace detail
 
 /// @brief trait to identify a type as an expression type
@@ -528,13 +527,13 @@ declare_variables( Decls... decls )
 
 namespace detail {
 
-/// @brief evaluates a type T
+/// @brief Trait for the result type of an expression
 /// @tparam T the type to be evaluated
 ///
 template< typename T >
 struct Result;
 
-/// @brief evaluator for expressions of type T
+/// @brief Trait for the result type of an expression
 /// @tparam T the type of the expression
 ///
 template< typename T >
@@ -708,27 +707,28 @@ template< typename T >
 concept compound_expression = expression< T > and requires( T )
 { typename T::argument_types; };
 
-template< typename SubTuple, typename VarsTuple >
+namespace detail {
+template< typename VarsTule, typename SubTuple >
 struct CompatibleSubstitutionHelper;
 
-template< typename... Subs, typename... Vars >
-requires( sizeof...( Subs ) != sizeof...( Vars ))
-struct CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >>: 
+template< typename... Vars, typename... Subs >
+requires( sizeof...( Vars ) != sizeof...( Subs ))
+struct CompatibleSubstitutionHelper< tuple< Vars... >, tuple< Subs... >>: 
     integral_constant< bool, false > { };
 
-template< typename Sub, typename... Subs, typename Var, typename... Vars >
-requires( sizeof...( Subs ) == sizeof...( Vars ) and 
+template< typename Var, typename... Vars, typename Sub, typename... Subs >
+requires( sizeof...( Vars ) == sizeof...( Subs ) and 
     std::is_convertible_v< result_t< Sub >, result_t< Var >> )
 struct CompatibleSubstitutionHelper< 
-    tuple< Sub, Subs... >, tuple< Var, Vars... >>: 
-        CompatibleSubstitutionHelper< tuple< Subs... >, tuple< Vars... >> 
+    tuple< Var, Vars... >, tuple< Sub, Subs... >>: 
+        CompatibleSubstitutionHelper< tuple< Vars... >, tuple< Subs... >> 
 { };
 
-template< typename Sub, typename... Subs, typename Var, typename... Vars >
-requires( sizeof...( Subs ) == sizeof...( Vars ) and 
+template< typename Var, typename... Vars, typename Sub, typename... Subs >
+requires( sizeof...( Vars ) == sizeof...( Subs ) and 
     not std::is_convertible_v< result_t< Sub >, result_t< Var >> )
 struct CompatibleSubstitutionHelper< 
-    tuple< Sub, Subs... >, tuple< Var, Vars... >>: integral_constant< bool,
+    tuple< Var, Vars... >, tuple< Sub, Subs... >>: integral_constant< bool,
         false > 
 { };
 
@@ -752,12 +752,13 @@ template< typename ExprT, typename... Subs >
 requires( compound_expression< ExprT > )
 struct CompatibleSubstitution< ExprT, Subs... >:
     CompatibleSubstitutionHelper< 
-        tuple< Subs... >, dependent_variables_t< ExprT >>
+        dependent_variables_t< ExprT >, tuple< Subs... >>
 { };
+} // namespace detail
 
 template< typename ExprT, typename... Subs >
 constexpr bool is_compatible_substitution_v = 
-    CompatibleSubstitution< ExprT, Subs... >::value;
+    detail::CompatibleSubstitution< ExprT, Subs... >::value;
 
 // forward declaration
 template< typename ExprT, typename... Args >
@@ -854,10 +855,12 @@ constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
 ///
 template< expression... Exprs, typename ManipulatorT >
 //requires( not compound_expression< tuple< Exprs... >> )
-constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const& manipulator )
+constexpr auto operator |( tuple< Exprs... > const& expr_tup, 
+    ManipulatorT const& manipulator )
 {
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-    { return std::make_tuple(( std::get< Is >( expr_tup ) | manipulator )... ); };
+    { return std::make_tuple(
+        ( std::get< Is >( expr_tup ) | manipulator )... ); };
 
     return helper( make_seq< sizeof...( Exprs )>{} );
 }
@@ -865,10 +868,12 @@ constexpr auto operator |( tuple< Exprs... > const& expr_tup, ManipulatorT const
 /// @brief Manipulation operator for tensors of expressions
 ///
 template< typename ShapeT, expression... Exprs, typename ManipulatorT >
-constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT const& manipulator )
+constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, 
+    ManipulatorT const& manipulator )
 {
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-    { return make_tensor< ShapeT >(( tensor_get< Is >( expr_ten ) | manipulator )... ); };
+    { return make_tensor< ShapeT >(
+        ( tensor_get< Is >( expr_ten ) | manipulator )... ); };
 
     return helper( make_seq< sizeof...( Exprs )>{} );
 }
@@ -1052,72 +1057,245 @@ template< typename ExprT >
 requires( tuple_size_v< dependent_variables_t< ExprT >> == 0 )
 struct ForExpression< ExprT >
 {
-    // default case
+    // default case does not match
     template< typename TestT >
-    struct Is: integral_constant< bool, false > { };
+    struct Is: integral_constant< bool, false > 
+    {  using matches_type = tuple<>; };
 
-    // expression matches
+    // expression matches verbatim, so no variable matches need to be tracked
     template< >
-    struct Is< ExprT >: integral_constant< bool, true > { };
+    struct Is< ExprT >: integral_constant< bool, true > 
+    { using matches_type = tuple<>; };
 };
 
 // @brief specialization for individual variables
+//
+// variables always match, 
 template< size_t I, typename T >
 struct ForExpression< Variable< I, T >>
 {
-    // default case
+    // variables match anything by default
     template< typename TestT >
-    struct Is: integral_constant< bool, false > {};
-
-    // expression matches
-    template< >
-    struct Is< Variable< I, T >>: integral_constant< bool, true > {};
+    struct Is: integral_constant< bool, true > 
+    { using matches_type = tuple< tuple< Variable< I, T >, TestT >>; };
 };
 
-// TODO: write a pattern matcher for asts
-// template< template< typename... > class Op, typename... Args >
-// requires( isgreater( tuple_size_v< dependent_variables_t< Op< Args... >>>, 0 ))
-// struct ForExpression< Op< Args... >>
-// {
-// // private:
-//     template< typename Seq, typename... TestArgs >
-//     struct Helper;
-// 
-//     template< size_t... Js, typename... TestArgs >
-//     struct Helper< seq< Js... >, TestArgs... > {
-//     private:
-//         using matches_tuple = tuple< typename
-//             ForExpression< Args...[ Js ]>::template Is< TestArgs...[ Js ]>
-//                 ... >;
-// 
-//         using compatible_matches = CompatibleMatches< typename
-//             tuple_element_t< Js, matches_tuple >::matches_type... >;
-// 
-//     public:
-//         // we match if our arguments match, and if there are no conflicts
-//         // in the variable matches
-//         static constexpr bool value = 
-//             ( tuple_element_t< Js, matches_tuple >::value and ... ) and
-//                 compatible_matches::value;
-// 
-//         using matches_type = compatible_matches::matches_type;
-//     };
-// 
-//     // default case
-//     template< typename TestT >
-//     struct Is: integral_constant< bool, false > { };
-// 
-//     // possible match
-//     template< typename... TestArgs >
-//     requires( sizeof...( Args ) == sizeof...( TestArgs ))
-//     struct Is< Op< TestArgs... >>: 
-//         Helper< make_seq< sizeof...( Args )>, TestArgs... > 
-//     { };
-// };
-// 
+/// @brief specialization for compound expressions with dependent variables
+///
+template< template< typename... > class Op, typename... Args >
+requires( isgreater( tuple_size_v< dependent_variables_t< Op< Args... >>>, 0 ))
+struct ForExpression< Op< Args... >> {
+private:
+    // parses a match and extracts the matched variable
+    template< typename MatchT >
+    struct MatchedVariable;
+
+    // parses a match and extracts the matched expression
+    template< typename MatchT >
+    struct MatchedExpression;
+
+    template< size_t I, typename T, typename ExprT >
+    struct MatchedVariable< tuple< Variable< I, T >, ExprT >>
+    { using type = Variable< I, T >; };
+
+    template< size_t I, typename T, typename ExprT >
+    struct MatchedExpression< tuple< Variable< I, T >, ExprT >>
+    { using type = ExprT; };
+
+    template< typename MatchT >
+    using matched_variable_t = MatchedVariable< MatchT >::type;
+
+    template< typename MatchT >
+    using matched_expression_t = MatchedExpression< MatchT >::type;
+
+    // yields the first match from ...Matches with the variable id equal
+    // to VariableId
+    template< size_t VariableId, typename... Matches >
+    struct ChooseMatchByVariableId;
+
+    // null case should never happen
+    template< size_t VariableId >
+    struct ChooseMatchByVariableId< VariableId >
+    { 
+#ifndef NDEBUG
+        static_assert( false, 
+            "no expression found while searching for variable" ); 
+#endif
+        using type = tuple< void, void >;
+    };
+
+    // if the first id matches yield the corresponding expression type
+    template< size_t I, size_t J, typename U, typename ExprU, typename... Rest >
+    requires( I == J )
+    struct ChooseMatchByVariableId< I, tuple< Variable< J, U >, ExprU >, 
+        Rest... >
+    { using type = tuple< Variable< J, U >, ExprU >; };
+
+    // if the first id does not match test the remaining matches
+    template< size_t I, size_t J, typename U, typename ExprU, typename... Rest >
+    requires( I != J )
+    struct ChooseMatchByVariableId< I, tuple< Variable< J, U >, ExprU >, 
+        Rest... >: ChooseMatchByVariableId< I, Rest... >
+    { };
+
+    // helpers to extract a tuple of unique variable matches from a list
+    template< typename Seq, typename... Matches >
+    struct UniqueMatchesHelper;
+
+    template< size_t... Is, typename... Matches >
+    struct UniqueMatchesHelper< seq< Is... >, Matches... >
+    {
+        // collect the unique variable indices from all the matches
+        using unique_variable_id_seq = sort_unique_seq< seq< 
+            matched_variable_t< Matches...[ Is ]>::index... >>;
+
+        // helper to find matched expression for each unique variable
+        // indexed by Seq
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Js >
+        struct Helper< seq< Js... >>
+        { using matches_type = tuple< typename ChooseMatchByVariableId< Js, 
+            Matches... >::type... >; };
+
+        using matches_type = Helper< unique_variable_id_seq >::matches_type;
+    };
+    
+    template< typename... Matches >
+    struct UniqueMatches: UniqueMatchesHelper< make_seq< sizeof...( Matches )>,
+        Matches... >
+    { };
+
+
+    // helper to test the predicate matches from our arguments
+    template< typename... >
+    struct AreArgumentMatchesCompatible;
+
+    template< >
+    struct AreArgumentMatchesCompatible<>: integral_constant< bool, true >
+    { using matches_type = tuple<>; };
+
+    template< typename MatchesT >
+    struct AreArgumentMatchesCompatible< MatchesT >: integral_constant< bool, true >
+    { using matches_type = MatchesT; };
+
+
+
+    // helper class for comparing two tuples of matched variables
+    template< typename LeftTuple, typename RightTuple, typename Seq >
+    struct CompatibilityHelper;
+
+    // if one of the variable matches is empty we automatically succeed
+    // and use the other list of matches
+    template< typename... LeftMatches >
+    struct CompatibilityHelper< tuple< LeftMatches... >, tuple< >, seq< >>:
+        integral_constant< bool, true >
+    { using matches_type = tuple< LeftMatches... >; };
+
+    template< typename... RightMatches >
+    requires( isgreater( sizeof...( RightMatches ), 0 )) // remove ambiguity
+    struct CompatibilityHelper< tuple< >, tuple< RightMatches... >, seq< >>:
+        integral_constant< bool, true >
+    { using matches_type = tuple< RightMatches... >; };
+
+    // neither side is empty
+    template< typename LeftMatches, typename RightMatches, size_t... Is >
+    requires( 
+        isgreater( tuple_size_v< typename LeftMatches::matches_type >, 0 ) and
+        isgreater( tuple_size_v< typename RightMatches::matches_type >, 0 ))
+    struct CompatibilityHelper< LeftMatches, RightMatches, seq< Is... >>
+    {
+        static constexpr size_t left_matches_size = tuple_size_v< typename
+            LeftMatches::matches_type >;
+
+        static constexpr size_t right_matches_size = tuple_size_v< typename 
+            RightMatches::matches_type >;
+
+        template< size_t I >
+        using left_match_t = tuple_element_t< I / right_matches_size, typename 
+            LeftMatches::matches_type >;
+
+        template< size_t I >
+        using right_match_t = tuple_element_t< I % right_matches_size, typename
+            RightMatches::matches_type >;
+
+        // if the variable indices match the corresponding expression types must be equal
+        static constexpr bool value = ((
+            matched_variable_t< left_match_t< Is >>::index != 
+                matched_variable_t< right_match_t< Is >>::index or is_same_v<
+                    matched_expression_t< left_match_t< Is >>,
+                        matched_expression_t< right_match_t< Is >>> ) and ... );
+
+        template< typename SeqLeft, typename SeqRight >
+        struct UniqueMatchesHelper;
+
+        template< size_t... Js, size_t... Ks >
+        struct UniqueMatchesHelper< seq< Js... >, seq< Ks... >>:
+            UniqueMatches< left_match_t< Js >..., right_match_t< Ks >... >
+        { };
+
+        // our matches are the unique set of matches from the combined left and right matches
+        using matches_type = UniqueMatchesHelper< make_seq< left_matches_size >, 
+            make_seq< right_matches_size >>::matches_type;
+    };
+
+    template< typename LeftMatches, typename RightMatches >
+    struct AreArgumentMatchesCompatible< LeftMatches, RightMatches >:
+        CompatibilityHelper< LeftMatches, RightMatches,
+            make_seq< tuple_size_v< typename LeftMatches::matches_type > * 
+                tuple_size_v< typename RightMatches::matches_type >>>
+    { };
+
+    // when we have more than two variable matching tuples to compare, check
+    // the tail.  if that is compatible, compare those matches to the first
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ) and 
+        AreArgumentMatchesCompatible< Rest... >::value )
+    struct AreArgumentMatchesCompatible< First, Rest... >:
+        AreArgumentMatchesCompatible< First, AreArgumentMatchesCompatible< Rest... >>
+    { };
+
+    // when the tail is incompatible simply evaluate to false with an empty
+    // tuple of matches
+    template< typename First, typename... Rest >
+    requires( isgreater( sizeof...( Rest ), 1 ) and not
+        AreArgumentMatchesCompatible< Rest... >::value )
+    struct AreArgumentMatchesCompatible< First, Rest... >:
+        integral_constant< bool, false >
+    { using matches_type = tuple<>; };
+        
+    // helper allows us to compare the arguments of this operation pairwise
+    template< typename Seq, typename... TestArgs >
+    struct Helper;
+
+    // helper recurses when our operation matches the operation of the
+    // expression being tested.  
+    template< size_t... Js, typename... TestArgs >
+    struct Helper< seq< Js... >, TestArgs... >: 
+        AreArgumentMatchesCompatible< typename 
+            ForExpression< Args...[ Js ]>::template Is< TestArgs...[ Js ]>... >
+    { };
+
+public:
+    // by default we will not match TestT
+    template< typename TestT >
+    struct Is: integral_constant< bool, false > 
+    { using matches_type = tuple<>; };
+
+    // this predicate requires the operation of the compound expression to match
+    // the helper will determine if the arguments match.
+    template< typename... TestArgs >
+    requires( sizeof...( Args ) == sizeof...( TestArgs ))
+    struct Is< Op< TestArgs... >>: 
+        Helper< make_seq< sizeof...( Args )>, TestArgs... > 
+    { };
+};
+
 
 /// @brief expression manipulator that replaces any argument in an expression
 /// with the given WithT argument.
+///
 /// @tparam Predicate resolves to an integral_constant< bool, ... > like
 /// like object-type (ie: has a constexpr static bool value member) which
 /// flags the expression passed as the template parameter as substitutable
@@ -1212,13 +1390,15 @@ private:
     private:
         // fetch the index of the Ith variable
         static constexpr size_t Ith = tuple_element_t< I, dependent_variables_tuple >::index;
+
         // alias for the Ith argument substitutor
-        using ith_substituter = PredicateSubstitution< ForVariable< Ith >::template Is,
-            ExprU, Args...[ I ]>;
+        using ith_substituter = PredicateSubstitution< 
+            ForVariable< Ith >::template Is, ExprU, Args...[ I ]>;
 
     public:
         // recursively define our resultant type
         using type = Helper< typename ith_substituter::type, seq< Is... >>::type;
+
         // recursively define our final substitution value
         static constexpr type value( ExprU expr, Args const&... args )
         { return Helper< typename ith_substituter::type, seq< Is... >>::value( 
@@ -1235,6 +1415,7 @@ public:
 };
 
 /// @brief substitutes arguments for the dependent variables of an expression
+///
 /// @tparam ExprT type of the expression to be substituted into
 /// @tparam Args... types of the args being substituted
 /// @param expr is the instance of the original expression
@@ -1243,7 +1424,6 @@ template< typename ExprT, typename... Args >
 constexpr typename Substitution< ExprT, Args... >::type 
 substitution( ExprT expr, Args... args )
 { return Substitution< ExprT, Args... >::value( expr, args... ); }
-
 
 ///////////////////
 /// Operations ///
@@ -1794,6 +1974,26 @@ struct Compliment: Arguments< Compliment, T >
     constexpr Compliment() = default;
 };
 
+// predicate expression tests
+//#ifndef NDEBUG
+namespace test {
+
+static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
+    Sum< Constant< 5 >, Constant< 6 >>>::value );
+static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
+    Difference< Constant< 5 >, Constant< 6 >>>::value );
+static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
+    Sum< Constant< 5 >, Constant< 5 >>>::value );
+static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
+    Sum< Constant< 5 >, Constant< 7 >>>::value );
+static_assert( is_same_v< tuple_element_t< 0, typename ForExpression< 
+    Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
+        Sum< Constant< 5 >, Constant< 5 >>>::matches_type >, 
+            tuple< Variable< 0, int >, Constant< 5 >>> );
+
+} // namespace test
+//#endif // DEBUG
+
 template< typename ExprT >
 struct IsBooleanExpression: 
     integral_constant< bool, is_same_v< result_t< ExprT >, bool >> { };
@@ -2291,6 +2491,14 @@ constexpr auto operator not( T const& arg )
 // constexpr auto argmin( ExprT const& expr )
 // { return ArgumentMinimum< ExprT >{ expr }; }
 // 
+//
+
+template< typename ExprT >
+struct Delta: Derivation
+{
+    
+};
+
 template< size_t I, typename T >
 struct Differential
 {
@@ -2463,6 +2671,17 @@ struct JacobianOperator
 
 
 
+///////////////
+/// Solver ///
+/////////////
+/// 
+///
+struct Solver 
+{
+    template< typename ExprT >
+    constexpr auto operator ()( ExprT const& expr ) const
+    { }
+};
 
 
 } // namespace expressions
