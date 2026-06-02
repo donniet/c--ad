@@ -1032,8 +1032,21 @@ constexpr element_of< I, T > element( T const& arr )
 ////////////////////////////////
 ///
 /// predicates used to identify parts of expressions to substitute
-///
-///
+
+template< variable Var, expression ExprT >
+struct match
+{
+    using variable_type = Var;
+    using expression_type = ExprT;
+};
+
+struct no_match;
+
+template< typename MatchT >
+using match_variable_t = MatchT::variable_type;
+
+template< typename MatchT >
+using match_expression_t = MatchT::expression_type;
 
 /// @brief predicate class for the Ith variable index
 template< size_t I >
@@ -1074,10 +1087,10 @@ struct ForExpression< ExprT >
 template< size_t I, typename T >
 struct ForExpression< Variable< I, T >>
 {
-    // variables match anything by default
+    // variables match anything with the appropriate result type 
     template< typename TestT >
-    struct Is: integral_constant< bool, true > 
-    { using matches_type = tuple< tuple< Variable< I, T >, TestT >>; };
+    struct Is: integral_constant< bool, is_same_v< T, result_t< TestT >>> 
+    { using matches_type = tuple< match< Variable< I, T >, TestT >>; };
 };
 
 /// @brief specialization for compound expressions with dependent variables
@@ -1086,28 +1099,6 @@ template< template< typename... > class Op, typename... Args >
 requires( isgreater( tuple_size_v< dependent_variables_t< Op< Args... >>>, 0 ))
 struct ForExpression< Op< Args... >> {
 private:
-    // parses a match and extracts the matched variable
-    template< typename MatchT >
-    struct MatchedVariable;
-
-    // parses a match and extracts the matched expression
-    template< typename MatchT >
-    struct MatchedExpression;
-
-    template< size_t I, typename T, typename ExprT >
-    struct MatchedVariable< tuple< Variable< I, T >, ExprT >>
-    { using type = Variable< I, T >; };
-
-    template< size_t I, typename T, typename ExprT >
-    struct MatchedExpression< tuple< Variable< I, T >, ExprT >>
-    { using type = ExprT; };
-
-    template< typename MatchT >
-    using matched_variable_t = MatchedVariable< MatchT >::type;
-
-    template< typename MatchT >
-    using matched_expression_t = MatchedExpression< MatchT >::type;
-
     // yields the first match from ...Matches with the variable id equal
     // to VariableId
     template< size_t VariableId, typename... Matches >
@@ -1121,20 +1112,20 @@ private:
         static_assert( false, 
             "no expression found while searching for variable" ); 
 #endif
-        using type = tuple< void, void >;
+        using type = no_match;
     };
 
     // if the first id matches yield the corresponding expression type
     template< size_t I, size_t J, typename U, typename ExprU, typename... Rest >
     requires( I == J )
-    struct ChooseMatchByVariableId< I, tuple< Variable< J, U >, ExprU >, 
+    struct ChooseMatchByVariableId< I, match< Variable< J, U >, ExprU >, 
         Rest... >
-    { using type = tuple< Variable< J, U >, ExprU >; };
+    { using type = match< Variable< J, U >, ExprU >; };
 
     // if the first id does not match test the remaining matches
     template< size_t I, size_t J, typename U, typename ExprU, typename... Rest >
     requires( I != J )
-    struct ChooseMatchByVariableId< I, tuple< Variable< J, U >, ExprU >, 
+    struct ChooseMatchByVariableId< I, match< Variable< J, U >, ExprU >, 
         Rest... >: ChooseMatchByVariableId< I, Rest... >
     { };
 
@@ -1147,7 +1138,7 @@ private:
     {
         // collect the unique variable indices from all the matches
         using unique_variable_id_seq = sort_unique_seq< seq< 
-            matched_variable_t< Matches...[ Is ]>::index... >>;
+            match_variable_t< Matches...[ Is ]>::index... >>;
 
         // helper to find matched expression for each unique variable
         // indexed by Seq
@@ -1167,7 +1158,6 @@ private:
         Matches... >
     { };
 
-
     // helper to test the predicate matches from our arguments
     template< typename... >
     struct AreArgumentMatchesCompatible;
@@ -1177,10 +1167,8 @@ private:
     { using matches_type = tuple<>; };
 
     template< typename MatchesT >
-    struct AreArgumentMatchesCompatible< MatchesT >: integral_constant< bool, true >
-    { using matches_type = MatchesT; };
-
-
+    struct AreArgumentMatchesCompatible< MatchesT >: integral_constant< bool, MatchesT::value >
+    { using matches_type = MatchesT::matches_type; };
 
     // helper class for comparing two tuples of matched variables
     template< typename LeftTuple, typename RightTuple, typename Seq >
@@ -1222,10 +1210,10 @@ private:
 
         // if the variable indices match the corresponding expression types must be equal
         static constexpr bool value = ((
-            matched_variable_t< left_match_t< Is >>::index != 
-                matched_variable_t< right_match_t< Is >>::index or is_same_v<
-                    matched_expression_t< left_match_t< Is >>,
-                        matched_expression_t< right_match_t< Is >>> ) and ... );
+            match_variable_t< left_match_t< Is >>::index != 
+                match_variable_t< right_match_t< Is >>::index or is_same_v<
+                    match_expression_t< left_match_t< Is >>,
+                        match_expression_t< right_match_t< Is >>> ) and ... );
 
         template< typename SeqLeft, typename SeqRight >
         struct UniqueMatchesHelper;
@@ -1241,6 +1229,13 @@ private:
     };
 
     template< typename LeftMatches, typename RightMatches >
+    requires( not LeftMatches::value or not RightMatches::value )
+    struct AreArgumentMatchesCompatible< LeftMatches, RightMatches >:
+        integral_constant< bool, false >
+    { using matches_type = tuple<>; };
+
+    template< typename LeftMatches, typename RightMatches >
+    requires( LeftMatches::value and RightMatches::value )
     struct AreArgumentMatchesCompatible< LeftMatches, RightMatches >:
         CompatibilityHelper< LeftMatches, RightMatches,
             make_seq< tuple_size_v< typename LeftMatches::matches_type > * 
@@ -1978,18 +1973,33 @@ struct Compliment: Arguments< Compliment, T >
 //#ifndef NDEBUG
 namespace test {
 
+static_assert( ForExpression< Variable< 0, int >>::template Is< Constant< 5 >>::value );
+static_assert( not ForExpression< Variable< 0, int >>::template Is< Constant< units::Length{ 5 }>>::value );
+
 static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
-    Sum< Constant< 5 >, Constant< 6 >>>::value );
+    Sum< Constant< 5 >, Constant< 6 >>>::value, 
+        "FAILED: <int> + <int> =matches=> 5 + 6" );
+
 static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
-    Difference< Constant< 5 >, Constant< 6 >>>::value );
+    Sum< Constant< units::Length{ 5 } >, Constant< units::Length{ 6 } >>>::value, 
+        "FAILED: <int> + <int> =not-matches=> 5m + 6m" );
+
+static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
+    Difference< Constant< 5 >, Constant< 6 >>>::value,
+        "FAILED: <int> + <int> =not-matches=> 5 - 6" );
+
 static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
-    Sum< Constant< 5 >, Constant< 5 >>>::value );
+    Sum< Constant< 5 >, Constant< 5 >>>::value, 
+        "FAILED: <int[0]> + <int[0]> =matches=> 5 + 5" );
+
 static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
-    Sum< Constant< 5 >, Constant< 7 >>>::value );
+    Sum< Constant< 5 >, Constant< 7 >>>::value, 
+        "FAILED: <int[0]> + <int[0]> =not-matches=> 5 + 7" );
+
 static_assert( is_same_v< tuple_element_t< 0, typename ForExpression< 
     Sum< Variable< 0, int >, Variable< 0, int >>>::template Is<
         Sum< Constant< 5 >, Constant< 5 >>>::matches_type >, 
-            tuple< Variable< 0, int >, Constant< 5 >>> );
+            match< Variable< 0, int >, Constant< 5 >>> );
 
 } // namespace test
 //#endif // DEBUG
