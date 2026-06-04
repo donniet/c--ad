@@ -54,7 +54,7 @@ int main( int ac, char* av[] )
     println( "{}", ( x == one )| vars );
     println( "{}", ( x == one and x == zero )| vars );
     
-    x = 8.l;
+    vars( x = 8.l, l = 12_in );
 
     auto g = ( 5 + 3*x - f );
     println( "{}", g | vars );
@@ -63,8 +63,6 @@ int main( int ac, char* av[] )
     auto dg = d_x( g );
     println( "{}", dg );
     println( "g() == {}", dg | vars );
-
-    l = 12_in;
 
     auto h = ( 1_sqft - l * l ) / 254_mm;
     println( std::runtime_format( "h({}) == {}" ), l, h );
@@ -81,13 +79,13 @@ int main( int ac, char* av[] )
 
     auto eq = ( t1 == t2 );
 
-    v = 2_mm / 1_s;
+    vars( v = 2_mm / 1_s );
 
     assert( eq | vars );
     println( "{} == {} => {}", t1, t2, eq | vars );
     assert(( s1 == s2 ) | vars );
 
-    v = 2_ft / 1_s;
+    vars( v = 2_ft / 1_s );
 
     assert( not ( eq | vars ));
     assert(( s1 != s2 ) | vars );
@@ -96,7 +94,7 @@ int main( int ac, char* av[] )
         a, -a,
         a, a );
 
-    a = 1_scalar;
+    vars( a = 1_scalar );
 
     assert(( static_expr( 1 ) + static_expr( 2 )   | 
         manipulate( [&]( auto n ){ return n + 1; }) | 

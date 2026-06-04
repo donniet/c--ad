@@ -64,6 +64,56 @@ using namespace normalization;
 // 
 // template< expression... Exprs, variable... Vars >
 // struct Solver< Conjunction< Exprs... >, tuple< Vars... >>;
+/// @brief forward declaration for solving an expression.  Not all expressions
+/// will be solvable, so we do not expect this class to be specialized in 
+/// every case.
+template< expression ExprT >
+struct Solver;
+
+/// @brief an expression is considered solvable if a solver exists for it
+template< typename ExprT >
+concept solvable = requires( ExprT )
+{ typename Solver< ExprT >; };
+
+/// @brief the simplest solvers
+template< size_t I, typename T, expression ExprT >
+requires( tuple_size_v< dependent_variables_t< ExprT >> == 0 and
+    is_convertible_v< result_t< ExprT >, T > )
+struct Solver< Equals< Variable< I, T >, ExprT >>:
+    Scope< Variable< I, T >>
+{
+    using right_expression_type = ExprT;
+    using variable_type = Variable< I, T >;
+    using expression_type = Solver< Equals< 
+        variable_type, right_expression_type >>;
+    using scope_type = Scope< variable_type >;
+
+    // this solver does not need to iterate
+    static constexpr bool is_iterative() { return false; }
+    // this solver is guaranteed to complete
+    static constexpr bool is_bounded() { return true; }
+    // this solver will always converge on the correct solution
+    static constexpr bool is_convergent() { return true; }
+
+    template< typename ExprU >
+    requires( is_scope_for_v< scope_type, ExprU > )
+    constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
+    { return scope_type::operator ()( expr ); }
+
+    // the solution is trivial here
+    constexpr Solver(): scope_type{ } 
+    { scope_type::template set_value< Variable< I, T >>( 
+            scope_type::operator ()( right_expression_type{} )); }
+
+};
+
+template< expression LeftT, expression RightT >
+requires( solvable< Equals< RightT, LeftT >> )
+struct Solver< Equals< LeftT, RightT >>: Solver< Equals< RightT, LeftT >>
+{ };
+
+static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
+static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
 
 /// @brief Represents an iterative expression. An instance of an iteration is 
 /// created by the builder types IterationInitializer and IterationUpdater
@@ -149,6 +199,8 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
     constexpr tuple< Updates... > updates() const{ return _updates; }
     constexpr tuple< Vars... > vars() const { return _vars; }
 
+    // TODO: should this be re-wrtten as the value method which would let
+    // manipulator do it's thing?
     template< typename ManipulatorT >
     constexpr auto operator |( ManipulatorT const& manipulator ) const
     {

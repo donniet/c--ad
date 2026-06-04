@@ -115,10 +115,6 @@ struct StaticValue: detail::ExpressionTag
     constexpr value_type get_value() const
     { return _value; }
 
-    template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT const& manipulator ) const
-    { return manipulator( *this ); }
-
     constexpr StaticValue(): _value{} { }
     constexpr StaticValue( value_type const& other ): _value{ other } { }
     constexpr StaticValue( StaticValue const& ) = default;
@@ -153,10 +149,6 @@ struct Constant: detail::ExpressionTag
     constexpr operator value_type() const
     { return value; }
 
-    template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT const& manipulator ) const
-    { return manipulator( *this ); }
-
     constexpr Constant() = default;
 };
 
@@ -182,21 +174,10 @@ template< size_t I, typename T >
 struct IsVariable< Variable< I, T >>: integral_constant< bool, true > { };
 
 template< typename T >
-constexpr bool is_variable_v = IsVariable< T >::value;
+constexpr bool is_variable_v = IsVariable< std::remove_cv_t< T >>::value;
 
 template< typename T >
 concept variable = is_variable_v< T >;
-
-template< variable Var >
-struct ScopedVariable {
-public:
-    constexpr virtual void set_value( typename Var::value_type const& ) = 0;
-    constexpr virtual typename Var::value_type get_value() const = 0;
-    constexpr virtual string const& get_name() const = 0;
-
-protected:
-    constexpr Var scoped_variable();
-};
 
 // forward decl
 template< variable... Vars >
@@ -223,14 +204,66 @@ struct ScopeContainsVariable< I, ScopeT >: integral_constant< bool, false > { };
 template< size_t I, typename ScopeT >
 requires( is_scope_v< ScopeT >)
 struct ScopeContainsVariable< I, ScopeT >: integral_constant< bool,
-    ScopeT::template has_value< Variable< I, bool >>> { };
+    ScopeT::template has_value_v< Variable< I, any >>> { };
+
+template< expression ExprT, typename ScopeT >
+requires( is_scope_v< ScopeT >)
+struct ScopeContainsDependentVariables;
+
 } // namespace detail
 
 template< size_t I, typename ScopeT >
 constexpr bool scope_contains_variable_v = detail::ScopeContainsVariable< I, ScopeT >::value;
 
+template< expression ExprT, typename ScopeT >
+constexpr bool scope_contains_dependent_variables_v = 
+    detail::ScopeContainsDependentVariables< ExprT, ScopeT >::value;
+
 template< typename T, size_t I >
 concept scope_containing = scope_contains_variable_v< I, T >;
+
+/// @brief standard mechanism to set a scoped variable value
+template< variable Var, typename ScopeT, typename U >
+constexpr void 
+set_value( ScopeT& scope, U const& value )
+{ scope.template set_value< Var >( value ); }
+
+/// @brief standard mechanism to get a scoped variable value
+template< variable Var, typename ScopeT >
+constexpr typename Var::value_type 
+get_value( ScopeT const& scope )
+{ scope.template get_value< Var >(); }
+
+/// @brief standard mechanism to get a scoped variable name
+template< variable Var, typename ScopeT >
+constexpr string get_name( ScopeT const& scope )
+{ scope.template get_name< Var >(); }
+
+/// @brief an operation which sets the value of a variable
+/// in a given scope
+template< variable Var >
+struct SetVariableValue: detail::ExpressionTag
+{
+    using variable_type = Var;
+    using value_type = variable_type::value_type;
+    using argument_types = tuple< variable_type >;
+
+    // setting a variable does not result in a value, unlike in C.
+    // this effectively forbids composing a set expression in any other 
+    // expressions
+    using result_type = void;
+
+    constexpr value_type const& value() const
+    { return _value; }
+
+    constexpr SetVariableValue( Var const& var, value_type const& value ):
+        _var{ var }, _value{ value }
+    { }
+
+private:
+    Var _var;
+    value_type _value;
+};
 
 /// @brief a placeholder in an expression whose value can change
 /// @tparam I is the index in the declared variables to this variable
@@ -239,52 +272,27 @@ concept scope_containing = scope_contains_variable_v< I, T >;
 template< size_t I, typename T >
 struct Variable: detail::ExpressionTag
 { 
-    friend struct ScopedVariable< Variable< I, T >>;
-
     using value_type = T;
     using result_type = value_type;
     static constexpr size_t index = I;
     using this_type = Variable< index, value_type >;
 
-    constexpr Variable& operator=( value_type const& other )
-    {
-#ifndef NDEBUG
-        if( _scope == nullptr )
-            throw std::logic_error( "assignment to unscoped variable" );
-#endif // DEBUG
-        _scope->set_value( other ); 
-        return *this; 
-    }
-
-    constexpr operator value_type() const
-    {
-#ifndef NDEBUG
-        if( _scope == nullptr )
-            throw std::logic_error( "evaluation of unscoped variable" );
-#endif // DEBUG
-        return _scope->get_value();    
-    }
+    constexpr SetVariableValue< Variable > 
+    operator=( value_type const& other ) const
+    { return { *this, other }; }
 
     constexpr string const& name() const 
-    { return _scope->get_name(); }
+    { return _name; }
 
-    template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT const& manipulator ) const
-    { return manipulator( *this ); }
+    constexpr void set_name( string const& new_name )
+    { _name = new_name; }
 
-    constexpr Variable(): _scope{ nullptr } { }
-    constexpr Variable( Variable const& ) = default;
+    constexpr Variable(): _name{ "var" } { };
+    constexpr Variable( Variable const& ) = default; 
 
-//private:
-    constexpr Variable( ScopedVariable< this_type >* scope ): _scope{ scope } { }
-
-    ScopedVariable< this_type >* _scope;
+private:
+    string _name;
 };
-
-template< variable Var >
-constexpr Var ScopedVariable< Var >::scoped_variable() 
-{ return { this }; }
-
 
 template< typename Var >
 struct variable_traits
@@ -319,7 +327,7 @@ struct VariableDeclaration
 /// @param name the name of this variable
 /// @return a declaration of a variable
 template< typename T >
-VariableDeclaration< T > var( string name = "" )
+VariableDeclaration< T > var( string name = "var" )
 { return { name }; }
 
 template< size_t Start, typename... Ts >
@@ -337,193 +345,6 @@ struct VariablesTuple
 
 template< size_t Start, typename... Ts >
 using variables_tuple_t = VariablesTuple< Start, Ts... >::type;
-
-template< variable Var >
-struct ScopedVariableByPointer: virtual ScopedVariable< Var > {
-private:
-    using value_type = Var::value_type;
-
-public:
-    constexpr void set_value( value_type const& value ) override
-    { *_value_ptr = value; }
-
-    constexpr value_type get_value() const override 
-    { return *_value_ptr; }
-
-    constexpr string const& get_name() const override
-    { return *_name_ptr; }
-
-protected:
-    constexpr ScopedVariableByPointer( value_type* value_ptr, 
-        string const* name_ptr ): _value_ptr{ value_ptr }, 
-            _name_ptr{ name_ptr } { }
-
-private:
-    value_type* _value_ptr;
-    string const* _name_ptr;
-};
-
-template< typename VariablesTuple, typename Seq >
-struct ScopedVariableMapping;
-
-template< variable... Vars, size_t... Is >
-struct ScopedVariableMapping< tuple< Vars... >, seq< Is... >> : 
-    ScopedVariableByPointer< Vars >... {
-private:
-    using values_tuple = tuple< typename Vars::value_type... >;
-    using names_tuple = std::array< string, sizeof...( Vars )>;
-
-protected:
-    constexpr ScopedVariableMapping( values_tuple& values, 
-        names_tuple const& names ): ScopedVariableByPointer< Vars...[ Is ] >{ 
-            &std::get< Is >( values ), &std::get< Is >( names ) }... ,
-                _values{ values }, _names{ names } { }
-
-private:
-    values_tuple& _values;
-    names_tuple const& _names;
-};
-
-/// @brief container and factory for Variables.  Scope is a manipulator and
-/// application of scope via operator| evaluates dependent variables against
-/// scoped values.
-///
-template< variable... Vars >
-struct Scope: tuple< Vars... >, 
-    ScopedVariableMapping< tuple< Vars... >, make_seq< sizeof...( Vars )>>
-{
-    using values_tuple_type = tuple< typename Vars::value_type... >;
-    using variables_tuple_type = tuple< Vars... >;
-    static constexpr size_t size = sizeof...( Vars );
-
-protected:
-    using value_mapping_type = 
-        ScopedVariableMapping< tuple< Vars... >, make_seq< sizeof...( Vars )>>;
-
-    template< size_t I, typename Seq >
-    struct Helper;
-
-    template< size_t I, size_t J, size_t... Js >
-    requires( I == Vars...[ J ]::index )
-    struct Helper< I, seq< J, Js... >>
-    { 
-        static constexpr tuple_element_t< J, values_tuple_type > 
-        get( values_tuple_type const& vals )
-        { return std::get< J >( vals ); }
-
-        static constexpr void 
-        set( values_tuple_type& vals, tuple_element_t< J, values_tuple_type > const& val )
-        { std::get< J >( vals ) = val; }
-
-        static constexpr string const& name( std::array< string, size > const& names )
-        { return names[ J ]; }
-
-        static constexpr bool has_value = true; 
-    };
-
-    template< size_t I, size_t J, size_t... Js >
-    requires( I != Vars...[ J ]::index )
-    struct Helper< I, seq< J, Js... >>:
-        Helper< I, seq< Js... >>
-    { };
-
-    template< size_t I >
-    struct Helper< I, seq<>>
-    { static constexpr bool has_value = false; };
-
-    template< variable Var >
-    using helper_for = Helper< Var::index, make_seq< size >>;
-
-public:
-    /// @brief determines if the scope has a value for variable I
-    template< variable Var >
-    static constexpr bool has_value = Helper< Var::index, make_seq< size >>::has_value;
-
-    /// @brief retrieves the value of variable Var in this scope
-    template< variable Var >
-    constexpr typename Var::value_type get_value() const 
-    { return helper_for< Var >::get( _values ); }
-
-    /// @brief assigns other to the scoped value of Var
-    template< variable Var >
-    constexpr void set_value( typename Var::value_type const& other ) 
-    { helper_for< Var >::set( _values, other ); }
-
-    /// @brief retrieves the name of variable Var in this scope
-    template< variable Var >
-    constexpr string const& get_name() const 
-    { return helper_for< Var >::name( _names ); }
-
-    /// @brief returns a tuple of scoped variables
-    constexpr tuple< Vars... > variables() 
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
-            tuple< Vars... >
-        { return { ( this + ( Is - Is ))... }; };
-
-        return helper( make_seq< sizeof...( Vars )>{} ); 
-    }
-
-    /// @brief invocation against a constant will return the constant's value
-    template< auto Value >
-    decltype( Value ) operator ()( Constant< Value > ) const
-    { return Value; }
-
-    /// @brief invocation against a static will return the static's value
-    template< typename T >
-    T operator ()( StaticValue< T > const& static_value ) const
-    { return static_cast< T >( static_value ); }
-
-    /// @brief invocation against a scoped variable will return the
-    /// scoped value
-    /// TODO: should this return a ScopedVariable?
-    template< size_t I, typename T >
-    requires( scope_contains_variable_v< I, Scope< Vars... >> )
-    constexpr T operator ()( Variable< I, T > const& var ) const 
-    { return helper_for< Variable< I, T >>::get( _values ); }
- 
-    template< typename... Names >
-    requires( sizeof...( Names ) == size )
-    Scope( Names const&... names ): value_mapping_type{ _values, _names },
-        _values{}, _names{ names... }  
-    { }
-
-    Scope(): value_mapping_type{ _values, _names } { }
-
-private:
-    values_tuple_type _values;
-    array< string, size > _names;
-};
-
-template< typename Seq, typename... Values >
-struct SimpleScopeHelper;
-
-template< size_t... Is, typename... Values >
-struct SimpleScopeHelper< seq< Is... >, Values... >
-{ 
-    using type = Scope< Variable< Is, Values...[ Is ]>... >;
-    static constexpr type value( Values const&... values )
-    {
-        type ret;
-        ( ret.template set< Variable< Is, Values...[ Is ]>>( values...[ Is ] ), ... );
-        return ret;
-    }
-};
-
-template< typename... Values >
-constexpr typename SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::type
-simple_scope( Values const&... values )
-{ return SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::value( values... ); }
-
-/// @brief method to declare a set of variables to be used in expressions
-/// @tparam ...Decls 
-/// @param ...decls 
-/// @return 
-template< typename... Decls >
-typename SimpleScopeHelper< make_seq< sizeof...( Decls )>, 
-    typename Decls::value_type... >::type
-declare_variables( Decls... decls )
-{ return { decls.name()... }; }
 
 namespace detail {
 
@@ -564,6 +385,161 @@ struct Result< T >
 ///
 template< typename T >
 using result_t = detail::Result< T >::type;
+
+/// @brief container and factory for Variables.  Scope is a manipulator and
+/// application of scope via operator| evaluates dependent variables against
+/// scoped values.
+///
+template< variable... Vars >
+struct Scope: tuple< Vars... > 
+{
+    using values_tuple_type = tuple< typename Vars::value_type... >;
+    using variables_tuple_type = tuple< Vars... >;
+    static constexpr size_t size = sizeof...( Vars );
+
+protected:
+    template< size_t I, typename Seq >
+    struct Helper;
+
+    template< size_t I, size_t J, size_t... Js >
+    requires( I == Vars...[ J ]::index )
+    struct Helper< I, seq< J, Js... >>
+    { 
+        static constexpr tuple_element_t< J, values_tuple_type > 
+        get( values_tuple_type const& vals )
+        { return std::get< J >( vals ); }
+
+        static constexpr void 
+        set( values_tuple_type& vals, tuple_element_t< J, values_tuple_type > const& val )
+        { std::get< J >( vals ) = val; }
+
+        static constexpr string const& name( std::array< string, size > const& names )
+        { return names[ J ]; }
+
+        static constexpr bool has_value = true; 
+    };
+
+    template< size_t I, size_t J, size_t... Js >
+    requires( I != Vars...[ J ]::index )
+    struct Helper< I, seq< J, Js... >>:
+        Helper< I, seq< Js... >>
+    { };
+
+    template< size_t I >
+    struct Helper< I, seq<>>
+    { static constexpr bool has_value = false; };
+
+    template< variable Var >
+    using helper_for = Helper< Var::index, make_seq< size >>;
+
+public:
+    /// @brief determines if the scope has a value for variable I
+    template< variable Var >
+    static constexpr bool has_value_v = Helper< Var::index, make_seq< size >>::has_value;
+
+    template< variable Var >
+    static consteval bool has_value( Var ) 
+    { return has_value_v< Var >; }
+
+    /// @brief retrieves the value of variable Var in this scope
+    template< variable Var >
+    constexpr typename Var::value_type get_value() const 
+    { return helper_for< Var >::get( _values ); }
+
+    /// @brief assigns other to the scoped value of Var
+    template< variable Var >
+    constexpr void set_value( typename Var::value_type const& other ) 
+    { helper_for< Var >::set( _values, other ); }
+
+    /// @brief retrieves the name of variable Var in this scope
+    template< variable Var >
+    constexpr string const& get_name() const 
+    { return helper_for< Var >::name( _names ); }
+
+    /// @brief returns a tuple of scoped variables
+    constexpr tuple< Vars... > variables() 
+    { return { Vars{}... }; }
+
+    /// @brief invocation against a constant will return the constant's value
+    template< auto Value >
+    constexpr decltype( Value ) operator ()( Constant< Value > ) const
+    { return Value; }
+
+    /// @brief invocation against a static will return the static's value
+    template< typename T >
+    constexpr T operator ()( StaticValue< T > const& static_value ) const
+    { return static_cast< T >( static_value ); }
+
+    /// @brief invocation against a scoped variable will return the
+    /// scoped value
+    template< size_t I, typename T >
+    requires( has_value_v< Variable< I, T >>)
+    constexpr T operator ()( Variable< I, T > const& var ) 
+    { return helper_for< Variable< I, T >>::get( _values ); }
+
+    template< size_t I, typename T >
+    requires( has_value_v< Variable< I, T >>)
+    constexpr void operator ()( SetVariableValue< Variable< I, T >> const& setter )
+    { set_value< Variable< I, T >>( setter.value() ); }
+
+    template< typename... Args >
+    requires( isgreater( sizeof...( Args ), 1 ))
+    constexpr auto operator ()( Args const&... args )
+    { return ( operator ()( args ), ... ); }
+
+    template< expression ExprT >
+    requires( scope_contains_dependent_variables_v< ExprT, Scope< Vars... >> )
+    constexpr result_t< ExprT > operator ()( ExprT const& expr ) const;
+
+    /// @brief invocation against a scoped variable will return the
+    /// scoped value
+    template< size_t I, typename T >
+    requires( scope_contains_variable_v< I, Scope< Vars... >> )
+    constexpr T operator ()( Variable< I, T > const& var ) const 
+    { return helper_for< Variable< I, T >>::get( _values ); }
+ 
+    template< typename... Names >
+    requires( sizeof...( Names ) == size )
+    constexpr Scope( Names const&... names ):
+        _values{}, _names{ names... }  
+    { }
+
+    constexpr Scope(): _values{}, _names{} { }
+
+private:
+    values_tuple_type _values;
+    array< string, size > _names;
+};
+
+template< typename Seq, typename... Values >
+struct SimpleScopeHelper;
+
+template< size_t... Is, typename... Values >
+struct SimpleScopeHelper< seq< Is... >, Values... >
+{ 
+    using type = Scope< Variable< Is, Values...[ Is ]>... >;
+    static constexpr type value( Values const&... values )
+    {
+        type ret;
+        ( ret.template set< Variable< Is, Values...[ Is ]>>( values...[ Is ] ), ... );
+        return ret;
+    }
+};
+
+template< typename... Values >
+constexpr typename SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::type
+simple_scope( Values const&... values )
+{ return SimpleScopeHelper< make_seq< sizeof...( Values )>, Values... >::value( values... ); }
+
+/// @brief method to declare a set of variables to be used in expressions
+/// @tparam ...Decls 
+/// @param ...decls 
+/// @return 
+template< typename... Decls >
+typename SimpleScopeHelper< make_seq< sizeof...( Decls )>, 
+    typename Decls::value_type... >::type
+declare_variables( Decls... decls )
+{ return { decls.name()... }; }
 
 namespace detail {
 template< typename... Exprs >
@@ -698,6 +674,106 @@ using dependent_variable_id_seq = detail::DependentVariableIDs< ExprT >::type;
 template< size_t I, typename ExprT >
 constexpr bool depends_on_variable_index_v = 
     detail::DependsOnVariableIndex< I, ExprT >::value;
+
+//////////////////////
+/// Scope Helpers ///
+////////////////////
+///
+/// @brief traits type for expressions
+/// @tpraam ExprT is the type of the expression
+///
+/// exposes the dependent variables, result type and a scope type that may be
+/// used to evaluate an expression of type ExprT
+///
+namespace detail {
+
+template< expression ExprT, typename ScopeT >
+requires( is_scope_v< ScopeT >)
+struct ScopeContainsDependentVariables {
+private:
+    using variables_tuple = dependent_variables_t< ExprT >;
+    using scope_type = ScopeT;
+
+    template< typename VariablesTuple >
+    struct Helper;
+
+    template< variable... Vars >
+    struct Helper< tuple< Vars... >>: integral_constant< bool, 
+        ( scope_type::template has_value_v< Vars > and ... )>
+    { };
+
+public:
+    static constexpr bool value = Helper< variables_tuple >::value;
+};
+
+
+} // namespace detail
+
+template< expression ExprT >
+struct expression_traits {
+private:
+    template< typename VariablesTuple >
+    struct Helper;
+
+    template< variable... Vars >
+    struct Helper< tuple< Vars... >>
+    { 
+        using values_tuple = tuple< typename Vars::value_type... >; 
+        using scope_type = Scope< Vars... >;
+
+        template< typename ScopeT >
+        static constexpr bool is_valid_scope( ScopeT const& scope )
+        { return ( scope.template has_value_v< Vars > and ... ); }
+    };
+
+public:
+    using variables_tuple = dependent_variables_t< ExprT >;
+    using helper_type = Helper< variables_tuple >;
+    static constexpr size_t variables_size = tuple_size_v< variables_tuple >;
+    using result_type = result_t< ExprT >;
+    using variable_values_tuple = helper_type::values_tuple;
+    using scope_type = helper_type::scope_type;
+
+    template< variable... Vars >
+    static constexpr bool is_valid_scope( Scope< Vars... > const& scope )
+    { return helper_type::is_valid_scope( scope ); }
+};
+
+template< typename ScopeT, expression ExprU >
+struct IsScopeFor;
+
+template< variable... Vars, expression ExprU >
+struct IsScopeFor< Scope< Vars... >, ExprU >: 
+    integral_constant< bool, expression_traits< ExprU >::
+        is_valid_scope( Scope< Vars... >{} )>
+{ };
+
+template< typename ScopeT, expression ExprU >
+constexpr bool is_scope_for_v = IsScopeFor< ScopeT, ExprU >::value;
+
+/// @brief constructs a scope from the dependent variables of ExprT and init-
+/// ializes the values to ...ts in variable index order
+///
+template< expression ExprT, typename... Ts >
+constexpr typename expression_traits< ExprT >::scope_type
+make_scope( Ts const&... ts )
+{
+    using traits_type = expression_traits< ExprT >;
+    using scope_type = traits_type::scope_type;
+    using variables_tuple = traits_type::variables_tuple;
+
+    scope_type scope;
+
+    auto helper = [&scope, &ts...]< size_t... Is >( seq< Is... > ) constexpr
+    {( scope.template set_value< 
+        tuple_element_t< Is, variables_tuple >>( ts...[ Is ]), ... ); };
+
+    helper( make_seq< sizeof...( Ts )>{} );
+
+    return scope;
+}
+
+
 
 ///////////////////////////////////
 /// Substitution and Arguments ///
@@ -851,6 +927,20 @@ template< compound_expression ExprT, typename ManipulatorT >
 constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
 { return expr.apply( manipulator ); }
 
+/// @brief Manipulation operator for variables
+///
+template< variable Var, typename ManipulatorT >
+constexpr auto operator |( Var& var, ManipulatorT& manipulator )
+{ return manipulator( var ); }
+
+template< auto Value, typename ManipulatorT >
+constexpr auto operator |( Constant< Value > c, ManipulatorT& manipulator )
+{ return manipulator( c ); }
+
+template< typename T, typename ManipulatorT >
+constexpr auto operator |( StaticValue< T > const& value, ManipulatorT& manipulator )
+{ return manipulator( value ); }
+
 /// @brief Manipulation operator for tuples of expressions
 ///
 template< expression... Exprs, typename ManipulatorT >
@@ -877,6 +967,13 @@ constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten,
 
     return helper( make_seq< sizeof...( Exprs )>{} );
 }
+
+template< variable... Vars >
+template< expression ExprT >
+requires( scope_contains_dependent_variables_v< ExprT, Scope< Vars... >> )
+constexpr result_t< ExprT > 
+Scope< Vars... >::operator ()( ExprT const& expr ) const
+{ return expr | *this; }
 
 /// @brief type trait for extracting an argument from a compound expression
 /// @tparam I is the index of the argument
@@ -1973,11 +2070,13 @@ struct Compliment: Arguments< Compliment, T >
 //#ifndef NDEBUG
 namespace test {
 
-static_assert( ForExpression< Variable< 0, int >>::template Is< Constant< 5 >>::value );
-static_assert( not ForExpression< Variable< 0, int >>::template Is< Constant< units::Length{ 5 }>>::value );
+static_assert( ForExpression< Variable< 0, int >>::template 
+    Is< Constant< 5 >>::value );
+static_assert( not ForExpression< Variable< 0, int >>::template 
+    Is< Constant< units::Length{ 5 }>>::value );
 
-static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
-    Sum< Constant< 5 >, Constant< 6 >>>::value, 
+static_assert( ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::
+    template Is< Sum< Constant< 5 >, Constant< 6 >>>::value, 
         "FAILED: <int> + <int> =matches=> 5 + 6" );
 
 static_assert( not ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>::template Is<
@@ -2680,18 +2779,6 @@ struct JacobianOperator
 };
 
 
-
-///////////////
-/// Solver ///
-/////////////
-/// 
-///
-struct Solver 
-{
-    template< typename ExprT >
-    constexpr auto operator ()( ExprT const& expr ) const
-    { }
-};
 
 
 } // namespace expressions
