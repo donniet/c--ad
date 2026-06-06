@@ -131,7 +131,7 @@ private:
 ///
 template< typename T >
 requires( not is_expression_v< T > )
-StaticValue< T > static_expr( T const& value )
+constexpr StaticValue< T > static_expr( T const& value )
 { return StaticValue< T >{ value }; }
 
 /// @brief a compile-time constant
@@ -281,17 +281,20 @@ struct Variable: detail::ExpressionTag
     operator=( value_type const& other ) const
     { return { *this, other }; }
 
-    constexpr string const& name() const 
-    { return _name; }
+    // TODO: string copy constructors are not constepr?
+    constexpr string name() const 
+    { return "var"; }
 
-    constexpr void set_name( string const& new_name )
-    { _name = new_name; }
+//    constexpr void set_name( string const& new_name )
+//    { _name = new_name; }
 
-    constexpr Variable(): _name{ "var" } { };
+//    constexpr Variable(): _name{ "var" } { };
+    constexpr Variable() = default;
     constexpr Variable( Variable const& ) = default; 
+    constexpr Variable( Variable&& ) = default;
 
 private:
-    string _name;
+//    string _name;
 };
 
 template< typename Var >
@@ -472,10 +475,10 @@ public:
 
     /// @brief invocation against a scoped variable will return the
     /// scoped value
-    template< size_t I, typename T >
-    requires( has_value_v< Variable< I, T >>)
-    constexpr T operator ()( Variable< I, T > const& var ) 
-    { return helper_for< Variable< I, T >>::get( _values ); }
+    //template< size_t I, typename T >
+    //requires( has_value_v< Variable< I, T >>)
+    //constexpr T operator ()( Variable< I, T > const& var ) 
+    //{ return helper_for< Variable< I, T >>::get( _values ); }
 
     template< size_t I, typename T >
     requires( has_value_v< Variable< I, T >>)
@@ -1517,6 +1520,30 @@ constexpr typename Substitution< ExprT, Args... >::type
 substitution( ExprT expr, Args... args )
 { return Substitution< ExprT, Args... >::value( expr, args... ); }
 
+//////////////////////////////
+/// Canonical Expressions ///
+////////////////////////////
+/// 
+/// Expressions must have a canonical format which users associativity, commutativity
+/// and distribution rules to put expressions into a form that can be manipulated 
+/// easily
+
+/// @brief Canonicalizer is a type-manipulator.  The unspecialized implementation is
+/// idempotent
+template< typename ExprT >
+struct Canonicalizer
+{ 
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr )
+    { return expr; }
+};
+
+/// @brief method to invoke the Canonicalizer type-manipulator
+template< typename ExprT >
+constexpr typename Canonicalizer< ExprT >::type
+canonicalize( ExprT const& expr )
+{ return Canonicalizer< ExprT >::value( expr ); }
+
 ///////////////////
 /// Operations ///
 /////////////////
@@ -1600,6 +1627,72 @@ struct Sum< Ts... >: Arguments< Sum, Ts... >
     constexpr Sum( Ts const&... ts ): Arguments< Sum, Ts... >{ ts... } { }
     constexpr Sum() = default;
 };
+
+namespace detail {
+
+template< typename... Ts >
+struct SumCanonicalizer
+{
+    template< typename... Us >
+    struct terms 
+    { static constexpr size_t size = sizeof...( Us ); };
+
+    template< typename T >
+    struct TermsOf
+    { using type = terms< T >; };
+
+    template< typename... Us >
+    struct TermsOf< Sum< Us... >>;
+
+    template< typename T >
+    struct TermSize: integral_constant< size_t, 1 > { };
+
+    template< typename... Us >
+    struct TermSize< Sum< Us... >>: integral_constant< size_t, 
+        ( TermSize< Us >::value + ... )> { };
+
+    static constexpr size_t size = ( TermSize< Ts >::value + ... + 0 );
+
+    template< size_t I, typename ArgTuple >
+    struct TermHelper;
+
+    template< size_t I, typename U, typename... Us >
+    requires( isless( I, TermSize< U >::value ) and 
+        TermSize< U >::value == 1 )
+    struct TermHelper< I, tuple< U, Us... >>
+    {
+        using type = U;
+        static constexpr type value( U const& first, Us const&... )
+        { return first; }
+    };
+
+//    template< size_t I, typename U, typename... Us >
+//    requires( isless( I, TermSize< U >::value ) and
+//        isgreater( TermSize< U >::value, 1 ))
+//    struct TermHelper< I, tuple< U, Us... >>:
+//        TermHelper< I, typename TermsOf< U >::type >
+//    { 
+//        using type = TermHelper< I, typename Term
+//        static constexpr type value( U const& first, Us... const& )
+//        { return TermTermTuple
+//    };
+//
+    template< size_t I, size_t J, size_t... Js >
+    requires( not isless( I, TermSize< Ts...[ J ]>::value ))
+    struct TermHelper< I, seq< J, Js... >>:
+        TermHelper< I - TermSize< Ts...[ J ]>::value, seq< Js... >>
+    { };
+
+    template< size_t I >
+    struct Term: TermHelper< I, Ts... >
+    { };
+};
+
+} // namespace detail
+
+template< typename... Ts >
+struct Canonicalizer< Sum< Ts... >>: detail::SumCanonicalizer< Ts... > { };
+
 
 template< typename... Ts >
 struct Difference;

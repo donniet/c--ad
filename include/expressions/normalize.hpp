@@ -32,6 +32,10 @@
 namespace expressions {
 namespace normalization {
 
+/// @brief 
+template< typename... >
+struct noop { };
+
 /// @brief type manipulator for lazily evaluated expressions with distributive
 /// and associative properties.  Three lazily evaluated operations are passed as 
 /// template-template parameters that define tuple-like types.
@@ -79,6 +83,14 @@ template< template< typename... > class SumOf,      // associative, n-ary
           typename T >
 class Normalizer;
 
+template< template< typename... > class SumOf, 
+          typename T >
+class Associator: public Normalizer< SumOf, noop, noop, T > { };
+
+template< template< typename... > class SumOf,
+          template< typename... > class ProductOf,
+          typename T >
+class Distributor: public Normalizer< SumOf, ProductOf, noop, T > { };
 
 /// @brief helper alias to identify a normalizer using the given type
 template< template< typename... > class SumOf,      
@@ -87,28 +99,89 @@ template< template< typename... > class SumOf,
           typename T >
 using normalized_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >::type;
 
-/// @brief method to transform the expression instance to the normalized form
+template< template< typename... > class SumOf,
+          template< typename... > class ProductOf,
+          typename T >
+using distributed_t = normalized_t< SumOf, ProductOf, noop, T >;
+
+template< template< typename... > class SumOf,
+          typename T >
+using associated_t = normalized_t< SumOf, noop, noop, T >;
+
+/// @brief transform an expression into disjunctive normal form
+/// @tparam SumOf is an n-ary associative operation (the disjunctive operation)
+/// @tparam ProductOf is an n-ary associative operation that distributes over SumOf
+/// (the conjunctive operation)
+/// @tparam ComplimentOf is a unary operation that follows De Morgan's Laws 
+/// (the negation operation)
+///
 template< template< typename... > class SumOf,
           template< typename... > class ProductOf,
           template< typename > class ComplimentOf,
           typename T >
-constexpr normalized_t< SumOf, ProductOf, ComplimentOf, T > normalize( T expr )
+constexpr normalized_t< SumOf, ProductOf, ComplimentOf, T > 
+normalize( T expr )
 { return Normalizer< SumOf, ProductOf, ComplimentOf, T >::value( expr ); }
+
+/// @brief transform an expression into a canonical form by applying
+/// associative rules and combining the SumOf operations where possible
+template< template< typename... > class SumOf, typename T >
+constexpr associated_t< SumOf, T >
+associate( T expr )
+{ return normalize< SumOf, noop, noop >( expr ); }
+
+/// @brief transform an expression into a canonical form by distributing the
+/// associative ProductOf operation over the associative SumOf operation
+template< template< typename... > class SumOf, 
+          template< typename... > class ProductOf,
+          typename T >
+constexpr distributed_t< SumOf, ProductOf, T >
+distribute( T expr )
+{ return normalize< SumOf, ProductOf, noop >( expr ); }
 
 ////////////////////////
 /// Idempotent Case ///
 //////////////////////
 /// 
-/// Specialization for leaves of a normalized expression.
+/// @brief Specialization for leaves of a normalized expression. The expression
+/// type T does not match SumOf<...>, ProductOf<...>, nor ComplimentOf<...>.
 ///
-/// @brief default/leaf case for the normalizer.  Also exemplifies the required
-/// static values and aliases for a normalizer
+/// Exemplifies the required static values and aliases for a normalizer N:
+///
+/// /* the expression being normalized */
+/// typename N::expression_type;
+///
+/// /* the number of additive terms in the normalization of expression_type */
+/// size_t N::terms_size;
+/// 
+/// /* the number of multiplicative elements in the Ith term of the 
+///    normalization of expression_type */
+/// template< size_t I > size_t N::TermElementSize< I >::value;
+/// 
+/// /* the type of the Kth multiplicative element of the Ith additive term of
+///    the normalization of expression_type */
+/// template< size_t I, size_t K > typename N::TermElement< I, K >::type;
+///
+/// /* the value of the Kth multiplicative element of the Ith additive term of
+///    the normalization of a variable expr of type expression_type */
+/// template< size_t I, size_t K > typename N::TermElement< I, K >::type 
+///     N::TermElement< I, K >::value( expression_type expr );
+///
 template< template< typename... > class SumOf,
           template< typename... > class ProductOf,
           template< typename > class ComplimentOf,
-          typename T >
-class Normalizer {
-public: 
+/* Expression: */ typename T >
+class Normalizer 
+{
+    // I => index to an additive term of the normalized expression
+    // K => index to a multiplicative term of the normalized expression
+
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
     /// @brief the type of the expression input to this normalizer
     using expression_type = T;
 
@@ -138,6 +211,7 @@ public:
         { return expr; }
     };
 
+public:
     /// @brief type manipulator result type is idempotent
     using type = expression_type;
 
@@ -151,6 +225,10 @@ public:
 /////////////////////////////
 ///
 /// @brief Normalizer specialization for disjunctions/summations.
+///
+/// We will associate with any subexpressions which are also disjunctions/
+/// summations and recurse into specializations of Normalizater
+///
 template< template< typename... > class SumOf,
           template< typename... > class ProductOf,
           template< typename > class ComplimentOf,
@@ -163,19 +241,23 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     // K, Ks => indices to the product elements of a term in this normalization
     // T, Ts => argument types to the operation
 
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
+    using expression_type = SumOf< Ts... >;
+    
     template< typename T >
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >;
         
     template< size_t J >
     using subnormalizer = normalizer_t< Ts...[J] >;
 
-public:
-    using expression_type = SumOf< Ts... >;
-
     static constexpr size_t terms_size = 
         ( normalizer_t< Ts >::terms_size + ... );
 
-private:
     template< size_t I, typename Seq >
     struct TermElementSizeHelper;
 
@@ -191,12 +273,10 @@ private:
         TermElementSizeHelper< I - subnormalizer< J >::terms_size, seq< Js... >>
     { };
 
-public:
     template< size_t I >
     struct TermElementSize: 
         TermElementSizeHelper< I, make_seq< sizeof...( Ts )>> { };
 
-private:
     template< size_t I >
     static constexpr size_t term_element_size = TermElementSize< I >::value;
 
@@ -223,15 +303,10 @@ private:
         TermElementHelper< I - subnormalizer< J >::terms_size, K, seq< Js... >>
     { };
 
-public:
     /// @brief the Kth element of the Ith term of the normalization
     template< size_t I, size_t K >
     struct TermElement: TermElementHelper< I, K, make_seq< sizeof...( Ts )>> 
     { };
-
-private:
-    template< size_t I, size_t K >
-    using term_element_t = TermElement< I, K >::type;
 
     template< size_t, typename >
     struct TermHelper;
@@ -244,7 +319,7 @@ private:
     template< size_t I, size_t... Ks >
     struct TermHelper< I, seq< Ks... >>
     { 
-        using type = ProductOf< term_element_t< I, Ks >... >; 
+        using type = ProductOf< typename TermElement< I, Ks >::type... >; 
         static constexpr type value( expression_type expr )
         { return { TermElement< I, Ks >::value( expr )... }; }
     };
@@ -260,7 +335,7 @@ private:
     requires( term_element_size< I > == 1 )
     struct Term< I >
     { 
-        using type = term_element_t< I, 0 >; 
+        using type = TermElement< I, 0 >::type; 
         static constexpr type value( expression_type expr )
         { return TermElement< I, 0 >::value( expr ); }
     };
@@ -278,7 +353,6 @@ private:
 
     template< size_t... Is >
     struct Helper< seq< Is... >>
-    // final type is a sum of the term types
     { 
         using type = SumOf< typename Term< Is >::type... >; 
         static constexpr type value( expression_type expr )
@@ -287,6 +361,7 @@ private:
 
 public:
     using type = Helper< make_seq< terms_size >>::type;
+
     static constexpr type value( expression_type expr )
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
@@ -296,6 +371,12 @@ public:
 //////////////////////////////////////////////
 /// 
 /// @brief Normalizer specialization for conjunctions/products
+///
+/// We distribute ProductOf over the additive terms of our subexpressions
+/// and associate with other multiplicative elements.  This is the most complex
+/// specialization since it must associate SumOf and ProductOf operations as
+/// well as distribute ProductOf over SumOf
+///
 template< template< typename... > class SumOf,
           template< typename... > class ProductOf,
           template< typename > class ComplimentOf,
@@ -308,19 +389,27 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     // K, Ks => indices to the product elements of a term in this normalization
     // T, Ts => argument types to the operation
 
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
+    using expression_type = ProductOf< Ts... >;
+    
     template< typename T >
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >;
 
+    // normalizer for the Jth argument of this product
     template< size_t J >
     using subnormalizer = normalizer_t< Ts...[J] >;
 
-public:
-    using expression_type = ProductOf< Ts... >;
-
+    // the number of additive terms will the the product of additive terms
+    // in the normalized expression of our Ts... arguments due to the
+    // distributive law.
     static constexpr size_t terms_size = 
         ( normalizer_t< Ts >::terms_size * ... );
 
-private:
     template< size_t J >
     struct ElementDivisor: integral_constant< size_t, 
         subnormalizer< J - 1 >::terms_size * 
@@ -346,12 +435,10 @@ private:
         ( normalizer_t< Ts...[Js] >::
             template TermElementSize< subterm< Js, I >>::value + ... )> { };
 
-public:
     template< size_t I >
     struct TermElementSize: 
         TermElementSizeHelper< I, make_seq< sizeof...( Ts )>> { };
 
-private:
     template< size_t I >
     static constexpr size_t term_element_size = TermElementSize< I >::value;
 
@@ -387,15 +474,10 @@ private:
         TermElementHelper< I, K - subterm_element_size< J, I >, seq< Js... >>
     { };
 
-public:
     /// @brief the Kth element of the Ith term of the normalization
     template< size_t I, size_t K >
     struct TermElement: 
         TermElementHelper< I, K, make_seq< sizeof...( Ts )>> { };
-
-private:
-    template< size_t I, size_t K >
-    using term_element_t = TermElement< I, K >::type;
 
     template< size_t, typename >
     struct TermHelper;
@@ -407,7 +489,7 @@ private:
     template< size_t I, size_t... Ks >
     struct TermHelper< I, seq< Ks... >>
     { 
-        using type = ProductOf< term_element_t< I, Ks >... >; 
+        using type = ProductOf< typename TermElement< I, Ks >::type... >; 
         static constexpr type value( expression_type expr )
         { return { TermElement< I, Ks >::value( expr )... }; }
     };
@@ -423,7 +505,7 @@ private:
     requires( term_element_size< I > == 1 )
     struct Term< I >
     { 
-        using type = term_element_t< I, 0 >; 
+        using type = TermElement< I, 0 >::type; 
         static constexpr type value( expression_type expr )
         { return TermElement< I, 0 >::value( expr ); }
     };
@@ -449,6 +531,7 @@ private:
 
 public:
     using type = Helper< make_seq< terms_size >>::type;
+
     static constexpr type value( expression_type expr )
     { return Helper< make_seq< terms_size >>::value( expr ); }
 };
@@ -458,6 +541,9 @@ public:
 ////////////////////////
 ///
 /// @brief Compliments eliminate compliments
+///
+/// We cancel double compliments in this idempotent specialization.
+///
 template< template< typename... > class SumOf, 
           template< typename... > class ProductOf, 
           template< typename > class ComplimentOf, 
@@ -465,25 +551,29 @@ template< template< typename... > class SumOf,
 class Normalizer< SumOf, ProductOf, ComplimentOf,
 /* Expression */  ComplimentOf< ComplimentOf< T >>>
 {
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
+    using expression_type = ComplimentOf< ComplimentOf< T >>;
+    
     template< typename U >
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, U >;
 
     using reference_type = T;
     using reference_normalizer = normalizer_t< reference_type >;
 
-public:
-    using expression_type = ComplimentOf< ComplimentOf< T >>;
     static constexpr size_t terms_size = reference_normalizer::terms_size;
 
     template< size_t I >
     using TermElementSize = reference_normalizer::
         template TermElementSize< I >;
 
-private:
     static constexpr reference_type reference_value( expression_type expr )
     { return std::get< 0 >( std::get< 0 >( expr )); }
 
-public:
     template< size_t I, size_t K >
     struct TermElement {
     private:
@@ -496,16 +586,22 @@ public:
         { return reference_term_element::value( reference_value( expr )); }
     };
 
+public:
     using type = reference_normalizer::type;
+
     static constexpr type value( expression_type expr )
     { return reference_normalizer::value( reference_value( expr )); }
 };
 
-/////////////////////////
-/// De Morgan's Laws ///
-///////////////////////
+////////////////////////////////////////
+/// De Morgan's Law of Disjunctions ///
+//////////////////////////////////////
 ///
 /// @brief De Morgan's Law of disjunctions
+///
+/// We translate compliments of additive terms into products of compliments to
+/// push the compliment operation down to the leaves of the normalized expression
+///
 template< template< typename... > class SumOf, 
           template< typename... > class ProductOf, 
           template< typename > class ComplimentOf, 
@@ -513,21 +609,27 @@ template< template< typename... > class SumOf,
 class Normalizer< SumOf, ProductOf, ComplimentOf, 
 /* Expression */  ComplimentOf< SumOf< Ts... >> > 
 { 
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
+    using expression_type = ComplimentOf< SumOf< Ts... >>;
+    
     template< typename T >
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >;
 
+    // a compliment of disjunctions is a conjunction of compliments
     using reference_type = ProductOf< ComplimentOf< Ts >... >;
     using reference_normalizer = normalizer_t< reference_type >;
     
-public:
-    using expression_type = ComplimentOf< SumOf< Ts... >>;
     static constexpr size_t terms_size = reference_normalizer::terms_size;
 
     template< size_t I >
     using TermElementSize = reference_normalizer::
         template TermElementSize< I >;
 
-private:
     template< size_t... Js >
     static constexpr reference_type reference_value_helper( 
         expression_type expr, seq< Js... > )
@@ -536,7 +638,6 @@ private:
     static constexpr reference_type reference_value( expression_type expr )
     { return reference_value_helper( expr, make_seq< sizeof...( Ts )>{} ); }
 
-public:
     template< size_t I, size_t K >
     struct TermElement {
     private:
@@ -549,29 +650,44 @@ public:
         { return reference_term_element::value( reference_value( expr )); }
     };
 
+public:
     using type = reference_normalizer::type;
+
     static constexpr type value( expression_type expr )
     { return reference_normalizer::value( reference_value( expr )); }
 };
 
-/// @brief De Morgan's Law of conjunctions
+////////////////////////////////////////
+/// De Morgan's Law of Conjunctions ///
+//////////////////////////////////////
+///
+/// @brief De Morgan's Law of Conjunctions
+///
+/// We translate compliments of products of to sums of compliments to push
+/// compliments down to the leaves of our normalized expression.
+///
 template< template< typename... > class SumOf, 
           template< typename... > class ProductOf, 
           template< typename > class ComplimentOf, 
           typename... Ts >
 class Normalizer< SumOf, ProductOf, ComplimentOf, 
-/* Expression */  ComplimentOf< ProductOf< Ts... >> >:
-    Normalizer< SumOf, ProductOf, ComplimentOf, 
-        SumOf< ComplimentOf< Ts >... >>
+/* Expression */  ComplimentOf< ProductOf< Ts... >> > 
 { 
+    template< template< typename... > class,
+              template< typename... > class,
+              template< typename > class,
+              typename >
+    friend class Normalizer;
+
+    using expression_type = ComplimentOf< ProductOf< Ts... >>;
+    
     template< typename T >
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >;
 
+    // a compliment of conjunctions is a disjunction of compliments
     using reference_type = SumOf< ComplimentOf< Ts >... >;
     using reference_normalizer = normalizer_t< reference_type >;
     
-public:
-    using expression_type = ComplimentOf< ProductOf< Ts... >>;
     static constexpr size_t terms_size = reference_normalizer::terms_size;
 
     template< size_t I >
@@ -583,11 +699,9 @@ public:
         expression_type expr, seq< Js... > )
     { return {{ std::get< Js >( std::get< 0 >( expr ))}... }; }
 
-private:
     static constexpr reference_type reference_value( expression_type expr )
     { return reference_value_helper( expr, make_seq< sizeof...( Ts )>{} ); }
 
-public:
     template< size_t I, size_t K >
     struct TermElement {
     private:
@@ -600,7 +714,9 @@ public:
         { return reference_term_element::value( reference_value( expr )); }
     };
 
+public:
     using type = reference_normalizer::type;
+
     static constexpr type value( expression_type expr )
     { return reference_normalizer::value( reference_value( expr )); }
 };

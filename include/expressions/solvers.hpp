@@ -67,6 +67,13 @@ using namespace normalization;
 /// @brief forward declaration for solving an expression.  Not all expressions
 /// will be solvable, so we do not expect this class to be specialized in 
 /// every case.
+///
+///
+
+template< typename T >
+concept static_expression = expression< T > and
+    tuple_size_v< dependent_variables_t< T >> == 0;
+
 template< expression ExprT >
 struct Solver;
 
@@ -75,17 +82,67 @@ template< typename ExprT >
 concept solvable = requires( ExprT )
 { typename Solver< ExprT >; };
 
+/// @brief solver for an expression with no dependent variables is trivial
+template< static_expression ExprT >
+struct Solver< ExprT >: Scope< >
+{ };
+
+template< variable... Vars >
+struct SolveFor;
+
+template< variable... Vars >
+constexpr SolveFor< Vars... > 
+solve_for( Vars... )
+{ return {}; }
+
+template< >
+struct SolveFor< > { };
+
+template< variable Var >
+struct SolveFor< Var >
+{ 
+    using value_type = Var::value_type;
+
+    constexpr operator value_type() const
+    { return _value; }
+
+private:
+    value_type _value;
+};
+
+template< variable... Vars >
+requires( isgreater( sizeof...( Vars ), 1 ))
+struct SolveFor< Vars... >: tuple< typename Vars::value_type... >
+{ };
+
+
+template< expression ExprT >
+constexpr result_t< ExprT > operator |( ExprT const& expr, SolveFor< > )
+{ return Solver< ExprT >{ expr }( expr ); }
+    
+template< expression ExprT, variable Var >
+constexpr typename Var::value_type
+operator |( ExprT const& expr, SolveFor< Var > )
+{ return Solver< ExprT >{ expr }( Var{} ); }
+
+template< expression ExprT, variable... Vars >
+constexpr tuple< typename Vars::value_type... >
+operator |( ExprT const& expr, SolveFor< Vars... > )
+{ return Solver< ExprT >{ expr }( tuple< Vars... >{} ); }
+
+
+/// @brief solvers for boolean expressions
+///
+
 /// @brief the simplest solvers
-template< size_t I, typename T, expression ExprT >
-requires( tuple_size_v< dependent_variables_t< ExprT >> == 0 and
-    is_convertible_v< result_t< ExprT >, T > )
+template< size_t I, typename T, static_expression ExprT >
+requires( is_convertible_v< result_t< ExprT >, T > )
 struct Solver< Equals< Variable< I, T >, ExprT >>:
     Scope< Variable< I, T >>
 {
     using right_expression_type = ExprT;
     using variable_type = Variable< I, T >;
-    using expression_type = Solver< Equals< 
-        variable_type, right_expression_type >>;
+    using expression_type = Equals< variable_type, right_expression_type >;
     using scope_type = Scope< variable_type >;
 
     // this solver does not need to iterate
@@ -95,25 +152,230 @@ struct Solver< Equals< Variable< I, T >, ExprT >>:
     // this solver will always converge on the correct solution
     static constexpr bool is_convergent() { return true; }
 
-    template< typename ExprU >
-    requires( is_scope_for_v< scope_type, ExprU > )
-    constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
-    { return scope_type::operator ()( expr ); }
+//    template< typename ExprU >
+//    requires( is_scope_for_v< scope_type, ExprU > )
+//    constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
+//    { return scope_type::operator ()( expr ); }
 
     // the solution is trivial here
-    constexpr Solver(): scope_type{ } 
+    constexpr Solver( expression_type const& expr = {} ): scope_type{ }, _equal_to{ expr.right_arg() }
     { scope_type::template set_value< Variable< I, T >>( 
-            scope_type::operator ()( right_expression_type{} )); }
+        scope_type::operator ()( _equal_to )); }
 
+private:
+    right_expression_type _equal_to;
 };
 
+// TODO: handle StaticValues which will require copying the values and not
+// just matching types
 template< expression LeftT, expression RightT >
 requires( solvable< Equals< RightT, LeftT >> )
 struct Solver< Equals< LeftT, RightT >>: Solver< Equals< RightT, LeftT >>
-{ };
+{ 
+    using expression_type = Equals< LeftT, RightT >;
+    using base_solver = Solver< Equals< RightT, LeftT >>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.right_arg(), expr.left_arg() }}
+    { }
+};
+
+/// @brief solvers for -X = C
+template< variable Var, static_expression ExprT >
+struct Solver< Equals< Negation< Var >, ExprT >>:
+    Solver< Equals< Var, Negation< ExprT >>>
+{ 
+    using expression_type = Equals< Negation< Var >, ExprT >;
+    using base_solver = Solver< Equals< Var, Negation< ExprT >>>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.left_arg().arg(), { expr.right_arg() }}}
+    { }
+};
+
+/// @brief solvers for X + ... = C
+///
+template< size_t I, typename T, static_expression... Addends, 
+    static_expression ExprT >
+requires( isgreater( sizeof...( Addends ), 1 ))
+struct Solver< Equals< Sum< Variable< I, T >, Addends... >, ExprT >>:
+    Solver< Equals< Variable< I, T >, Difference< ExprT, Sum< Addends... >>>>
+{
+    using expression_type = Equals< Sum< Variable< I, T >, Addends... >, ExprT >;
+    using solver_expression_type = Equals< Variable< I, T >, Difference< ExprT, Sum< Addends... >>>;
+    using base_solver = Solver< solver_expression_type >;
+
+    static constexpr solver_expression_type 
+    translate( expression_type const& expr )
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            solver_expression_type
+        { return { get_argument< 0 >( expr.left_arg() ), { expr.right_arg(),
+            { get_argument< 1 + Is >( expr.left_arg() )... }}}; };
+
+        return helper( make_seq< sizeof...( Addends )>{} );
+    }
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{ translate( expr )} { }
+};
+
+template< size_t I, typename T, static_expression AddendT, 
+    static_expression ExprT >
+struct Solver< Equals< Sum< Variable< I, T >, AddendT >, ExprT >>:
+    Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>
+{ 
+    using expression_type = Equals< Sum< Variable< I, T >, AddendT >, ExprT >;
+    using base_solver = Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.left_arg().left_arg(), { expr.right_arg(), expr.left_arg().right_arg() }}}
+    { }
+};
+
+template< size_t I, typename T, static_expression AddendT,
+    static_expression ExprT >
+struct Solver< Equals< Sum< AddendT, Variable< I, T >>, ExprT >>:
+    Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>
+{ 
+    using expression_type = Equals< Sum< AddendT, Variable< I, T >>, ExprT >;
+    using base_solver = Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.left_arg().left_arg(), { expr.right_arg(), expr.left_arg().right_arg() }}}
+    { }
+};
+
+template< size_t I, typename T, static_expression AddendT,
+    static_expression... Addends, static_expression ExprT >
+requires( isgreater( sizeof...( Addends ), 0 ))
+struct Solver< Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >>:
+    Solver< Equals< Sum< Variable< I, T >, Addends... >, Difference< ExprT, AddendT >>>
+{ 
+    using expression_type = Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >;
+    using solver_expression_type = Equals< Sum< Variable< I, T >, Addends... >, Difference< ExprT, AddendT >>;
+    using base_solver = Solver< solver_expression_type >;
+
+    constexpr static solver_expression_type 
+    translate( expression_type const& expr )
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... >) constexpr ->
+            solver_expression_type
+        { return {{ get_argument< 1 >( expr.left_arg() ), get_argument< 2 + Is >( expr.left_arg() )... },
+            { expr.right_arg(), get_argument< 0 >( expr.left_arg() ) }}; };
+
+        return helper( make_seq< sizeof...( Addends )>{} );
+    }
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{ translate( expr )} { }
+};
+
+/// @brief solvers for X - ... = C
+template< size_t I, typename T, static_expression... Subends, 
+    static_expression ExprT >
+requires( isgreater( sizeof...( Subends ), 1 ))
+struct Solver< Equals< Difference< Variable< I, T >, Subends... >, ExprT >>:
+    Solver< Equals< Variable< I, T >, Sum< ExprT, Difference< Subends... >>>>
+{ 
+    using expression_type = Equals< Difference< Variable< I, T >, Subends... >, ExprT >;
+    using solver_expression_type = Equals< Variable< I, T >, Sum< ExprT, Difference< Subends... >>>;
+    using base_solver = Solver< solver_expression_type >;
+
+    constexpr static solver_expression_type
+    translate( expression_type const& expr )
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... >) constexpr ->
+            solver_expression_type
+        { return { get_argument< 0 >( expr.left_arg() ), { expr.right_arg(),
+            { get_argument< 1 + Is >( expr.left_arg() )... }}}; };
+
+        return helper( make_seq< sizeof...( Subends )>{} ); 
+    }
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{ translate( expr )} { }
+};
+
+template< size_t I, typename T, static_expression SubendT, 
+    static_expression ExprT >
+struct Solver< Equals< Difference< Variable< I, T >, SubendT >, ExprT >>:
+    Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>
+{ 
+    using expression_type = Equals< Difference< Variable< I, T >, SubendT >, ExprT >;
+    using base_solver = Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.left_arg().expr.left_arg(), { expr.right_arg(), expr.left_arg().expr.right_arg() }}}
+    { }
+};
+
+template< size_t I, typename T, static_expression SubendT,
+    static_expression ExprT >
+struct Solver< Equals< Difference< SubendT, Variable< I, T >>, ExprT >>:
+    Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>
+{ 
+    using expression_type = Equals< Difference< SubendT, Variable< I, T >>, ExprT >;
+    using base_solver = Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>;
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{{ expr.left_arg().expr.right_arg(), { expr.right_arg(), expr.left_arg().expr.left_arg() }}}
+    { }
+};
+
+template< size_t I, typename T, static_expression SubendT,
+    static_expression... Subends, static_expression ExprT >
+requires( isgreater( sizeof...( Subends ), 0 ))
+struct Solver< Equals< Difference< SubendT, Variable< I, T >, Subends... >, ExprT >>:
+    Solver< Equals< Difference< Variable< I, T >, Subends... >, Difference< SubendT, ExprT >>>
+{ 
+    using expression_type = Equals< Difference< SubendT, Variable< I, T >, Subends... >, ExprT >;
+    using solver_expression_type = Solver< Equals< Difference< Variable< I, T >, Subends... >, Difference< SubendT, ExprT >>>;
+    using base_solver = Solver< solver_expression_type >;
+
+    constexpr static solver_expression_type
+    translate( expression_type const& expr )
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            solver_expression_type 
+        { return {{ get_argument< 1 >( expr.left_arg() ), get_argument< 2 + Is >( expr.left_arg() )... }, 
+            { get_argument< 0 >( expr.left_arg() ), expr.right_arg() }}; };
+
+        return helper( make_seq< sizeof...( Subends )>{} );
+    }
+
+    constexpr Solver( expression_type const& expr = {} ):
+        base_solver{ translate( expr )} { }
+};
+
+namespace test {
+
+template< auto Value >
+consteval bool basic_solvers()
+{
+    using value_type = std::remove_cv_t< decltype( Value )>;
+    Variable< 0, value_type > x;
+    Constant< Value > value;
+    Constant< static_cast< value_type >( 1 )> one;
+    Constant< static_cast< value_type >( 2 )> two;
+
+    static_assert(( x == value | solve_for( x )) == Value );
+    static_assert(( x == static_expr( Value ) | solve_for( x )) == Value );
+    static_assert(( x + one == value + one | solve_for( x )) == Value );
+    static_assert(( x + two == value + one + one | solve_for( x )) == Value );
+
+
+    return true;
+}
+
+static_assert( basic_solvers< 7 >() );
 
 static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
 static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
+static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+
+} // namespace test
 
 /// @brief Represents an iterative expression. An instance of an iteration is 
 /// created by the builder types IterationInitializer and IterationUpdater

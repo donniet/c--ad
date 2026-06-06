@@ -16,6 +16,9 @@ template< typename... Ts > struct And;
 template< typename... Ts > struct Or;
 template< typename T > struct Not;
 
+template< typename... > struct Sum;
+template< typename... > struct Product;
+
 template< typename... Ts >
 constexpr And< Ts... > and_( Ts... );
 
@@ -25,18 +28,36 @@ constexpr Or< Ts... > or_( Ts... );
 template< typename T >
 constexpr Not< T > not_( T );
 
+template< typename... Ts >
+constexpr Sum< Ts... > sum_( Ts... );
+
+template< typename... Ts >
+constexpr Product< Ts... > product_( Ts... );
+
 // disjunctive normal form helper
 template< typename T >
 using dnf = Normalizer< Or, And, Not, T >;
 
 template< typename T >
+using associator = Associator< Sum, T >;
+
+template< typename T >
+using distributor = Distributor< Sum, Product, T >;
+
+template< typename T >
 using dnf_result_t = Normalizer< Or, And, Not, T >::type;
+
+template< typename T >
+using associated_result_t = associator< T >::type;
+
+template< typename T >
+using distributed_result_t = distributor< T >::type;
 
 // some empty distinct types for testing
 struct b0 { }; struct b1 { }; struct b2 { }; struct b3 { }; struct b4 { }; 
 struct b5 { }; struct b6 { }; struct b7 { }; struct b8 { }; struct b9 { };
 
-// class implementations
+// boolean logic test classes
 template< typename... Ts >
 struct And: tuple< Ts... >
 { 
@@ -84,9 +105,40 @@ template< typename T >
 constexpr Not< T > not_( T t )
 { return { t }; }
 
-// template< typename T >
-// constexpr T not_( Not< T > t )
-// { return t; }
+// arithmetic tests classes
+template< typename... Ts >
+struct Sum: tuple< Ts... >
+{
+    template< size_t... Is >
+    constexpr int result_helper( seq< Is... > ) const
+    { return ( get< Is >( *this ) + ... + 0 ); }
+
+    constexpr operator int() const
+    { return result_helper( make_seq< sizeof...( Ts )>{} ); }
+
+    constexpr Sum( Ts... ts ): tuple< Ts... >{ ts... } { }
+};
+
+template< typename... Ts >
+struct Product: tuple< Ts... >
+{
+    template< size_t... Is >
+    constexpr int result_helper( seq< Is... > ) const
+    { return ( get< Is >( *this ) * ... * 1 ); }
+
+    constexpr operator int() const
+    { return result_helper( make_seq< sizeof...( Ts )>{} ); }
+
+    constexpr Product( Ts... ts ): tuple< Ts... >{ ts... } { }
+};
+
+template< typename... Ts >
+constexpr Sum< Ts... > sum_( Ts... ts )
+{ return { ts... }; }
+
+template< typename... Ts >
+constexpr Product< Ts... > product_( Ts... ts )
+{ return { ts... }; }
 
 int main( int ac, char* av[] )
 {
@@ -123,6 +175,34 @@ int main( int ac, char* av[] )
         And< Or< b0,b1,b2 >, Or< b3,b4 > >>, 
         Or< And< b0,b3 >, And< b1,b3 >, And< b2,b3 >, 
             And< b0,b4 >, And< b1,b4 >, And< b2,b4 >>> );
+
+    static_assert( is_same_v< associated_result_t< int >, int > );
+    static_assert( is_same_v< associated_result_t< 
+        Sum< Sum< b0, b1 >, b2 >>,
+        Sum< b0, b1, b2 >> );
+    static_assert( is_same_v< associated_result_t<
+        Sum< b0, Sum< b1, b2 >>>,
+        Sum< b0, b1, b2 >> );
+    static_assert( is_same_v< associated_result_t<
+        Sum< Sum< b0, b1 >, Sum< b2, b3 >>>,
+        Sum< b0, b1, b2, b3 >> );
+    static_assert( is_same_v< associated_result_t<
+        Sum< Sum< Sum< b0, b1 >, b2 >, Sum< Sum< b3, b4 >, Sum< Sum< b5, b6 >, b7 >, b8 >>>,
+        Sum< b0, b1, b2, b3, b4, b5, b6, b7, b8 >> );
+    static_assert( is_same_v< distributed_result_t<
+        Sum< Sum< Sum< b0, b1 >, b2 >, Sum< Sum< b3, b4 >, Sum< Sum< b5, b6 >, b7 >, b8 >>>,
+        Sum< b0, b1, b2, b3, b4, b5, b6, b7, b8 >> );
+
+    static_assert( is_same_v< distributed_result_t< int >, int > );
+    static_assert( is_same_v< distributed_result_t<
+        Sum< Product< b0, b1 >, b2 >>,
+        Sum< Product< b0, b1 >, b2 >> );
+    static_assert( is_same_v< distributed_result_t<
+        Product< Sum< b0, b1 >, b2 >>,
+        Sum< Product< b0, b2 >, Product< b1, b2 >>> );
+    static_assert( is_same_v< distributed_result_t<
+        Product< Product< b0, b1 >, Sum< b2, b3 >>>,
+        Sum< Product< b0, b1, b2 >, Product< b0, b1, b3 >>> );
 
 
     // ensuring test methods behave as expected
@@ -161,8 +241,7 @@ int main( int ac, char* av[] )
     static_assert( is_same_v< std::remove_cvref_t< decltype( bn ) >, 
         Or< And< Not< bool >, Not< bool >>, 
             And< Not< bool >, Not< bool >>> > );
-
-
+    
 
     return EXIT_SUCCESS;
 }

@@ -36,12 +36,11 @@ Header-only C++ library for type-safe physical units such as length, time and ma
 
 ```
 Energy kinetic( Mass m, Velocity v )
-{ return m * pow<2>( v ) / 2; };
+{ return m * pow<2>( v ) / 2; }
 
 // ERROR: cannot add unit values of different types
-// | auto invalid_addition( Mass m, Velocity v )
-// | { return m + v; }
-// |____________^
+// auto invalid_addition( Mass m, Velocity v )
+// { return m + v; }
 ```
 
 ### Tensors
