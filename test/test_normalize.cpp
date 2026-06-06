@@ -241,6 +241,11 @@ int main( int ac, char* av[] )
     static_assert( is_same_v< std::remove_cvref_t< decltype( bn ) >, 
         Or< And< Not< bool >, Not< bool >>, 
             And< Not< bool >, Not< bool >>> > );
+
+    constexpr auto c = product_( sum_( 2, 3 ), sum_( 4, 5 ));
+    static_assert( 
+        (int)c == ( 2 + 3 ) * ( 4 + 5 ) and
+        (int)c == (int)distribute< Sum, Product >( c ) );
     
 
     return EXIT_SUCCESS;
