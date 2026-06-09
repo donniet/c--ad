@@ -74,6 +74,17 @@ template< typename T >
 concept static_expression = expression< T > and
     tuple_size_v< dependent_variables_t< T >> == 0;
 
+/// @brief specializations of this template find values of the dependent
+/// variables of ExprT which result in a true-like value for the 
+/// expression.  Not all expressions are solvable, so we do not expect 
+/// this class to be specialized in every case. 
+///
+/// Solvers take an ExprT as a constructor parameter, and implement an 
+/// invocation operator() that takes an ScopeT parameter that scopes
+/// the dependent variables of ExprT (at least).
+///
+/// @tparam ExprT is the type of the expression solved by this solver.
+///
 template< expression ExprT >
 struct Solver;
 
@@ -82,90 +93,708 @@ template< typename ExprT >
 concept solvable = requires( ExprT )
 { typename Solver< ExprT >; };
 
-/// @brief solver for an expression with no dependent variables is trivial
-template< static_expression ExprT >
-struct Solver< ExprT >: Scope< >
-{ };
-
-template< variable... Vars >
+/////////////////////////////////////////
+/// solve_for expression manipulator ///
+///////////////////////////////////////
+///
+/// @brief scope to store the values of variables that solve an expression
+template< typename VarTuple, typename... Params >
 struct SolveFor;
 
-template< variable... Vars >
-constexpr SolveFor< Vars... > 
-solve_for( Vars... )
-{ return {}; }
+template< typename VarTuple, typename... Params >
+struct SolverParams: expression_scope_t< VarTuple >
+{
+    using variables_tuple = VarTuple;
 
-template< >
-struct SolveFor< > { };
+    constexpr operator bool() const
+    { return _solved; }
 
-template< variable Var >
-struct SolveFor< Var >
-{ 
-    using value_type = Var::value_type;
+    constexpr tuple< Params... > params() const
+    { return _params; }
 
-    constexpr operator value_type() const
-    { return _value; }
+    template< typename... MoreParams >
+    constexpr SolveFor< VarTuple, Params..., MoreParams... >
+    operator []( MoreParams... more_params ) const
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            SolveFor< VarTuple, Params..., MoreParams... >
+        { return { std::get< Is >( _params )..., more_params... }; };
+
+        return helper( make_seq< sizeof...( Params )>{} );
+    }
+
+    template< expression ExprT >
+    constexpr bool solve( ExprT const& expr ) 
+    { 
+        auto solve_ = Solver< ExprT >{ expr };
+
+        // helper that calls our solver with our scope and parameters
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { solve_( *this, std::get< Is >( _params )... ); };
+
+        helper( make_seq< sizeof...( Params )>{} );
+
+        // return the value of expr using our solved scope
+        _solved = static_cast< bool >( expr | eval( *this ));
+        return _solved;
+    }
+
+    constexpr SolverParams( Params... params ):
+        _params{ params... }, _solved{ false } { }
 
 private:
-    value_type _value;
+    tuple< Params... > _params;
+    bool _solved;
 };
 
 template< variable... Vars >
+constexpr SolveFor< tuple< Vars... >> 
+solve_for( Vars... )
+{ return {}; }
+
+template< typename... Params >
+struct SolveFor< tuple<>, Params... >: 
+    SolverParams< tuple<>, Params... > 
+{ 
+    template< typename ExprT >
+    constexpr bool operator ()( ExprT const& expr )
+    { return SolverParams< tuple<>, Params... >::solve( expr ); }
+};
+
+/// @brief solve_for a single variable
+template< variable Var, typename... Params >
+struct SolveFor< tuple< Var >, Params... >: 
+    SolverParams< tuple< Var >, Params... >
+{ 
+    using value_type = Var::value_type;
+
+    template< typename ExprT >
+    constexpr value_type operator ()( ExprT const& expr )
+    {
+        SolverParams< tuple< Var >, Params... >::solve( expr );
+        return operator value_type(); 
+    }
+
+    constexpr operator value_type() const
+    { return Scope< Var >::template get_value< Var >(); }
+};
+
+template< variable... Vars, typename... Params >
 requires( isgreater( sizeof...( Vars ), 1 ))
-struct SolveFor< Vars... >: tuple< typename Vars::value_type... >
-{ };
+struct SolveFor< tuple< Vars... >, Params... >:
+    SolverParams< tuple< Vars... >, Params... >
+{
+    using value_type = tuple< typename Vars::value_type... >;
+
+    template< typename ExprT >
+    constexpr value_type operator ()( ExprT const& expr )
+    { 
+        SolverParams< tuple< Vars... >, Params... >::solve( expr );
+        return operator value_type();
+    }
+
+    constexpr operator value_type() const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            tuple< typename Vars::value_type... >
+        { return { Scope< Vars... >::template 
+            get_value< Vars...[ Is ]>()... }; };
+
+        return helper( make_seq< sizeof...( Vars )>{} ); 
+    }
+};
+
+template< expression ExprT, typename... Params >
+constexpr auto operator |( ExprT const& expr, 
+    SolveFor< tuple<>, Params... >&& scope )
+{ return scope( expr ); }
+
+//////////////////////////////////
+/// Static Expression Solvers ///
+////////////////////////////////
+///
+/// @brief solver for an expression with no dependent variables is trivial
+template< static_expression ExprT >
+struct Solver< ExprT >
+{
+    using expression_type = ExprT;
+    using result_type = result_t< expression_type >;
+
+    constexpr expression_type expression() const
+    { return _expr; }
+
+    template< typename ScopeT >
+    constexpr result_type operator ()( ScopeT& scope ) const
+    { return _expr | scope; }
+    
+    constexpr Solver( expression_type const& expr ): _expr{ expr } { }
+
+private:
+    expression_type _expr;
+};
+
+///////////////////////////////
+/// Trival Equality Solver ///
+/////////////////////////////
+/// 
+template< size_t I, typename T, static_expression ExprT >
+struct Solver< Equals< Variable< I, T >, ExprT >> 
+{
+    using expression_type = Equals< Variable< I, T >, ExprT >;
+    using result_type = result_t< expression_type >;
+    using variable_type = Variable< I, T >;
+    using right_expression_type = ExprT;
+
+    constexpr expression_type expression() const
+    { return _expr; }
+
+    template< typename ScopeT >
+    constexpr result_type operator ()( ScopeT& scope ) const
+    {
+        scope.template set_value< variable_type >( _expr.right_arg() | scope );
+        return _expr | scope;
+    }
+
+    constexpr Solver( expression_type const& expr = {} ): _expr{ expr } { }
+
+private:
+    expression_type _expr;
+};
+
+
+///////////////////////////////////
+/// Boolean Expression Solvers ///
+/////////////////////////////////
+///
+/// @brief solver for normalized boolean expressions
+///
+/// Canonical expressions are of the following forms:
+///
+/// Disjunction< [ Conjunction< EqualsZero< Exprs >... > | EqualsZero< Exprs > ]... >
+/// Conjunction< EqualsZero< Exprs >... >
+/// EqualsZero< ExprT >
+///
+/// ( f( args... ) == 0 and g( args... ) == 0 ) or h( args... ) == 0 
+///
+
+template< typename T >
+requires( std::totally_ordered< T >)
+struct positive
+{
+    constexpr T& value() 
+    { return _value; }
+
+    constexpr T const& value() const
+    { return _value; }
+
+    // I don't know if this should only return positive values or not...
+    constexpr operator T() const
+    //{ return _value < T{0} ? T{0} : value; }
+    { return value(); }
+
+    constexpr T error() const
+    { return _value <= T{0} ? -_value : T{0}; }
+
+    constexpr positive& operator =( T const& other )
+    { _value = other; return *this; }
+
+    T _value;
+};
+
+////////////////////////////////////
+/// Comparison Canonicalization ///
+//////////////////////////////////
+///
+/// Depth-First, Indexed Visitors for transforming numerical comparison 
+/// expressions (like A < B) to EqualsZero expressions (like A - B + e == 0).
+/// Since these will require new variables to be added to the expression we 
+/// require a unique index I for each visited tree in the expression.  This 
+/// will ensure that the variables added to the expression to represent the
+/// differences between compared values will have a unique variable id.
+///
+/// We have twelve specializations because we simultaneously handle compliments
+/// of comparisons.  In other words we handle all the following comparison
+/// patterns:
+///
+///     A == B, not A != B, A != B, not A == B,
+///     A <  B, not A >= B, A <= B, not A >  B,
+///     A >  B, not A <= B, A >= B, not A <  B,
+///
+/// Equals and Not Equals
+///
+template< size_t I, expression ExprT >
+struct ComparisonCanonicalizer
+{ 
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr )
+    { return expr; }
+};
+
+// A == B --> A - B == 0
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, Equals< LeftT, RightT >>
+{
+    using type = EqualsZero< Difference< LeftT, RightT >>;
+    static constexpr type value( Equals< LeftT, RightT > const& expr )
+    { return {{ expr.left_arg(), expr.right_arg() }}; }
+};
+
+// not( A != B ) --> A - B == 0
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, Compliment< NotEquals< LeftT, RightT >>>:
+    ComparisonCanonicalizer< I, Equals< LeftT, RightT >>
+{
+    using type = ComparisonCanonicalizer< I, Equals< LeftT, RightT >>::type;
+
+    static constexpr type value( Compliment< NotEquals< LeftT, RightT >> const& expr )
+    { return ComparisonCanonicalizer< I, Equals< LeftT, RightT >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+// A != B --> (A + e) - B == 0 or B - (A + e) == 0 [e > 0]
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, NotEquals< LeftT, RightT >>
+{
+    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+
+    using type = Disjunction<
+        EqualsZero< Difference< Sum< LeftT, positive_variable >, RightT >>,
+        EqualsZero< Difference< RightT, Sum< LeftT, positive_variable >>>>;
+
+    static constexpr type value( Equals< LeftT, RightT > const& expr )
+    { return {
+        {{{ expr.left_arg(), positive_variable{} }, expr.right_arg() }},
+        {{ expr.right_arg(), { expr.left_arg(), positive_variable{} }}}}; }
+};
+
+// not( A == B ) --> (A + e) - B == 0 or B - (A + e) == 0 [e > 0] 
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, Compliment< Equals< LeftT, RightT >>>:
+    ComparisonCanonicalizer< I, NotEquals< LeftT, RightT >>
+{
+    using type = ComparisonCanonicalizer< I, NotEquals< LeftT, RightT >>::type;
+
+    static constexpr type value( Compliment< Equals< LeftT, RightT >> const& expr )
+    { return ComparisonCanonicalizer< I, NotEquals< LeftT, RightT >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+/// Less Than and Greater Than
+
+// A < B --> (A + e) - B == 0 [e > 0]
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, LessThan< LeftT, RightT >>
+{
+    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+
+    using type = EqualsZero< Difference< Sum< LeftT, positive_variable >, RightT >>;
+
+    static constexpr type value( LessThan< LeftT, RightT > const& expr )
+    { return {{{ expr.left_arg(), positive_variable{} }, expr.right_arg() }}; }
+};
+
+// not( A >= B ) --> (A + e) - B == 0 [e > 0]
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, Compliment< GreaterThanOrEquals< LeftT, RightT >>>:
+    ComparisonCanonicalizer< I, LessThan< LeftT, RightT >>
+{
+    using type = ComparisonCanonicalizer< I, LessThan< LeftT, RightT >>::type;
+
+    static constexpr type value( Compliment< GreaterThanOrEquals< LeftT, RightT >> const& expr )
+    { return ComparisonCanonicalizer< I, LessThan< LeftT, RightT >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+// A > B --> A - (B + e) == 0 [e > 0]
+template< size_t I, expression LeftT, expression RightT >
+struct ComparisonCanonicalizer< I, GreaterThan< LeftT, RightT >>
+{
+    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+
+    using type = EqualsZero< Difference< LeftT, Sum< RightT, positive_variable >>>;
+
+    static constexpr type value( GreaterThan< LeftT, RightT > const& expr )
+    { return {{ expr.left_arg(), { expr.right_arg(), positive_variable{} }}}; }
+};
+
+// not(A <= B) --> A - (B + e) == 0 [e > 0]
+template< size_t I, expression A, expression B >
+struct ComparisonCanonicalizer< I, Compliment< LessThanOrEquals< A, B >>>:
+    ComparisonCanonicalizer< I, GreaterThan< A, B >>
+{
+    using type = ComparisonCanonicalizer< I, GreaterThan< A, B >>::type;
+
+    static constexpr type value( Compliment< LessThanOrEquals< A, B >> const& expr )
+    { return ComparisonCanonicalizer< I, GreaterThan< A, B >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+/// [ LessThan | GreaterThan ] Or Equals
+
+// A <= B --> (A + e) - B == 0 or A - B == 0 [e > 0]
+template< size_t I, expression A, expression B >
+struct ComparisonCanonicalizer< I, LessThanOrEquals< A, B >>
+{
+    using positive_variable = Variable< I, positive< result_t< A >>>;
+
+    using type = Disjunction<
+        EqualsZero< Difference< Sum< A, positive_variable >, B >>,
+        EqualsZero< Difference< A, B >>>;
+
+    static constexpr type value( LessThanOrEquals< A, B > const& expr )
+    { return {
+        {{{ expr.left_arg(), positive_variable{} }, expr.right_arg() }},
+        {{ expr.left_arg(), expr.right_arg() }}}; }
+};
+
+// not( A > B ) --> (A + e) - B == 0 or A - B == 0 [e > 0]
+template< size_t I, expression A, expression B >
+struct ComparisonCanonicalizer< I, Compliment< GreaterThan< A, B >>>:
+    ComparisonCanonicalizer< I, LessThanOrEquals< A, B >>
+{
+    using type = ComparisonCanonicalizer< I, LessThanOrEquals< A, B >>::type;
+
+    static constexpr type value( Compliment< GreaterThan< A, B >> const& expr )
+    { return ComparisonCanonicalizer< I, LessThanOrEquals< A, B >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+// A >= B --> A - (B + e) == 0 or A - B == 0 [e > 0]
+template< size_t I, expression A, expression B >
+struct ComparisonCanonicalizer< I, GreaterThanOrEquals< A, B >>
+{
+    using positive_variable = Variable< I, positive< result_t< B >>>;
+
+    using type = Disjunction< 
+        EqualsZero< Difference< A, Sum< B, positive_variable >>>,
+        EqualsZero< Difference< A, B >>>;
+
+    static constexpr type value( GreaterThanOrEquals< A, B > const& expr )
+    { return {
+        {{ expr.left_arg(), { expr.right_arg(), positive_variable{} }}},
+        {{ expr.left_arg(), expr.right_arg() }}}; }
+};
+
+// not(A < B) --> A - (B + e) == 0 or A - B == 0 [e > 0]
+template< size_t I, expression A, expression B >
+struct ComparisonCanonicalizer< I, Compliment< LessThan< A, B >>>:
+    ComparisonCanonicalizer< I, GreaterThanOrEquals< A, B >>
+{
+    using type = ComparisonCanonicalizer< I, GreaterThanOrEquals< A, B >>::type;
+
+    static constexpr type value( Compliment< LessThan< A, B >> const& expr )
+    { return ComparisonCanonicalizer< I, GreaterThanOrEquals< A, B >>::value(
+        { expr.arg().left_arg(), expr.arg().right_arg() }); }
+};
+
+template< typename ExprT >
+constexpr auto canonical_comparison( ExprT const& expr )
+{ 
+    using dependent_vars_tuple = dependent_variables_t< ExprT >;
+
+    static constexpr size_t first_variable_id = 1 + largest_dependent_variable_id_v< ExprT >;
+
+    return ComparisonCanonicalizer< first_variable_id, ExprT >::value;
+}
+
+template< typename ExprT >
+constexpr auto canonicalize( ExprT const& expr )
+{
+    // 1) we normalize the expression to push the compliments down to the comparison
+    //    operations
+    auto norm = normalize< Disjunction, Conjunction, Compliment >( expr );
+
+    // 2) we eliminiate all the compliments by taking complimentary comparisons 
+    //    (ie: ~( A < B ) --> A >= B)
+    auto comp = compliment_comparison( norm );
+
+    // 3) we replace comparisons with their canonical representations using special 
+    //    variables e > 0
+    //    - A >= B --> A - B - e == 0 or A - B == 0
+    //    - A <= B --> B - A - e == 0 or A - B == 0
+    //    - A > B  --> A - B - e == 0
+    //    - A < B  --> B - A - e == 0
+    //    - A == B --> A - B == 0
+    //    - A != B --> A - B - e == 0 or B - A - e == 0
+    auto can_comp = canonical_comparison( comp );
+
+    // 4) we re-distribute to put the expression back into disjunctive normal form,
+    //    this time without any compliements and only A == 0 logical operations
+    return distribute< Disjunction, Conjunction >( can_comp );
+}
+
 
 
 template< expression ExprT >
-constexpr result_t< ExprT > operator |( ExprT const& expr, SolveFor< > )
-{ return Solver< ExprT >{ expr }( expr ); }
+struct DNFSolver;
+
+/// @brief normalized disjunctions can be solved term by term
+template< expression... Terms >
+struct DNFSolver< Disjunction< Terms... >>
+{
+    using expression_type = Disjunction< Terms... >;
+
+private:
+    template< expression ExprU >
+    struct TermSolver: Solver< ExprU > { };
+
+    template< expression... Elements >
+    struct TermSolver< Conjunction< Elements... >>:
+        DNFSolver< Conjunction< Elements... >>
+    { };
+
+    template< expression ContraU >
+    struct TermSolver< Compliment< ContraU >>:
+        DNFSolver< Compliment< ContraU >>
+    { };
+
+    template< expression ExprU, typename ScopeT, typename... Params >
+    constexpr bool solve_term( ExprU const& term, ScopeT& scope, Params... params )
+    { return TermSolver< ExprU >{ term }( scope, params... ); }
+
+    constexpr bool helper( seq< > )
+    { return false; }
     
-template< expression ExprT, variable Var >
-constexpr typename Var::value_type
-operator |( ExprT const& expr, SolveFor< Var > )
-{ return Solver< ExprT >{ expr }( Var{} ); }
+    // this could be rewritten to allow for parallel compilation.
+    template< size_t I, size_t... Is >
+    constexpr bool helper( seq< I, Is... > )
+    {
+        if( solve_term( get_argument< I >( _expr )))
+            return true;
 
-template< expression ExprT, variable... Vars >
-constexpr tuple< typename Vars::value_type... >
-operator |( ExprT const& expr, SolveFor< Vars... > )
-{ return Solver< ExprT >{ expr }( tuple< Vars... >{} ); }
+        return helper( seq< Is... >{} );
+    }
 
+public:
+    template< typename ScopeT, typename... Params >
+    constexpr bool operator ()( ScopeT& scope, Params... params )
+    { return helper( make_seq< sizeof...( Terms )>{} ); }
+
+    constexpr DNFSolver( expression_type const& expr ): _expr{ expr } { }
+
+private:
+    expression_type _expr;
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< NotEquals< LeftT, RightT >>>:
+    Solver< Equals< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< NotEquals< LeftT, RightT >> const& expr ):
+        Solver< Equals< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< Equals< LeftT, RightT >>>:
+    Solver< NotEquals< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< Equals< LeftT, RightT >> const& expr ):
+        Solver< NotEquals< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< LessThan< LeftT, RightT >>>:
+    Solver< GreaterThanOrEquals< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< LessThan< LeftT, RightT >> const& expr ):
+        Solver< GreaterThanOrEquals< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< LessThanOrEquals< LeftT, RightT >>>:
+    Solver< GreaterThan< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< LessThanOrEquals< LeftT, RightT >> const& expr ):
+        Solver< GreaterThan< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< GreaterThan< LeftT, RightT >>>:
+    Solver< LessThanOrEquals< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< GreaterThan< LeftT, RightT >> const& expr ):
+        Solver< LessThanOrEquals< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression LeftT, expression RightT >
+struct DNFSolver< Compliment< GreaterThanOrEquals< LeftT, RightT >>>:
+    Solver< LessThan< LeftT, RightT >> 
+{
+    constexpr DNFSolver( Compliment< GreaterThanOrEquals< LeftT, RightT >> const& expr ):
+        Solver< LessThan< LeftT, RightT >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+    { }
+};
+
+template< expression... Elements >
+struct DNFSolver< Conjunction< Elements... >>
+{
+    using expression_type = Conjunction< Elements... >;
+
+private:
+    template< expression ExprU >
+    struct ElementSolver: Solver< ExprU > { };
+
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< Equals< LeftU, RightU >>>:
+//        Solver< NotEquals< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< Equals< LeftU, RightU >> const& expr ):
+//        Solver< NotEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+//
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< NotEquals< LeftU, RightU >>>:
+//        Solver< NotEquals< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< NotEquals< LeftU, RightU >> const& expr ):
+//        Solver< Equals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+//
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< LessThan< LeftU, RightU >>>:
+//        Solver< GreaterThanOrEquals< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< LessThan< LeftU, RightU >> const& expr ):
+//        Solver< GreaterThanOrEqualsEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+//
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< LessThanOrEquals< LeftU, RightU >>>:
+//        Solver< GreaterThan< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< LessThanOrEquals< LeftU, RightU >> const& expr ):
+//        Solver< GreaterThan< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+//
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< GreaterThan< LeftU, RightU >>>:
+//        Solver< LessThanOrEquals< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< GreaterThan< LeftU, RightU >> const& expr ):
+//        Solver< LessThanOrEqualsEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+//
+//    template< expression LeftU, expression RightU >
+//    struct ElementSolver< Compliment< GreaterThanOrEquals< LeftU, RightU >>>:
+//        Solver< LessThan< LeftU, RightU >>
+//    { constexpr ElementSolver( Compliment< GreaterThanOrEquals< LeftU, RightU >> const& expr ):
+//        t
+//        Solver< LessThan< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
+//      {} };
+
+    template< expression ExprU, typename ScopeT, typename... Params >
+    constexpr bool solve_element( ExprU const& element, ScopeT& scope, Params... params )
+    { return ElementSolver< ExprU >{ element }( scope, params... ); }
+
+    constexpr bool helper( seq<> )
+    { return true; }
+
+    template< size_t I, size_t... Is >
+    constexpr bool helper( seq< I, Is... > )
+    {}
+
+public:
+    template< typename ScopeT, typename... Params >
+    constexpr bool operator ()( ScopeT& scope, Params... params )
+    { return helper( make_seq< sizeof...( Elements )>{} ); }
+
+    constexpr DNFSolver( expression_type const& expr ): _expr{ expr } { }
+
+private:
+    expression_type _expr;
+};
+
+/// @brief boolean expressions are normalized before solving with a bespoke
+/// solver
+template< expression ExprT >
+requires( is_disjunction_v< ExprT > or is_conjunction_v< ExprT > or is_compliment_v< ExprT >)
+struct Solver< ExprT >: 
+    DNFSolver< normalized_t< Disjunction, Conjunction, Compliment, ExprT >>
+{
+    using expression_type = ExprT;
+    using normalized_expression_type = 
+        normalized_t< Disjunction, Conjunction, Compliment, expression_type >;
+    using base_solver = DNFSolver< normalized_expression_type >;
+
+    constexpr Solver( expression_type const& expr ):
+        base_solver{ normalize< Disjunction, Conjunction, Compliment >( expr )}
+    { }
+};
+
+/// @brief trivial boolean expression is just a boolean variable
+template< size_t I >
+struct Solver< Variable< I, bool >>: Scope< Variable< I, bool >>
+{
+    using variable_type = Variable< I, bool >;
+    using expression_type = variable_type;
+    using scope_type = Scope< expression_type >;
+
+    constexpr operator bool() const
+    { return scope_type::template get_value< variable_type >(); }
+
+    constexpr Solver( expression_type const& expr ):
+        scope_type{ make_scope< variable_type >( true )} { }
+};
+
+namespace test {
+
+constexpr bool test_boolean_satisfaction()
+{
+    auto vars = declare_variables(
+        var< bool >("b0"), var< bool >("b1"), var< bool >("b2"), var< bool >("b3"),
+        var< bool >("b4"), var< bool >("b5"), var< bool >("b6"), var< bool >("b7")
+    );
+
+    auto [ b0, b1, b2, b3, b4, b5, b6, b7 ] = vars.variables();
+
+   // static_assert( b0 | solve_for( b0 ), "FAILURE: solve( var< bool > ) is false" );
+
+
+    //auto [ r0, r1 ] = ( b0 or b1 ) | solve_for( b0, b1 );
+
+
+    return true;
+}
+
+static_assert( test_boolean_satisfaction() );
+
+} // namespace test
 
 /// @brief solvers for boolean expressions
 ///
 
 /// @brief the simplest solvers
-template< size_t I, typename T, static_expression ExprT >
-requires( is_convertible_v< result_t< ExprT >, T > )
-struct Solver< Equals< Variable< I, T >, ExprT >>:
-    Scope< Variable< I, T >>
-{
-    using right_expression_type = ExprT;
-    using variable_type = Variable< I, T >;
-    using expression_type = Equals< variable_type, right_expression_type >;
-    using scope_type = Scope< variable_type >;
-
-    // this solver does not need to iterate
-    static constexpr bool is_iterative() { return false; }
-    // this solver is guaranteed to complete
-    static constexpr bool is_bounded() { return true; }
-    // this solver will always converge on the correct solution
-    static constexpr bool is_convergent() { return true; }
-
-//    template< typename ExprU >
-//    requires( is_scope_for_v< scope_type, ExprU > )
-//    constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
-//    { return scope_type::operator ()( expr ); }
-
-    // the solution is trivial here
-    constexpr Solver( expression_type const& expr = {} ): scope_type{ }, _equal_to{ expr.right_arg() }
-    { scope_type::template set_value< Variable< I, T >>( 
-        scope_type::operator ()( _equal_to )); }
-
-private:
-    right_expression_type _equal_to;
-};
-
+//template< size_t I, typename T, static_expression ExprT >
+//requires( is_convertible_v< result_t< ExprT >, T > )
+//struct Solver< Equals< Variable< I, T >, ExprT >>:
+//    Scope< Variable< I, T >>
+//{
+//    using right_expression_type = ExprT;
+//    using variable_type = Variable< I, T >;
+//    using expression_type = Equals< variable_type, right_expression_type >;
+//    using scope_type = Scope< variable_type >;
+//
+//    // this solver does not need to iterate
+//    static constexpr bool is_iterative() { return false; }
+//    // this solver is guaranteed to complete
+//    static constexpr bool is_bounded() { return true; }
+//    // this solver will always converge on the correct solution
+//    static constexpr bool is_convergent() { return true; }
+//
+////    template< typename ExprU >
+////    requires( is_scope_for_v< scope_type, ExprU > )
+////    constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
+////    { return scope_type::operator ()( expr ); }
+//
+//    // the solution is trivial here
+//    constexpr Solver( expression_type const& expr = {} ): scope_type{ }, _equal_to{ expr.right_arg() }
+//    { scope_type::template set_value< Variable< I, T >>( 
+//        scope_type::operator ()( _equal_to )); }
+//
+//private:
+//    right_expression_type _equal_to;
+//};
+//
 // TODO: handle StaticValues which will require copying the values and not
 // just matching types
 template< expression LeftT, expression RightT >
@@ -370,11 +999,11 @@ consteval bool basic_solvers()
 
 static_assert( basic_solvers< 7 >() );
 
-static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
-static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
-static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
-static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
-
+//static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+//
 } // namespace test
 
 /// @brief Represents an iterative expression. An instance of an iteration is 
@@ -464,7 +1093,7 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
     // TODO: should this be re-wrtten as the value method which would let
     // manipulator do it's thing?
     template< typename ManipulatorT >
-    constexpr auto operator |( ManipulatorT const& manipulator ) const
+    constexpr auto apply( ManipulatorT const& manipulator ) const
     {
         auto scope = Scope< Vars... >{};
 

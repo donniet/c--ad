@@ -22,15 +22,33 @@
 ///   such that the application of a Scope<> to an expression evaluates the 
 ///   placeholders against the scoped values.
 /// - Arguments< Op, Args... > is the base class for compound expressions
+/// - Scope< Vars... > is an example of a scope-type class, having 
+///   get_value< VarT >() and set_value< VarT >( ValueT ) methods and an
+///   invocation operator `ScopeT::operator ()( Exprs... )` that evaluates
+///   the expressions against the scoped values.
+/// - Solver: `Solver< ExprT >{ expr }( ScopeT, Params... )` is the template
+///   for all solver classes. A solver class must accept an ExprT instance as a 
+///   construction parameter, and overload the invocation operator() to accept
+///   a scope-type object and may accept an aribitrary number of ...Params.  
 ///
-/// # Operators
-/// - operator ()( Subs... ) is overloaded by Arguments< Op, Args... > and 
-///   substitutes ...Subs for the dependent variables of the parent expression
-/// - operator |( Manipulator ) applies a Manipulator to an expression.  An
-///   evaluator is a type of manipulator that, and Scope<...> evaluates
-///   the placeholder variables against it's stored values when used as a
-///   manipulator.
-///   
+/// # Key Operations
+/// - Substitution: `new_expr = expr( args... ); // ExprU ExprT::operator ()( Subs... )`
+///   Overloaded by Arguments< Op, Args... > which is inherited by all expressions. 
+///   ...Subs are substituted for the dependent variables and a new expression is 
+///   returned
+/// - Manipulation: `expr | manipulator; // auto operator |( ExprT, ManipulatorT )`
+///   applies a Manipulator to an expression. A ScopeT is a type of manipulator.
+///   Manipulation by a scope is a dual-recursion between this operator and 
+///   `ScopeT::operator ()( Exprs... )` until the expression is parsed.
+/// - Evaluation: `scope( exprs... ); // ScopeT::operator ()( Exprs... )` 
+///   evaluates the ...Exprs expressions against the scope_type instance.  The 
+///   default implementation uses the expressions::operator |( ExprT, ScopeT ) 
+///   operators, creating a dual recursion that parses the expression.  The 
+///   ScopeT class must, therefore, only directly handle the leaves of the 
+///   expression (Constant, StaticValue, and Variable types).  
+/// - Solving: `expr | solve_for( vars... )[ Params... ];` returns a scope-type object
+///   which, when invoked against `expr` results in a true value. 
+///
 
 
 #ifndef __EXPRESSIONS_EXPRESSIONS_HPP__
@@ -70,8 +88,13 @@ struct ExpressionTag { };
 /// @brief trait to identify a type as an expression type
 /// @tparam T is the type to be checked
 template< typename T >
-struct is_expression: integral_constant< size_t, 
+struct is_expression: integral_constant< bool, 
     std::is_base_of_v< detail::ExpressionTag, T >> { };
+
+template< typename... Ts >
+struct is_expression< tuple< Ts... >>: integral_constant< bool,
+    true and ( is_expression< Ts >::value and ... )> { };
+
 
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
@@ -80,6 +103,10 @@ static constexpr bool is_expression_v = is_expression< T >::value;
 
 template< typename T >
 concept expression = is_expression_v< T >;
+
+template< typename T >
+concept compound_expression = expression< T > and requires( T )
+{ typename T::argument_types; };
 
 /// @brief type erased expression container
 /// TODO: build a stack representation of the expression
@@ -297,6 +324,7 @@ private:
 //    string _name;
 };
 
+
 template< typename Var >
 struct variable_traits
 { static constexpr bool is_variable = false; };
@@ -319,7 +347,7 @@ struct VariableDeclaration
 { 
     using value_type = T;
 
-    string const& name() const
+    constexpr string const& name() const
     { return _name; }
 
     string _name = ""; 
@@ -330,7 +358,7 @@ struct VariableDeclaration
 /// @param name the name of this variable
 /// @return a declaration of a variable
 template< typename T >
-VariableDeclaration< T > var( string name = "var" )
+constexpr VariableDeclaration< T > var( string name = "var" )
 { return { name }; }
 
 template< size_t Start, typename... Ts >
@@ -388,6 +416,65 @@ struct Result< T >
 ///
 template< typename T >
 using result_t = detail::Result< T >::type;
+
+template< size_t I, typename... Values >
+struct TupleRef
+{
+    static constexpr size_t tuple_index = I;
+    using tuple_type = tuple< Values... >;
+    using value_type = Values...[ tuple_index ];
+
+    constexpr value_type* value_ptr() const
+    { return &std::get< tuple_index >( *_tuple_ptr ); }
+
+    template< size_t J >
+    constexpr TupleRef( TupleRef< J, Values... > other ): 
+        _tuple_ptr{ other._tuple_ptr } { }
+
+
+    tuple< Values... >* _tuple_ptr;
+};
+
+template< variable... Vars >
+struct VariableValues;
+
+template< >
+struct VariableValues< >
+{ };
+
+template< variable First, variable... Rest >
+struct VariableValues< First, Rest... >:
+    VariableValues< Rest... >
+{
+    using first_variable_type = First;
+    using first_value_type = first_variable_type::value_type;
+
+    template< variable Var >
+    constexpr typename Var::value_type& get_value()
+    { return VariableValues< Rest... >::get_value(); }
+
+    template< >
+    constexpr first_value_type& get_value< first_variable_type >()
+    { return *_first_value_ptr; }
+
+    template< variable Var >
+    constexpr typename Var::value_type const& get_value() const
+    { return VariableValues< Rest... >::get_value(); }
+
+    template< >
+    constexpr first_value_type const& get_value< first_variable_type >() const
+    { return *_first_value_ptr; }
+
+    template< size_t I, typename... Values >
+    constexpr VariableValues( TupleRef< I, Values... > tuple_ref ):
+        VariableValues< Rest... >{ TupleRef< I + 1, Values... >{ tuple_ref }},
+        _first_value_ptr{ tuple_ref.value_ptr() }
+    { }
+
+    first_value_type* _first_value_ptr;    
+};
+
+
 
 /// @brief container and factory for Variables.  Scope is a manipulator and
 /// application of scope via operator| evaluates dependent variables against
@@ -464,7 +551,7 @@ public:
     { return { Vars{}... }; }
 
     /// @brief invocation against a constant will return the constant's value
-    template< auto Value >
+    template< auto Value > 
     constexpr decltype( Value ) operator ()( Constant< Value > ) const
     { return Value; }
 
@@ -482,23 +569,27 @@ public:
 
     template< size_t I, typename T >
     requires( has_value_v< Variable< I, T >>)
-    constexpr void operator ()( SetVariableValue< Variable< I, T >> const& setter )
+    constexpr void 
+    operator ()( SetVariableValue< Variable< I, T >> const& setter )
     { set_value< Variable< I, T >>( setter.value() ); }
 
     template< typename... Args >
     requires( isgreater( sizeof...( Args ), 1 ))
-    constexpr auto operator ()( Args const&... args )
+    constexpr auto 
+    operator ()( Args const&... args )
     { return ( operator ()( args ), ... ); }
 
-    template< expression ExprT >
+    template< compound_expression ExprT >
     requires( scope_contains_dependent_variables_v< ExprT, Scope< Vars... >> )
-    constexpr result_t< ExprT > operator ()( ExprT const& expr ) const;
+    constexpr result_t< ExprT > 
+    operator ()( ExprT const& expr ) const;
 
     /// @brief invocation against a scoped variable will return the
     /// scoped value
     template< size_t I, typename T >
     requires( scope_contains_variable_v< I, Scope< Vars... >> )
-    constexpr T operator ()( Variable< I, T > const& var ) const 
+    constexpr T 
+    operator ()( Variable< I, T > const& var ) const 
     { return helper_for< Variable< I, T >>::get( _values ); }
  
     template< typename... Names >
@@ -541,7 +632,7 @@ simple_scope( Values const&... values )
 template< typename... Decls >
 typename SimpleScopeHelper< make_seq< sizeof...( Decls )>, 
     typename Decls::value_type... >::type
-declare_variables( Decls... decls )
+constexpr declare_variables( Decls... decls )
 { return { decls.name()... }; }
 
 namespace detail {
@@ -671,6 +762,27 @@ struct DependsOnVariableIndex: integral_constant< bool,
 template< typename ExprT >
 using dependent_variables_t = detail::DependentVariables< ExprT >::type;
 
+namespace detail {
+template< typename ExprT >
+struct LargestDependentVariableId
+{
+    using dependent_variable_tuple = dependent_variables_t< ExprT >;
+
+    template< typename TupleT >
+    struct Helper;
+
+    template< variable... Vars >
+    struct Helper< tuple< Vars... >>: integral_constant< size_t, 
+        max( Vars::index... )> { };
+
+    static constexpr size_t value = Helper< dependent_variable_tuple >::value;
+};
+} // namespace detail
+
+template< typename ExprT >
+constexpr size_t largest_dependent_variable_id_v = 
+    detail::LargestDependentVariableId< ExprT >::value;
+
 template< typename ExprT >
 using dependent_variable_id_seq = detail::DependentVariableIDs< ExprT >::type;
 
@@ -754,6 +866,9 @@ struct IsScopeFor< Scope< Vars... >, ExprU >:
 template< typename ScopeT, expression ExprU >
 constexpr bool is_scope_for_v = IsScopeFor< ScopeT, ExprU >::value;
 
+template< expression ExprT >
+using expression_scope_t = expression_traits< ExprT >::scope_type;
+
 /// @brief constructs a scope from the dependent variables of ExprT and init-
 /// ializes the values to ...ts in variable index order
 ///
@@ -782,10 +897,6 @@ make_scope( Ts const&... ts )
 /// Substitution and Arguments ///
 /////////////////////////////////
 ///
-template< typename T >
-concept compound_expression = expression< T > and requires( T )
-{ typename T::argument_types; };
-
 namespace detail {
 template< typename VarsTule, typename SubTuple >
 struct CompatibleSubstitutionHelper;
@@ -900,7 +1011,7 @@ public:
     ///         evalulate() == 5 );
     ///
     template< typename ManipulatorT >
-    constexpr auto apply( ManipulatorT const& manipulator ) const
+    constexpr auto apply( ManipulatorT& manipulator ) const
     {
         using std::get;
 
@@ -919,37 +1030,146 @@ protected:
     constexpr Arguments() = default;
 };
 
-/// @brief Manipulation operator for compound expressions
+//////////////////////////////////
+/// Evaluation of Expressions ///
+////////////////////////////////
+///
+///
+template< typename ScopeT = void >
+struct Evaluator;
+
+namespace detail {
+template< typename FuncT >
+struct ManipulatorFunctor 
+{
+    using functor_type = FuncT;
+
+    template< typename ExprT >
+    constexpr auto 
+    operator ()( ExprT const& expr ) const
+    { return _func( expr ); }
+
+    functor_type _func;
+};
+} // namespace detail
+
+template< typename ScopeT >
+struct Evaluator
+{
+    using scope_type = ScopeT;
+
+    template< size_t I, typename T >
+    constexpr T
+    operator ()( Variable< I, T > const& var ) const
+    { return _scope.template get_value< Variable< I, T >>(); }
+
+    template< auto Value >
+    constexpr typename Constant< Value >::value_type
+    operator ()( Constant< Value > const& constant ) const
+    { return Value; }
+
+    template< typename T >
+    constexpr T
+    operator ()( StaticValue< T > const& static_value ) const
+    { return static_value.get_value(); }
+
+    constexpr Evaluator() = delete;
+    constexpr Evaluator( Evaluator const& ) = default;
+    constexpr Evaluator( scope_type const& scope ): _scope{ scope } { }
+
+    scope_type const& _scope;
+};
+
+template< >
+struct Evaluator< void >
+{
+    template< auto Value >
+    constexpr typename Constant< Value >::value_type
+    operator ()( Constant< Value > const& constant ) const
+    { return Value; }
+
+    template< typename T >
+    constexpr T
+    operator ()( StaticValue< T > const& static_value ) const
+    { return static_value.get_value(); }
+};
+
+template< typename FuncT >
+constexpr detail::ManipulatorFunctor< FuncT > manipulate( FuncT&& func )
+{ return { func }; }
+
+template< typename ScopeT >
+constexpr Evaluator< ScopeT > eval( ScopeT const& scope )
+{ return { scope }; }
+
+constexpr Evaluator< void > eval()
+{ return {}; }
+
+//////////////////////////////
+/// Manipulation Operator ///
+////////////////////////////
+/// 
+/// We commandeer operator| on expression types as the "manipulation" operator
+///
+/// @brief Application of a temporary manipulator
 ///
 /// @tparam ExprT is the type of the expression to be manipulated
 /// @tparam ManipulatorT is the type of the manipulator
 /// @param expr is the expression value
 /// @param manipulator is the manipulator value
 /// @returns the result of calling apply on expr with the manipulator parameter
-template< compound_expression ExprT, typename ManipulatorT >
+template< expression ExprT, typename ManipulatorT >
+requires std::invocable< ManipulatorT, ExprT >
+constexpr auto operator |( ExprT const& expr, ManipulatorT&& manipulator )
+{ return manipulator( expr ); }
+
+template< expression ExprT, typename ManipulatorT >
+requires( not std::invocable< ManipulatorT, ExprT >)
+constexpr auto operator |( ExprT const& expr, ManipulatorT&& manipulator )
+{ return expr.apply( manipulator ); }
+
+template< expression ExprT, typename ManipulatorT >
+requires std::invocable< const ManipulatorT, ExprT >
+constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
+{ return manipulator( expr ); }
+
+template< expression ExprT, typename ManipulatorT >
+requires( not std::invocable< const ManipulatorT, ExprT >)
 constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
 { return expr.apply( manipulator ); }
 
 /// @brief Manipulation operator for variables
 ///
-template< variable Var, typename ManipulatorT >
-constexpr auto operator |( Var& var, ManipulatorT& manipulator )
-{ return manipulator( var ); }
-
-template< auto Value, typename ManipulatorT >
-constexpr auto operator |( Constant< Value > c, ManipulatorT& manipulator )
-{ return manipulator( c ); }
-
-template< typename T, typename ManipulatorT >
-constexpr auto operator |( StaticValue< T > const& value, ManipulatorT& manipulator )
-{ return manipulator( value ); }
-
+//template< variable Var, typename ManipulatorT >
+//constexpr auto operator |( Var& var, ManipulatorT& manipulator )
+//{ return manipulator( var ); }
+//
+//template< auto Value, typename ManipulatorT >
+//constexpr auto operator |( Constant< Value > c, ManipulatorT& manipulator )
+//{ return manipulator( c ); }
+//
+//template< typename T, typename ManipulatorT >
+//constexpr auto operator |( StaticValue< T > const& value, ManipulatorT& manipulator )
+//{ return manipulator( value ); }
+//
+//template< variable Var, typename ManipulatorT >
+//constexpr auto operator |( Var& var, ManipulatorT&& manipulator )
+//{ return manipulator( var ); }
+//
+//template< auto Value, typename ManipulatorT >
+//constexpr auto operator |( Constant< Value > c, ManipulatorT&& manipulator )
+//{ return manipulator( c ); }
+//
+//template< typename T, typename ManipulatorT >
+//constexpr auto operator |( StaticValue< T > const& value, ManipulatorT&& manipulator )
+//{ return manipulator( value ); }
+//
 /// @brief Manipulation operator for tuples of expressions
 ///
 template< expression... Exprs, typename ManipulatorT >
 //requires( not compound_expression< tuple< Exprs... >> )
 constexpr auto operator |( tuple< Exprs... > const& expr_tup, 
-    ManipulatorT const& manipulator )
+    ManipulatorT& manipulator )
 {
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
     { return std::make_tuple(
@@ -962,7 +1182,7 @@ constexpr auto operator |( tuple< Exprs... > const& expr_tup,
 ///
 template< typename ShapeT, expression... Exprs, typename ManipulatorT >
 constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, 
-    ManipulatorT const& manipulator )
+    ManipulatorT& manipulator )
 {
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
     { return make_tensor< ShapeT >(
@@ -972,11 +1192,11 @@ constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten,
 }
 
 template< variable... Vars >
-template< expression ExprT >
+template< compound_expression ExprT >
 requires( scope_contains_dependent_variables_v< ExprT, Scope< Vars... >> )
 constexpr result_t< ExprT > 
 Scope< Vars... >::operator ()( ExprT const& expr ) const
-{ return expr | *this; }
+{ return expr.apply( *this ); }
 
 /// @brief type trait for extracting an argument from a compound expression
 /// @tparam I is the index of the argument
@@ -996,66 +1216,6 @@ template< size_t I, typename ExprT >
 constexpr expression_argument_t< I, ExprT > const& 
 get_argument( ExprT const& expr )
 { return GetArgument< I, ExprT >::value( expr ); }
-
-template< typename ScopeT = void >
-struct Evaluator;
-
-namespace detail {
-template< typename FuncT >
-struct ManipulatorFunctor 
-{
-    using functor_type = FuncT;
-
-    template< typename ExprT >
-    constexpr auto 
-    operator ()( ExprT const& expr ) const
-    { return _func( expr ); }
-
-    functor_type _func;
-};
-
-struct EvaluatorBase
-{
-    template< auto Value >
-    constexpr typename Constant< Value >::value_type
-    operator ()( Constant< Value > const& constant ) const
-    { return Value; }
-
-    template< typename T >
-    constexpr T
-    operator ()( StaticValue< T > const& static_value ) const
-    { return static_value.get_value(); }
-};
-} // namespace detail
-
-template< typename ScopeT >
-struct Evaluator: detail::EvaluatorBase
-{
-    using scope_type = ScopeT;
-
-    template< size_t I, typename T >
-    constexpr T
-    operator ()( Variable< I, T > const& var ) const
-    { return std::get< Variable< I, T >>( _scope ); }
-
-    scope_type const& _scope;
-};
-
-template< >
-struct Evaluator< void >: detail::EvaluatorBase
-{ };
-
-template< typename FuncT >
-detail::ManipulatorFunctor< FuncT > manipulate( FuncT&& func )
-{ return { func }; }
-
-template< typename ScopeT >
-Evaluator< ScopeT > eval( ScopeT const& scope )
-{ return { scope }; }
-
-Evaluator< void > eval()
-{ return {}; }
-
 ///////////////
 /// Derivations
 ///
@@ -1544,6 +1704,152 @@ constexpr typename Canonicalizer< ExprT >::type
 canonicalize( ExprT const& expr )
 { return Canonicalizer< ExprT >::value( expr ); }
 
+/////////////////////////////////////
+/// Depth-First, Indexed Visitor ///
+///////////////////////////////////
+///
+/// Reconstructs an expression of type ExprT using the Visitor template-template
+/// argument as a manipulator.  Visitor must meet the following criteria
+/// - typename Visitor< I, ExprT >::type is the type of the expression replacing 
+///   ExprT AND
+/// - static type Visitor< I, ExprT >::value( ExprT const& ) returns the value 
+///   of the replacing expression 
+///
+/// I represents an index of expression visited.  This parameter allows for 
+/// unique variables to be declared during the parsing of an expression.  This 
+/// is needed for canonicalization of comparison operations which must be 
+/// transformed to EqualsZero expressions.
+/// 
+template< template< size_t, expression > class Visitor, 
+          expression ExprT, 
+          size_t Start = 0 >
+class DepthFirst;
+
+/// Leaf case for the parser is a standard type-manipulator that also includes
+/// a static size_t size member representing the expressions visited in this
+/// subtree, which is 1 since this is a terminal expression.
+template< template< size_t, expression > class Visitor, 
+          expression ExprT,
+          size_t Start >
+requires( not compound_expression< ExprT >)
+class DepthFirst< Visitor, ExprT, Start > {
+public:
+    // we visit exactly one expression at this level, this one
+    static constexpr size_t size = 1;
+
+    // our new type is given by the visitor's type member 
+    using type = Visitor< Start, ExprT >::type;
+
+    // and the value is given by the visitor's value(ExprT const&) static
+    // member function.
+    static constexpr type value( ExprT const& expr )
+    { 
+        static_assert( Start == 0, "FAIL: start == 0" );
+        return Visitor< Start, ExprT >::value( expr ); 
+    }
+};
+
+/// Compoound case for the parser must calculate the size_t by summing
+/// the sizes of the argument expressions
+template< template< size_t, expression > class Visitor, 
+          template< expression... > class Op, expression... Args,
+          size_t Start >
+requires compound_expression< Op< Args... >> // TODO: this could be removed?
+class DepthFirst< Visitor, Op< Args... >, Start > {
+public:
+    // the count of expressions visited at this stage.
+    // NOTE: this must be independent of the Start template parameter. We
+    //       pass zero for this parameter to signal it's required independence.
+    // NOTE: we add 1 to represent the eventual visitation of this, 
+    //       Op< Args... > typed, expression after visiting the arguments.
+    static constexpr size_t size = 
+        ( DepthFirst< Visitor, Args, 0 >::size + ... + 1 );
+
+private:
+    // type manipulator which calculates the start index for our DepthFirst
+    // parse of ExprT and recurses our DepthFirst visitation.
+    template< size_t I >
+    class Argument 
+    {
+        template< typename Seq >
+        struct Helper;
+
+        // we sum the expressions visited by each Args...[ Is < I ] to 
+        // determine the offset to Start for each Args...[ I ]
+        // NOTE: we do not add 1 here since this, Op< Args... > typed
+        //       expression will not be visited until after it's arguments. In
+        //       this way when we finally do visit Op< Args... > it will also
+        //       have a unique, increasing, index
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        { static constexpr size_t start = Start +
+            ( DepthFirst< Visitor, Args...[ Is ], 0 >::size + ... ); };
+
+    public:
+        // our value is the helper value for the sequence [ 0...I )
+        static constexpr size_t start = Helper< make_seq< I >>::start;
+
+        using type = DepthFirst< Visitor, Args...[ I ], start >::type;
+
+        static constexpr type value( Args...[ I ] const& arg )
+        { return DepthFirst< Visitor, Args...[ I ], start >::value( arg ); } 
+    };
+
+    template< typename Seq >
+    struct Helper;
+
+    // helper to visit each argument and recurse our visitor
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        // type of our visitor, post argument visitation
+        using op_visitor = Visitor< Start + size - 1,
+            Op< typename Argument< Is >::type... >>;
+
+        // our final type will be determined by the visitor, assuming we 
+        // have already visited the arguments
+        using type = op_visitor::type;
+
+        // the value is similarly calculated by first visiting the arguments
+        // then combining 
+        static constexpr type value( Op< Args... > const& expr )
+        { 
+            // we construct a temporary operation by visiting each argument
+            Op< typename Argument< Is >::type... > 
+            arguments_visited = {
+                Argument< Is >::value( get_argument< Is >( expr ))... };
+            
+            // finally we visit our re-constructed operation, post visitation
+            return op_visitor::value( arguments_visited );
+        }
+    };
+
+public:
+    // we leverage our helper and an index sequence for our arguments
+    using type = Helper< make_seq< sizeof...( Args )>>::type;
+
+    static constexpr type value( Op< Args... > const& expr )
+    { return Helper< make_seq< sizeof...( Args )>>::value( expr ); }
+};
+
+/// @brief method for indexed visiting of expressions
+template< template< 
+                template< size_t, expression > class, 
+                expression, 
+                size_t > 
+          class                                Route, 
+          template< size_t, expression > class Visitor,
+          size_t                               Start,
+          expression                           ExprT >
+constexpr typename Route< Visitor, ExprT, Start >::type
+visit( ExprT const& expr )
+{ return Route< Visitor, ExprT, Start >::value( expr ); }
+
+template< template< size_t, expression > class Visitor, size_t Start, expression ExprT >
+constexpr typename DepthFirst< Visitor, ExprT, Start >::type
+visit_depth_first( ExprT const& expr )
+{ return DepthFirst< Visitor, ExprT, Start >::value( expr ); }
+
 ///////////////////
 /// Operations ///
 /////////////////
@@ -1627,72 +1933,6 @@ struct Sum< Ts... >: Arguments< Sum, Ts... >
     constexpr Sum( Ts const&... ts ): Arguments< Sum, Ts... >{ ts... } { }
     constexpr Sum() = default;
 };
-
-namespace detail {
-
-template< typename... Ts >
-struct SumCanonicalizer
-{
-    template< typename... Us >
-    struct terms 
-    { static constexpr size_t size = sizeof...( Us ); };
-
-    template< typename T >
-    struct TermsOf
-    { using type = terms< T >; };
-
-    template< typename... Us >
-    struct TermsOf< Sum< Us... >>;
-
-    template< typename T >
-    struct TermSize: integral_constant< size_t, 1 > { };
-
-    template< typename... Us >
-    struct TermSize< Sum< Us... >>: integral_constant< size_t, 
-        ( TermSize< Us >::value + ... )> { };
-
-    static constexpr size_t size = ( TermSize< Ts >::value + ... + 0 );
-
-    template< size_t I, typename ArgTuple >
-    struct TermHelper;
-
-    template< size_t I, typename U, typename... Us >
-    requires( isless( I, TermSize< U >::value ) and 
-        TermSize< U >::value == 1 )
-    struct TermHelper< I, tuple< U, Us... >>
-    {
-        using type = U;
-        static constexpr type value( U const& first, Us const&... )
-        { return first; }
-    };
-
-//    template< size_t I, typename U, typename... Us >
-//    requires( isless( I, TermSize< U >::value ) and
-//        isgreater( TermSize< U >::value, 1 ))
-//    struct TermHelper< I, tuple< U, Us... >>:
-//        TermHelper< I, typename TermsOf< U >::type >
-//    { 
-//        using type = TermHelper< I, typename Term
-//        static constexpr type value( U const& first, Us... const& )
-//        { return TermTermTuple
-//    };
-//
-    template< size_t I, size_t J, size_t... Js >
-    requires( not isless( I, TermSize< Ts...[ J ]>::value ))
-    struct TermHelper< I, seq< J, Js... >>:
-        TermHelper< I - TermSize< Ts...[ J ]>::value, seq< Js... >>
-    { };
-
-    template< size_t I >
-    struct Term: TermHelper< I, Ts... >
-    { };
-};
-
-} // namespace detail
-
-template< typename... Ts >
-struct Canonicalizer< Sum< Ts... >>: detail::SumCanonicalizer< Ts... > { };
-
 
 template< typename... Ts >
 struct Difference;
@@ -2060,6 +2300,26 @@ struct Arctangent2: Arguments< Arctangent2, T, U >
 // };
 //
 
+/// @brief equals zero expression
+///
+/// This is not intended to be used to construct expressions, but 
+/// instead is used in the canonical form of all other comparisons
+template< typename T >
+struct EqualsZero: Arguments< EqualsZero, T >
+{
+    using result_type = bool;
+
+    constexpr T arg() const { return get_argument< 0 >( *this ); }
+
+    template< typename U >
+    static constexpr auto value( U const& val )
+    { return val == 0; }
+
+    constexpr EqualsZero( T arg ): Arguments< EqualsZero, T >{ arg }
+    { }
+    constexpr EqualsZero() = default;
+};
+
 /// @brief equality expression
 /// @tparam T 
 /// @tparam U 
@@ -2078,6 +2338,26 @@ struct Equals: Arguments< Equals, T, U >
     constexpr Equals( T left, U right ): 
         Arguments< Equals, T, U >{ left, right } { }
     constexpr Equals() = default;
+};
+
+/// @brief non-equality expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct NotEquals: Arguments< NotEquals, T, U >
+{ 
+    using result_type = bool;
+
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left != right ); } 
+
+    constexpr NotEquals( T left, U right ): 
+        Arguments< NotEquals, T, U >{ left, right } { }
+    constexpr NotEquals() = default;
 };
 
 /// @brief greater than expression
@@ -2100,6 +2380,65 @@ struct GreaterThan: Arguments< GreaterThan, T, U >
     constexpr GreaterThan() = default;
 };
 
+/// @brief less than expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct LessThan: Arguments< LessThan, T, U >
+{ 
+    using result_type = bool;
+
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left < right ); } 
+
+    constexpr LessThan( T left, U right ): 
+        Arguments< LessThan, T, U >{ left, right } { }
+    constexpr LessThan() = default;
+};
+
+/// @brief greater than or equal to expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct GreaterThanOrEquals: Arguments< GreaterThanOrEquals, T, U >
+{ 
+    using result_type = bool;
+
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left >= right ); } 
+
+    constexpr GreaterThanOrEquals( T left, U right ): 
+        Arguments< GreaterThanOrEquals, T, U >{ left, right } { }
+    constexpr GreaterThanOrEquals() = default;
+};
+
+/// @brief less than or equal to expression
+/// @tparam T 
+/// @tparam U 
+template< typename T, typename U >
+struct LessThanOrEquals: Arguments< LessThanOrEquals, T, U >
+{ 
+    using result_type = bool;
+
+    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
+    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    
+    template< typename V, typename W >
+    static constexpr auto value( V const& left, W const& right )
+    { return ( left <= right ); } 
+
+    constexpr LessThanOrEquals( T left, U right ): 
+        Arguments< LessThanOrEquals, T, U >{ left, right } { }
+    constexpr LessThanOrEquals() = default;
+};
 
 /// @brief logical and expression
 /// @tparam Ts... 
@@ -2277,6 +2616,31 @@ constexpr bool is_compliment_v = IsBooleanExpression< ExprT >::value;
 
 template< typename ExprT >
 constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
+
+namespace test {
+
+template< size_t I, expression ExprT >
+struct CountSubExpressions
+{ 
+    using type = Constant< I + 1 >;
+    static constexpr type value( ExprT const& )
+    { return {}; }
+};
+
+struct PreOrderVisitTests {
+
+    static Variable< 0, int > v0;
+    static Variable< 1, int > v1;
+    static Variable< 2, int > v2;
+
+    static_assert(( visit_depth_first< CountSubExpressions, 0 >( v0 ) | eval() ) == 1ul );
+
+};
+
+
+
+} // namespace test
+
 
 ///////////////
 /// Aggregates

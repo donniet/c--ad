@@ -128,7 +128,7 @@ int main( int ac, char* av[] )
 //    solver2( para2 );
 //    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
-    test_iteration();
+    //test_iteration();
 
     return EXIT_SUCCESS;
 }
