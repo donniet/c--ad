@@ -206,3 +206,29 @@ void test_minimization()
 //
 
 }
+
+/// testing visitors
+template< size_t I, expression ExprT >
+struct CountSubExpressions
+{ 
+    using type = Constant< I + 1 >;
+    static constexpr type value( ExprT const& )
+    { return {}; }
+};
+
+template< expression ExprT >
+constexpr auto count_expressions( ExprT const& expr )
+{ return visit< DepthFirst, 0, CountSubExpressions >( expr ); }
+
+struct PreOrderVisitTests 
+{
+    static Variable< 0, int > v0;
+    static Variable< 1, int > v1;
+    static Variable< 2, int > v2;
+
+    static_assert(( count_expressions( v0 ) | eval( )) == 1ul );
+    static_assert(( count_expressions( v0 + v0 ) | eval( )) == 3ul );
+    static_assert(( count_expressions( v0 + v1 ) | eval( )) == 3ul );
+    static_assert(( count_expressions( v0 + ( v1 * v2 )) | eval( )) == 5ul );
+};
+
