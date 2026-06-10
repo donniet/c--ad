@@ -792,7 +792,7 @@ constexpr bool depends_on_variable_index_v =
 
 template< variable Var, typename ExprT >
 constexpr bool depends_on_variable_v = 
-    detail::DependsOnVariableIndex< Var::index, ExprT >::value;
+    detail::DependsOnVaraibleIndex< Var::index, ExprT >::value;
 
 //////////////////////
 /// Scope Helpers ///
@@ -1662,6 +1662,7 @@ constexpr typename SubstitutionFor< ExprT, Var, SubU >::type
 substitute_for( ExprT const& expr, SubU const& sub )
 { return SubstitutionFor< ExprT, Var, SubU >::value( expr, sub ); }
 
+
 /// @brief substitutes arguments for the dependent variables of an expression
 ///
 /// @tparam ExprT type of the expression to be substituted into
@@ -1672,9 +1673,6 @@ template< typename ExprT, typename... Args >
 constexpr typename Substitution< ExprT, Args... >::type 
 substitution( ExprT expr, Args... args )
 { return Substitution< ExprT, Args... >::value( expr, args... ); }
-
-namespace test {
-} // namespace test
 
 //////////////////////////////
 /// Canonical Expressions ///

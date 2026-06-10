@@ -494,7 +494,7 @@ constexpr auto canonical_comparison( ExprT const& expr )
 
     static constexpr size_t first_variable_id = 1 + largest_dependent_variable_id_v< ExprT >;
 
-    return ComparisonCanonicalizer< first_variable_id, ExprT >::value;
+    return ComparisonCanonicalizer< first_variable_id, ExprT >::value( expr );
 }
 
 template< typename ExprT >
@@ -504,11 +504,7 @@ constexpr auto canonicalize( ExprT const& expr )
     //    operations
     auto norm = normalize< Disjunction, Conjunction, Compliment >( expr );
 
-    // 2) we eliminiate all the compliments by taking complimentary comparisons 
-    //    (ie: ~( A < B ) --> A >= B)
-    auto comp = compliment_comparison( norm );
-
-    // 3) we replace comparisons with their canonical representations using special 
+    // 2) we replace comparisons with their canonical representations using special 
     //    variables e > 0
     //    - A >= B --> A - B - e == 0 or A - B == 0
     //    - A <= B --> B - A - e == 0 or A - B == 0
@@ -516,12 +512,156 @@ constexpr auto canonicalize( ExprT const& expr )
     //    - A < B  --> B - A - e == 0
     //    - A == B --> A - B == 0
     //    - A != B --> A - B - e == 0 or B - A - e == 0
-    auto can_comp = canonical_comparison( comp );
+    auto can_comp = canonical_comparison( norm );
 
-    // 4) we re-distribute to put the expression back into disjunctive normal form,
+    // 3) we re-distribute to put the expression back into disjunctive normal form,
     //    this time without any compliements and only A == 0 logical operations
     return distribute< Disjunction, Conjunction >( can_comp );
 }
+
+//////////////////////////////////////////
+/// Linear System of Equations Solver ///
+////////////////////////////////////////
+///
+/// Solver for a linear system of equations
+///
+namespace detail {
+template< typename ExprT >
+struct IsLinear: integral_constant< bool, false > { };
+
+/// Static expressions are linear
+template< typename ExprT >
+requires( static_expression< ExprT >)
+struct IsLinear< ExprT >: integral_constant< bool, true > { };
+
+/// Variables are linear
+template< size_t I, typename T >
+struct IsLinear< Variable< I, T >>: integral_constant< bool, true > { };
+
+/// Sums of linear expressions are also linear
+template< typename... Ts >
+requires( not static_expression< Sum< Ts... >>)
+struct IsLinear< Sum< Ts... >>: integral_constant< bool,
+    ( IsLinear< Ts >::value and ... )> { };
+
+/// Differences of linear expressions are also linear
+template< typename... Ts >
+requires( not static_expression< Difference< Ts... >>)
+struct IsLinear< Difference< Ts... >>: integral_constant< bool,
+    ( IsLinear< Ts >::value and ... )> { };
+
+/// Products are linear they are static or exactly one of the arguments
+/// is linear.
+template< typename... Ts >
+requires( not static_expression< Product< Ts... >>)
+struct IsLinear< Product< Ts... >> 
+{
+    // count how many linear expressions are arguments to this product
+    static constexpr size_t linear_arguments_size = 
+        (( IsLinear< Ts >::value ? 1 : 0 ) + ... );
+
+    // count how many static expressions are arguments to this product
+    static constexpr size_t static_arguments_size = 
+        (( static_expression< Ts > ? 1 : 0 ) + ... );
+
+    // if one or less arguments to a product is linear and the rest are static
+    // then the resulting product is linear
+    static constexpr bool value = linear_arguments_size <= 1 and
+        linear_arguments_size + static_arguments_size == sizeof...( Ts );
+};
+
+/// A quotient is linear if the numerator is linear and the denominator is static
+/// NOTE: we do not consider 1/(1/x) to be linear because of division by zero.
+template< typename NumT, typename DenU >
+requires( not static_expression< Quotient< NumT, DenU >>)
+struct IsLinear< Quotient< NumT, DenU >>: integral_constant< bool,
+    IsLinear< NumT >::value and static_expression< DenU >> { };
+
+/// A quotient of arbitrary parameters is linear if the folded expression is 
+/// linear
+template< typename First, typename... Rest >
+requires( not static_expression< Quotient< First, Rest... >> and 
+    isgreater( sizeof...( Rest ), 1 ))
+struct IsLinear< Quotient< First, Rest... >>: 
+    IsLinear< Quotient< First, Quotient< Rest... >>> { };
+
+template< variable Var, typename ExprT >
+struct IsLinearOf;
+
+template< variable Var, typename ExprT >
+struct ScalarOf
+{ 
+    using type = Constant< result_t< ExprT >{ 0 }>;
+    static constexpr type value( ExprT const& )
+    { return {}; }
+};
+
+template< variable Var, typename ExprT >
+requires( depends_on_variable_v< Var, ExprT >)
+struct ScalarOf< Var, ExprT >;
+
+template< variable Var, typename ExprT >
+requires( IsLinear< ExprT >::value )
+typename ScalarOf< Var, ExprT >::type 
+scalar_of( ExprT const& expr, Var = {} )
+{ return ScalarOf< Var, ExprT >::value( expr ); }
+
+/// A zero or one power of a linear equation is linear
+/// NOTE: sqrt( pow< 2 >( x )) is not considered linear because 
+///       sqrt( pow< 2 >( -1 )) == 1
+/// TODO: write canonicalizer for pow expressions
+//template< typename ExprT >
+//requires( not static_expression< typename Power< 0 >::template Of< ExprT >>) 
+//struct IsLinear< typename Power< 0 >::template Of< ExprT >>: integral_constant< bool, 
+//    IsLinear< ExprT >::value > { };
+//
+//template< typename ExprT >
+//requires( not static_expression< typename Power< 1 >::template Of< ExprT >>) 
+//struct IsLinear< typename Power< 1 >::template Of< ExprT >>: integral_constant< bool, 
+//    IsLinear< ExprT >::value > { };
+//
+template< typename ExprT >
+struct IsLinearEquation: integral_constant< bool, false > { };
+
+template< typename A, typename B >
+struct IsLinearEquation< Equals< A, B >>: integral_constant< bool, 
+    IsLinear< A >::value and IsLinear< B >::value > { };
+} // namespace detail
+
+template< typename ExprT >
+constexpr bool is_linear_equation_v = detail::IsLinearEquation< ExprT >::value;
+
+template< typename ExprT >
+consteval bool is_linear_equation( ExprT const& expr )
+{ return is_linear_equation_v< ExprT >; }
+
+namespace test {
+constexpr bool test_is_linear()
+{
+    Variable< 0, float > x;
+    Variable< 1, float > y;
+    Variable< 2, float > z;
+    Constant< 0.f > zero;
+    Constant< 1.f > one;
+    auto two = static_expr( 2.f );
+
+    static_assert( is_linear_equation( zero == one ));
+    static_assert( is_linear_equation( x + y == zero ));
+    static_assert( is_linear_equation( x / one - y == x ));
+    static_assert( not is_linear_equation( x / y == one ));
+    // NOTE: pow is not considered linear until canonicalizer has been written
+    // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + one ));
+    static_assert( is_linear_equation( x == y + one ));
+    static_assert( not is_linear_equation( x < y + one ));
+    static_assert( not is_linear_equation( x * y == one ));
+    static_assert( not is_linear_equation( sin( x ) == zero ));
+
+    return true;
+}
+
+static_assert( test_is_linear() );
+
+} // namespace test
 
 
 

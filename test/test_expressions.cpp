@@ -14,6 +14,7 @@ using namespace units;
 
 void test_iteration();
 void test_minimization();
+void test_canonicalization();
 
 int main( int ac, char* av[] )
 {
@@ -129,6 +130,7 @@ int main( int ac, char* av[] )
 //    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
     //test_iteration();
+    test_canonicalization();
 
     return EXIT_SUCCESS;
 }
@@ -207,6 +209,25 @@ void test_minimization()
 
 }
 
+void test_canonicalization()
+{
+    auto scope = declare_variables(
+        var< double >( "x" ),
+        var< double >( "y" ));
+
+    auto [ x, y ] = scope.variables();
+
+    auto f = (  2*x + 5*y == 22 );
+    auto g = ( -4*x +   y == 11 );
+    // y == 5, x == -1.5
+
+    println( "f: {}", f );
+    println( "g: {}", g );
+    println( "f and g: {}", f and g );
+    println( "canonical( f and g ): {}", canonicalize( f and g ));
+
+}
+
 /// testing visitors
 template< size_t I, expression ExprT >
 struct CountSubExpressions
@@ -225,10 +246,30 @@ struct PreOrderVisitTests
     static Variable< 0, int > v0;
     static Variable< 1, int > v1;
     static Variable< 2, int > v2;
+    static Constant< (int)0 > zero;
 
+    static_assert(( count_expressions( v0 + zero ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 ) | eval( )) == 1ul );
     static_assert(( count_expressions( v0 + v0 ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 + v1 ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 + ( v1 * v2 )) | eval( )) == 5ul );
+    static_assert(( count_expressions( zero + zero * zero / zero + zero ) | eval( )) == 9ul );
+    static_assert(( count_expressions( v0 + zero * v1 / v2 + zero ) | eval( )) == 9ul );
 };
+
+struct SubstitutionTests
+{
+    static Variable< 16, int > n;
+    static Variable< 0, float > x;
+    static Variable< 1, float > y;
+    static Variable< 2, float > z;
+    static Constant< 0.f > zero;
+    static Constant< 1.f > one;
+    static Constant< (int)0 > zeroi;
+
+    static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
+    static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
+    static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
+};
+//static_assert( test_substitution() );
 
