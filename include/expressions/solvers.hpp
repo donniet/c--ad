@@ -85,7 +85,7 @@ concept static_expression = expression< T > and
 ///
 /// @tparam ExprT is the type of the expression solved by this solver.
 ///
-template< expression ExprT >
+template< typename ExprT >
 struct Solver;
 
 /// @brief an expression is considered solvable if a solver exists for it
@@ -812,6 +812,34 @@ requires( is_linear_system_v< ExprT >)
 constexpr auto solve_linear_system( ExprT const& expr )
 { return detail::LinearSystem< ExprT >::solution( expr ); }
 
+template< typename T >
+concept linear_system = is_linear_system_v< T >;
+
+/// @brief Solver specialization for linear systems
+template< linear_system ExprT >
+requires( detail::LinearSystem< ExprT >::is_solvable )
+struct Solver< ExprT >
+{
+    using expression_type = ExprT;
+    using variables_tuple = dependent_variables_t< ExprT >::variables_tuple;
+
+    template< typename ScopeT, typename... Params >
+    constexpr bool operator ()( ScopeT& scope, Params... params )
+    {
+        auto sol = solve_linear_system( _expr ) | eval();
+        auto vars = variables_tuple{};
+        
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        {( scope.set_value( tensor_get< Is >( sol ), std::get< Is >( vars )), ... ); };
+
+        helper( make_seq< std::tuple_size_v< variables_tuple >>{} );
+        return _expr | scope;
+    }
+
+    constexpr Solver( expression_type const& expr ): _expr{ expr } { }
+    expression_type _expr;
+};
+
 template< expression ExprT >
 struct DNFSolver;
 
@@ -994,7 +1022,7 @@ private:
 /// @brief boolean expressions are normalized before solving with a bespoke
 /// solver
 template< expression ExprT >
-requires( is_disjunction_v< ExprT > or is_conjunction_v< ExprT > or is_compliment_v< ExprT >)
+requires(( is_disjunction_v< ExprT > or is_conjunction_v< ExprT > or is_compliment_v< ExprT >) and not linear_system< ExprT > )
 struct Solver< ExprT >: 
     DNFSolver< normalized_t< Disjunction, Conjunction, Compliment, ExprT >>
 {

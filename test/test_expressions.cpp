@@ -346,6 +346,9 @@ constexpr bool test_is_linear()
     static_assert( std::get< 0 >( sol ) == -4 );
     // it's so close!  0.99999994!
     //static_assert( std::get< 1 >( sol ) == 1 );
+    
+    static constexpr auto sol2 = sys | solve_for( x, y );
+    static_assert( std::get< 0 >( sol2 ) == -4 );
 
     return true;
 }
