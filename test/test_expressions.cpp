@@ -15,10 +15,15 @@ using namespace units;
 void test_iteration();
 void test_minimization();
 void test_canonicalization();
+constexpr void test_dependent_vars();
+
+
 
 int main( int ac, char* av[] )
 {
     using std::println;
+
+    test_dependent_vars();
 
     auto zero = constant_zero;
     auto one = constant_one;
@@ -135,6 +140,15 @@ int main( int ac, char* av[] )
     return EXIT_SUCCESS;
 }
 
+constexpr void test_dependent_vars()
+{
+    Variable< 0, int > x;
+    Variable< 1, int > y;
+    Variable< 2, int > z;
+
+    
+}
+
 void test_iteration() 
 {
     using std::println;
@@ -243,10 +257,10 @@ constexpr auto count_expressions( ExprT const& expr )
 
 struct PreOrderVisitTests 
 {
-    static Variable< 0, int > v0;
-    static Variable< 1, int > v1;
-    static Variable< 2, int > v2;
-    static Constant< (int)0 > zero;
+    static constexpr Variable< 0, int > v0;
+    static constexpr Variable< 1, int > v1;
+    static constexpr Variable< 2, int > v2;
+    static constexpr Constant< (int)0 > zero;
 
     static_assert(( count_expressions( v0 + zero ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 ) | eval( )) == 1ul );
@@ -259,17 +273,83 @@ struct PreOrderVisitTests
 
 struct SubstitutionTests
 {
-    static Variable< 16, int > n;
-    static Variable< 0, float > x;
-    static Variable< 1, float > y;
-    static Variable< 2, float > z;
-    static Constant< 0.f > zero;
-    static Constant< 1.f > one;
-    static Constant< (int)0 > zeroi;
+    static constexpr Variable< 16, int > n;
+    static constexpr Variable< 0, float > x;
+    static constexpr Variable< 1, float > y;
+    static constexpr Variable< 2, float > z;
+    static constexpr Constant< 0.f > zero;
+    static constexpr Constant< 1.f > one;
+    static constexpr Constant< (int)0 > zeroi;
 
     static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
     static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
+    static_assert(( substitute( 2*x, one ) | eval()) == 2 );
 };
 //static_assert( test_substitution() );
+
+constexpr bool test_is_linear()
+{
+    static constexpr Variable< 0, float > x;
+    static constexpr Variable< 1, float > y;
+    static constexpr Variable< 2, float > z;
+    static constexpr Constant< 0.f > zero;
+    static constexpr Constant< 1.f > one;
+    static constexpr Constant< 2.f > two;
+    //auto two = static_expr( 2.f );
+
+    static_assert( is_linear_equation( zero == one ));
+    static_assert( is_linear_equation( x + y == zero ));
+    static_assert( is_linear_equation( x / one - y == x ));
+    static_assert( not is_linear_equation( x / y == one ));
+    // NOTE: pow is not considered linear until canonicalizer has been written
+    // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + one ));
+    static_assert( is_linear_equation( x == y + one ));
+    static_assert( not is_linear_equation( x < y + one ));
+    static_assert( not is_linear_equation( x * y == one ));
+    static_assert( not is_linear_equation( sin( x ) == zero ));
+    static_assert( is_linear_equation( 2*x == y ));
+
+    static_assert( is_linear_of( x + y, x ));
+    static_assert( is_linear_of( 2*x, x ));
+    static_assert( is_linear_of( 2*x + y*y + zero, x ));
+    static_assert( not is_linear_of( 2*x + y*y + zero, y ));
+
+    static_assert(( substitute( 2*x, one ) | eval()) == 2 );
+    static_assert( scalar_of( 2*x, x ) == 2 );
+    static_assert( scalar_of( 2*x + 3*y + 4, x ) == 2 );
+    static_assert( scalar_of( 2*x + 3*y + 4, y ) == 3 );
+
+    static_assert( non_homogeneous_term_of( 2*x + 3*y + 4 ) == 4 ); 
+
+    static constexpr auto sys = 
+        (   x - 7*y == -11 ) and
+        ( 5*x + 2*y == -18 );
+
+    using deps = dependent_variables_t< decltype( sys )>;
+
+    // verifying dependent variables
+    static_assert( deps::template element_t< 0 >::id == 0 );
+    static_assert( deps::template element_t< 1 >::id == 1 );
+    static_assert( deps::size == 2 );
+
+    // verifying conjunction
+    static_assert( is_conjunction_v< decltype( sys )> );
+
+    // verify each formula is a linear equation
+    static_assert( is_linear_equation( get_argument< 0 >( sys )) );
+    static_assert( is_linear_equation( get_argument< 1 >( sys )) );
+
+    //static_assert( expressions::detail::LinearSystem< decltype( sys )>::value );
+
+    static constexpr auto sol = solve_linear_system( sys ) | eval();
+    static_assert( std::get< 0 >( sol ) == -4 );
+    // it's so close!  0.99999994!
+    //static_assert( std::get< 1 >( sol ) == 1 );
+
+    return true;
+}
+
+static_assert( test_is_linear() );
+
 

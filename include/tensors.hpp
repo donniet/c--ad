@@ -2018,7 +2018,7 @@ constexpr auto inverse( TensorT const& ten )
 /// @return the tensor product contracted along the conjoining indices
 template< typename LeftT, typename RightT >
 requires( detail::matmul_compatible_v< LeftT, RightT > )
-auto matmul( LeftT const& left, RightT const& right )
+constexpr auto matmul( LeftT const& left, RightT const& right )
 { return detail::MatrixMultiplyHelper< LeftT, RightT >::
     matmul( left, right ); }
 

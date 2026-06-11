@@ -72,7 +72,7 @@ using namespace normalization;
 
 template< typename T >
 concept static_expression = expression< T > and
-    tuple_size_v< dependent_variables_t< T >> == 0;
+    dependent_variables_t< T >::size == 0;
 
 /// @brief specializations of this template find values of the dependent
 /// variables of ExprT which result in a true-like value for the 
@@ -105,6 +105,7 @@ template< typename VarTuple, typename... Params >
 struct SolverParams: expression_scope_t< VarTuple >
 {
     using variables_tuple = VarTuple;
+    using scope_type = expression_scope_t< VarTuple >;
 
     constexpr operator bool() const
     { return _solved; }
@@ -139,7 +140,7 @@ struct SolverParams: expression_scope_t< VarTuple >
         return _solved;
     }
 
-    constexpr SolverParams( Params... params ):
+    constexpr SolverParams( Params... params ): scope_type{ variables_tuple{} },
         _params{ params... }, _solved{ false } { }
 
 private:
@@ -492,7 +493,7 @@ constexpr auto canonical_comparison( ExprT const& expr )
 { 
     using dependent_vars_tuple = dependent_variables_t< ExprT >;
 
-    static constexpr size_t first_variable_id = 1 + largest_dependent_variable_id_v< ExprT >;
+    static constexpr size_t first_variable_id = next_variable_id_v< ExprT >;
 
     return ComparisonCanonicalizer< first_variable_id, ExprT >::value( expr );
 }
@@ -558,7 +559,7 @@ struct IsLinear< Product< Ts... >>
 {
     // count how many linear expressions are arguments to this product
     static constexpr size_t linear_arguments_size = 
-        (( IsLinear< Ts >::value ? 1 : 0 ) + ... );
+        (( IsLinear< Ts >::value and not static_expression< Ts > ? 1 : 0 ) + ... );
 
     // count how many static expressions are arguments to this product
     static constexpr size_t static_arguments_size = 
@@ -586,10 +587,37 @@ struct IsLinear< Quotient< First, Rest... >>:
     IsLinear< Quotient< First, Quotient< Rest... >>> { };
 
 template< variable Var, typename ExprT >
-struct IsLinearOf;
+struct IsLinearOf
+{
+    using dependent_variables = dependent_variables_t< ExprT >;
+
+    template< size_t I >
+    using ith_var = dependent_variables::template element_t< I >;
+
+    template< size_t I >
+    using ith_var_result_type = result_t< ith_var< I >>;
+
+    template< typename Seq >
+    struct Helper;
+
+    // if the Is-th var is Var then replace it with itself, otherwise replace it with a constant
+    template< size_t... Is >
+    struct Helper< seq< Is... >>: Substitution< ExprT, 
+        std::conditional_t< ith_var< Is >::id == Var::id, 
+            Var, Constant< ith_var_result_type< Is >{ 0 }>>... >
+    { };
+
+    static constexpr bool value = IsLinear< typename
+        Helper< make_seq< dependent_variables::size >>::type >::value;
+};
 
 template< variable Var, typename ExprT >
-struct ScalarOf
+struct ScalarOf;
+
+template< variable Var, typename ExprT >
+requires( not is_boolean_expression_v< ExprT > and 
+    not depends_on_variable_v< Var, ExprT >)
+struct ScalarOf< Var, ExprT >
 { 
     using type = Constant< result_t< ExprT >{ 0 }>;
     static constexpr type value( ExprT const& )
@@ -597,14 +625,79 @@ struct ScalarOf
 };
 
 template< variable Var, typename ExprT >
-requires( depends_on_variable_v< Var, ExprT >)
-struct ScalarOf< Var, ExprT >;
+requires( not is_boolean_expression_v< ExprT > and 
+    depends_on_variable_v< Var, ExprT > and
+    IsLinearOf< Var, ExprT >::value )
+struct ScalarOf< Var, ExprT >
+{
+    // First we substitute zero for any subexpression that doesn't depend on Var
+    using zero_type = Constant< result_t< ExprT >{ 0 }>;
+    using one_type = Constant< result_t< Var >{ 1 }>;
+
+    struct ScalarEvaluator
+    {
+        // if we don't depend on Var then this term should be zero
+        template< typename ExprU >
+        constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
+        requires( not depends_on_variable_v< Var, ExprU >)
+        { return 0; }
+
+        // if we depend on Var and only Var then set Var equal to 1
+        template< typename ExprU >
+        constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
+        requires( depends_on_variable_v< Var, ExprU > and
+            dependent_variables_t< ExprU >::size == 1 )
+        { return expr | make_scope< Var >( 1 ); }
+
+        // otherwise continue parsing the expression (default manipulation behavior)
+    };
+
+    using type = decltype( result_t< ExprT >{} / result_t< Var >{} );
+
+    static constexpr type value( ExprT const& expr )
+    { 
+//        auto zeroed_non_dependents = not_dependent_substituter::value( expr, zero_type{} );
+//        static_assert( depends_on_variable_v< Var, decltype( zeroed_non_dependents )> );
+//        return substitute_for< Var >( zeroed_non_dependents, one_type{} ) | eval();
+//        return substitute( zeroed_non_dependents, one_type{} ) | eval();
+//        return substitute( expr, one_type{} ) | eval();
+        return expr | ScalarEvaluator{};
+    }
+};
+
+
+template< typename ExprT >
+struct NonHomogeneousTerm
+{
+    using variables = dependent_variables_t< ExprT >;
+
+    template< typename Vars >
+    struct Helper;
+
+    template< variable... Vars >
+    struct Helper< dependent_variables< Vars... >>
+    {
+        using type = result_t< ExprT >;
+
+        static constexpr type value( ExprT const& expr )
+        { return substitute( expr, Constant< result_t< Vars >{ 0 }>{}... ) | eval(); }
+    };
+
+    using type = Helper< variables >::type;
+    static constexpr type value( ExprT const& expr )
+    { return Helper< variables >::value( expr ); }
+};
 
 template< variable Var, typename ExprT >
 requires( IsLinear< ExprT >::value )
-typename ScalarOf< Var, ExprT >::type 
+constexpr typename ScalarOf< Var, ExprT >::type 
 scalar_of( ExprT const& expr, Var = {} )
 { return ScalarOf< Var, ExprT >::value( expr ); }
+
+template< typename ExprT >
+constexpr typename NonHomogeneousTerm< ExprT >::type
+non_homogeneous_term_of( ExprT const& expr )
+{ return NonHomogeneousTerm< ExprT >::value( expr ); }
 
 /// A zero or one power of a linear equation is linear
 /// NOTE: sqrt( pow< 2 >( x )) is not considered linear because 
@@ -626,44 +719,98 @@ struct IsLinearEquation: integral_constant< bool, false > { };
 template< typename A, typename B >
 struct IsLinearEquation< Equals< A, B >>: integral_constant< bool, 
     IsLinear< A >::value and IsLinear< B >::value > { };
+
+template< typename ExprT >
+struct LinearSystem: integral_constant< bool, false > { };
+
+// a linear system of equations is a conjuction of linear equations:
+//     Ax = b
+template< typename... Exprs >
+struct LinearSystem< Conjunction< Exprs... >>:
+    integral_constant< bool, ( IsLinearEquation< Exprs >::value and ... )> 
+{
+    using expression_type = Conjunction< Exprs... >;
+    using variables = dependent_variables_t< expression_type >;
+
+    static constexpr size_t size = sizeof...( Exprs );
+
+private:
+    using A_shape = Shape< size, variables::size >;
+    using b_shape = Shape< size >;
+
+    template< size_t I >
+    using var = variables::template element_t< I >;
+
+    template< size_t I >
+    using var_t = var< I >::value_type;
+    
+    template< typename LeftT, typename RightT >
+    static constexpr auto bterm( Equals< LeftT, RightT > const& eq )
+    { return non_homogeneous_term_of( eq.right_arg() - eq.left_arg() ); }
+
+    template< typename LeftT >
+    static constexpr auto bterm( EqualsZero< LeftT > const& eq )
+    { return non_homogeneous_term_off( -eq.arg() ); }
+
+    static constexpr auto b( expression_type const& expr )
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return make_tensor< b_shape >( bterm( get_argument< Is >( expr ))... ); };
+
+        return helper( make_seq< size >{} );
+    }
+
+    template< size_t J, typename LeftT, typename RightT >
+    static constexpr auto Aterm( Equals< LeftT, RightT > const& eq )
+    { return scalar_of< var< J >>( eq.left_arg() - eq.right_arg() ); }
+
+    template< size_t J, typename LeftT >
+    static constexpr auto Aterm( EqualsZero< LeftT > const& eq )
+    { return scalar_of< var< J >>( eq.arg() ); }
+
+    static constexpr auto A( expression_type const& expr )
+    {
+        auto helper = [&]< size_t... Js >( seq< Js... > ) constexpr
+        { return make_tensor< A_shape >(
+            Aterm< A_shape::from_element( Js )[ 1 ]>( 
+                get_argument< A_shape::from_element( Js )[ 0 ]>( expr ))... ); };
+
+        return helper( make_seq< A_shape::size() >{} );
+    }
+
+public:
+    static constexpr bool is_solvable = 
+        ( size == variables::size );
+
+    static constexpr auto solution( expression_type const& expr )
+    { return matmul( inverse( A( expr )), b( expr )); }
+
+};
+
+
 } // namespace detail
 
 template< typename ExprT >
 constexpr bool is_linear_equation_v = detail::IsLinearEquation< ExprT >::value;
 
+template< variable Var, typename ExprT >
+constexpr bool is_linear_of_v = detail::IsLinearOf< Var, ExprT >::value;
+
 template< typename ExprT >
 consteval bool is_linear_equation( ExprT const& expr )
 { return is_linear_equation_v< ExprT >; }
 
-namespace test {
-constexpr bool test_is_linear()
-{
-    Variable< 0, float > x;
-    Variable< 1, float > y;
-    Variable< 2, float > z;
-    Constant< 0.f > zero;
-    Constant< 1.f > one;
-    auto two = static_expr( 2.f );
+template< variable Var, typename ExprT >
+consteval bool is_linear_of( ExprT const& expr, Var = {} )
+{ return is_linear_of_v< Var, ExprT >; }
 
-    static_assert( is_linear_equation( zero == one ));
-    static_assert( is_linear_equation( x + y == zero ));
-    static_assert( is_linear_equation( x / one - y == x ));
-    static_assert( not is_linear_equation( x / y == one ));
-    // NOTE: pow is not considered linear until canonicalizer has been written
-    // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + one ));
-    static_assert( is_linear_equation( x == y + one ));
-    static_assert( not is_linear_equation( x < y + one ));
-    static_assert( not is_linear_equation( x * y == one ));
-    static_assert( not is_linear_equation( sin( x ) == zero ));
+template< typename ExprT >
+constexpr bool is_linear_system_v = detail::LinearSystem< ExprT >::value;
 
-    return true;
-}
-
-static_assert( test_is_linear() );
-
-} // namespace test
-
-
+template< typename ExprT >
+requires( is_linear_system_v< ExprT >)
+constexpr auto solve_linear_system( ExprT const& expr )
+{ return detail::LinearSystem< ExprT >::solution( expr ); }
 
 template< expression ExprT >
 struct DNFSolver;
@@ -1123,7 +1270,7 @@ template< auto Value >
 consteval bool basic_solvers()
 {
     using value_type = std::remove_cv_t< decltype( Value )>;
-    Variable< 0, value_type > x;
+    static constexpr Variable< 0, value_type > x;
     Constant< Value > value;
     Constant< static_cast< value_type >( 1 )> one;
     Constant< static_cast< value_type >( 2 )> two;
@@ -1173,7 +1320,7 @@ struct IterationInitializer;
 /// calling the initial_values( values... ) method before calling update.
 /// @tparam ...Vars are the variables this iteration will update
 template< typename... Vars >
-requires(( variable_traits< Vars >::is_variable and ... ))
+requires(( variable_traits< Vars >::value and ... ))
 constexpr IterationInitializer< typename 
     variable_traits< Vars >::variable_type... > iteration( Vars... );
 
@@ -1235,7 +1382,7 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::Expres
     template< typename ManipulatorT >
     constexpr auto apply( ManipulatorT const& manipulator ) const
     {
-        auto scope = Scope< Vars... >{};
+        auto scope = Scope< Vars... >{ Vars{}... };
 
         auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
         { ( scope.template set_value< Vars...[ Is ]>( std::get< Is >( _inits )), ...); };
@@ -1274,9 +1421,10 @@ IterationUpdater< tuple< Updates... >, tuple< Vars... >>::
     IterationInitializer< Vars... >::_inits }; }
 
 template< typename... Vars >
-requires(( variable_traits< Vars >::is_variable and ... ))
+requires(( variable_traits< Vars >::value and ... ))
 constexpr IterationInitializer< typename 
-    variable_traits< Vars >::variable_type... > iteration( Vars... )
+    variable_traits< Vars >::variable_type... > 
+iteration( Vars... )
 { return { variable_traits< Vars >::variable()... }; }
 
 

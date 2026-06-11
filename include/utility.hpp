@@ -481,9 +481,11 @@ template< typename T, typename U, typename... Ts >
 constexpr bool are_equal( T t, U u, Ts... ts )
 { return t == u && are_equal( u, ts... ); }
 
-/////////////////////
-/// Sequence Helpers
-/// credit: Google Gemini
+/////////////////////////
+/// Sequence Helpers ///
+///////////////////////
+/// 
+/// helpers for std::index_sequences
 
 // 1. Primary template: The "worker" that performs the recursion
 template <typename T, typename Result, T... Rest>
@@ -657,12 +659,43 @@ static constexpr size_t sequence_at =
 
 namespace detail {
 
-template< typename SeqT, typename SeqU >
+template< typename... Seqs >
 struct ConcatSeq;
+
+template< >
+struct ConcatSeq< >
+{ using type = seq< >; };
+
+template< size_t... Is >
+struct ConcatSeq< seq< Is... >>
+{ using type = seq< Is... >; };
 
 template< size_t... Is, size_t... Js >
 struct ConcatSeq< seq< Is... >, seq< Js... >>
 { using type = seq< Is..., Js... >; };
+
+template< typename First, typename... Rest >
+requires( isgreater( sizeof...( Rest ), 1 ))
+struct ConcatSeq< First, Rest... >
+{ using type = ConcatSeq< First, typename ConcatSeq< Rest... >::type >; };
+
+template< typename Seq >
+struct IsSortedUniqueSeq;
+
+template< size_t... Is >
+requires( not isgreater( sizeof...( Is ), 1 ))
+struct IsSortedUniqueSeq< seq< Is... >>: integral_constant< bool, true > { };
+
+template< size_t First, size_t Second, size_t... Rest >
+requires( First < Second )
+struct IsSortedUniqueSeq< seq< First, Second, Rest... >>:
+    IsSortedUniqueSeq< seq< Second, Rest... >> { };
+
+template< size_t First, size_t Second, size_t... Rest >
+requires( First >= Second )
+struct IsSortedUniqueSeq< seq< First, Second, Rest... >>: 
+    integral_constant< bool, false > { };
+    
 
 template< typename Seq >
 struct MinimumSequenceElement;
@@ -765,8 +798,14 @@ struct MergeUniqueSortedSequences< First, Rest... >
 
 } // namespace detail
 
+template< typename... Seqs >
+using concat_seq = detail::ConcatSeq< Seqs... >::type;
+
 template< typename Seq >
 using sort_unique_seq = detail::SortUniqueSequence< Seq >::type;
+
+template< typename Seq >
+constexpr bool is_sorted_unique_seq_v = detail::IsSortedUniqueSeq< Seq >::value;
 
 template< typename... Seqs >
 using merge_unique_sorted_seq = 
@@ -778,6 +817,12 @@ using merge_unique_sorted_seq =
 namespace detail {
 
 using std::index_sequence;
+
+template< typename >
+struct IsTuple: integral_constant< bool, false > { };
+
+template< typename... Ts >
+struct IsTuple< tuple< Ts... >>: integral_constant< bool, true > { };
 
 template< typename TupleT, size_t... Is >
 struct TupleSelect
@@ -873,6 +918,9 @@ constexpr bool is_tuple_made_from_v = IsTupleMadeFrom< TupleT, Ts... >::value;
 
 } // namespace detail
 
+template< typename T >
+constexpr bool is_tuple_v = detail::IsTuple< T >::value;
+
 /// @brief returns the first element of a tuple
 /// @tparam T the type of the first element
 /// @tparam ...Ts types of the remaining elements
@@ -913,15 +961,6 @@ constexpr std::tuple< Rest... > remove_first( std::tuple< First, Rest... > const
 
 template< typename T, typename TupleT >
 constexpr bool is_tuple_element = detail::IsTupleElement< T, TupleT >::value;
-
-template< typename TupleT >
-struct IsTuple: integral_constant< bool, false > {};
-
-template< typename... Ts >
-struct IsTuple< tuple< Ts... >>: integral_constant< bool, true > {};
-
-template< typename TupleT >
-constexpr bool is_tuple_v = IsTuple< TupleT >::value;
 
 ////////////////////////////
 /// runtime access to tuples
