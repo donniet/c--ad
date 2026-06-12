@@ -192,7 +192,7 @@ struct SolverParams: expression_scope_t< VarTuple >
     template< expression ExprT >
     constexpr bool solve( ExprT const& expr ) 
     { 
-        auto scope = make_scope< ExprT >();
+        auto scope = typename expression_traits< ExprT >::scope_type{};
         auto solve_ = Solver< ExprT >{ expr };
 
         //static_assert( not is_same_v< ExprT, Variable< 0, bool >>, "debug" );
@@ -204,7 +204,7 @@ struct SolverParams: expression_scope_t< VarTuple >
         helper( solve_, make_seq< sizeof...( Params )>{} );
 
         // return the value of expr using our solved scope
-        _solved = static_cast< bool >( expr | scope );
+        _solved = static_cast< bool >( expr | eval( *this ));
 
         scope_type::take_from( scope );
         return _solved;

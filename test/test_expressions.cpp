@@ -16,6 +16,7 @@ void test_iteration();
 void test_minimization();
 void test_canonicalization();
 constexpr void test_dependent_vars();
+constexpr bool test_boolean_satisfaction();
 
 
 
@@ -24,6 +25,7 @@ int main( int ac, char* av[] )
     using std::println;
 
     test_dependent_vars();
+    assert( test_boolean_satisfaction()); // "FAILURE: boolean satisfaction" );
 
     auto zero = constant_zero;
     auto one = constant_one;
@@ -287,6 +289,38 @@ struct SubstitutionTests
     static_assert(( substitute( 2*x, one ) | eval()) == 2 );
 };
 //static_assert( test_substitution() );
+
+constexpr bool test_boolean_satisfaction()
+{
+    auto scope = declare_variables(
+        var< bool >("b0"), var< bool >("b1"), var< bool >("b2"), var< bool >("b3"),
+        var< bool >("b4"), var< bool >("b5"), var< bool >("b6"), var< bool >("b7")
+    );
+
+    auto [ b0, b1, b2, b3, b4, b5, b6, b7 ] = scope.variables();
+
+    if( b0 | solve_for( b0 ))
+    {
+        std::println( "FAILURE: solve( A ) is false" );
+        return false;
+    }
+    
+    ( b0 or b1 ) | solve( scope );
+
+    if( not ( b0 | scope ) and not ( b1 | scope )) 
+    {
+        std::println( "FAILURE: solve( A or B ) and neither is true" );
+        return false;
+    }
+
+    if( not (( b0 and b1 ) | solve_for( b0 )))
+    {
+        std::println( "FAILURE: solve( A and B ) is false" );
+        return false;
+    }
+
+    return true;
+}
 
 constexpr bool test_is_linear()
 {

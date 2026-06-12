@@ -551,6 +551,7 @@ struct Scope: tuple< Vars... >
 {
     using values_tuple_type = 
         tuple< typename variable_traits< Vars >::value_type... >;
+    using dirty_tuple_type = std::array< bool, sizeof...( Vars )>;
     using variables_tuple_type = tuple< Vars... >;
     static constexpr size_t size = sizeof...( Vars );
 
@@ -567,12 +568,20 @@ protected:
         { return std::get< J >( vals ); }
 
         static constexpr void 
-        set( values_tuple_type& vals, tuple_element_t< J, values_tuple_type > const& val )
-        { std::get< J >( vals ) = val; }
+        set( values_tuple_type& vals, dirty_tuple_type& flags, 
+            tuple_element_t< J, values_tuple_type > const& val )
+        { 
+            std::get< J >( vals ) = val; 
+            std::get< J >( flags ) = true;
+        }
 
-        //// NOTE: We are going to try putting names back into the Variable class...
-        // static constexpr string const& name( std::array< string, size > const& names )
-        // { return names[ J ]; }
+        static constexpr bool
+        is_dirty( dirty_tuple_type const& flags )
+        { return std::get< J >( flags ); }
+
+        static constexpr void
+        wash( dirty_tuple_type& flags )
+        { std::get< J >( flags ) = false; }
 
         static constexpr bool has_value = true; 
     };
@@ -590,6 +599,10 @@ protected:
     template< variable Var >
     using helper_for = Helper< variable_traits< Var >::id, make_seq< size >>;
 
+    template< size_t... Js >
+    constexpr void initialize_flags( seq< Js... > )
+    {(( std::get< Js >( _flags ) = false ), ... ); }
+
 public:
     /// @brief determines if the scope has a value for variable I
     template< variable Var >
@@ -605,19 +618,41 @@ public:
     /// @brief retrieves the value of variable Var in this scope
     template< variable Var >
     constexpr typename Var::value_type 
-    get_value() const 
+    get_value( Var = {} ) const 
     { return helper_for< Var >::get( _values ); }
 
     /// @brief assigns other to the scoped value of Var
     template< variable Var >
     constexpr void 
-    set_value( typename Var::value_type const& other, Var = {} ) 
-    { helper_for< Var >::set( _values, other ); }
+    set_value( typename Var::value_type const& other, Var var = {} ) 
+    { helper_for< Var >::set( _values, _flags, other ); }
 
-    /// @brief retrieves the name of variable Var in this scope
-    //template< variable Var >
-    //constexpr string const& get_name() const 
-    //{ return helper_for< Var >::name( _names ); }
+    /// @brief has a variable's value been assigned by set_value?
+    template< variable Var >
+    constexpr bool
+    is_dirty( Var = {} ) const
+    { return helper_for< Var >::is_dirty( _flags ); }
+
+    /// @brief force our flag to false for Var
+    template< variable Var >
+    constexpr void
+    wash( Var = {} ) const
+    { helper_for< Var >::wash( _flags ); }
+
+    /// @brief take values and flags from another 
+    template< typename ScopeU >
+    constexpr void
+    take_from( ScopeU const& other )
+    {
+        auto take_value_if_dirty = [&]< variable Var >( Var var ) constexpr 
+        { if( other.is_dirty( var ))
+                set_value( other.get_value( var ), var ); };
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        {( take_value_if_dirty( Vars...[ Is ]{} ), ... ); }; 
+
+        helper( make_seq< sizeof...( Vars )>{} );
+    }
 
     /// @brief returns a tuple of scoped variables
     constexpr tuple< Vars... > variables() const
@@ -662,22 +697,160 @@ public:
     constexpr variable_traits< Var >::value_type 
     operator ()( Var const& var ) const 
     { return helper_for< Var >::get( _values ); }
- 
-    // template< typename... Names >
-    // requires( sizeof...( Names ) == size )
-    // constexpr Scope( Names const&... names ):
-    //     _values{}, _names{ names... }  
-    // { }
+
+    constexpr Scope& operator =( Scope const& other )
+    {
+        take_from( other );
+        return *this;
+    }
 
     explicit constexpr Scope( tuple< Vars... > const& vars ):
-        tuple< Vars... >{ vars } { }
-    constexpr Scope( Vars&&... vars ): tuple< Vars... >{ vars... } { }
-    //constexpr Scope( Vars const&... vars ): tuple< Vars... >{ vars... } { }
-    //constexpr Scope(): _values{} /* , _names{} */ { }
+        tuple< Vars... >{ vars } 
+    { initialize_flags( make_seq< size >{} ); }
+
+    constexpr Scope( Vars&&... vars ) requires( isgreater( sizeof...( Vars ), 0 )): 
+        tuple< Vars... >{ vars... } 
+    { initialize_flags( make_seq< size >{} ); }
+
+    constexpr Scope( Scope const& other ) = default;
+
+    constexpr Scope(): tuple< Vars... >{}, _values{}
+    { initialize_flags( make_seq< size >{} ); }
 
 private:
     values_tuple_type _values;
-    //array< string, size > _names;
+    dirty_tuple_type _flags;
+};
+
+/////////////////////////
+/// Scope Comparison ///
+///////////////////////
+///
+/// Utilities to compare a scope's breadth, values and flags
+
+template< variable... VarsA, typename ScopeB >
+consteval bool 
+is_sub_scope( Scope< VarsA... > const&, ScopeB const& )
+{ return ( ScopeB::template has_value_v< VarsA > and ... ); }
+
+template< variable... VarsA, typename ScopeB >
+constexpr bool 
+compatible_scopes( Scope< VarsA... > const& left, 
+    ScopeB const& right )
+{
+    // scopes must store the same variables...
+    if( not is_sub_scope( left, right ) or not is_sub_scope( right, left ))
+        return false;
+
+    // ... with the same values or are both un-flagged.
+    return (( not ( left.is_dirty( VarsA{} ) or right.is_dirty( VarsA{} )) or 
+        left.get_value( VarsA{} ) == right.get_value( VarsA{} )) and ... );
+}
+
+template< variable... VarsA, typename... OtherScopes >
+requires( isgreater( sizeof...( OtherScopes ), 1 ))
+constexpr bool 
+compatible_scopes( Scope< VarsA... > const& left, 
+    OtherScopes const&... others )
+{ return ( compatible_scopes( left, others ) and ... ); }
+
+template< variable... VarsA, typename... OtherScopes >
+constexpr bool compatible_scopes( 
+    tuple< Scope< VarsA... >, OtherScopes... > const& tup )
+{ 
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+    { return compatible_scopes( std::get< 0 >( tup ), 
+        std::get< 1 + Is >( tup )... ); };
+
+    return helper( make_seq< sizeof...( OtherScopes )>{} );
+}
+
+template< variable... VarsA, size_t Size >
+constexpr bool compatible_scopes( 
+    std::array< Scope< VarsA... >, Size > const& tup )
+{
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+    { return compatible_scopes( std::make_tuple( std::get< Is >( tup )... )); };
+
+    return helper( make_seq< Size >{} );
+}
+
+/// @brief Constructs a new scope by adopting values of un-flaged variables
+/// from the flagged values in other scopes
+///
+/// @pre assumes scopes are compatible
+/// @returns A scope compatible with left and right whose variables are dirty
+/// if and only if left or right's variable was dirty
+///
+template< variable... VarsA, typename ScopeB >
+constexpr Scope< VarsA... > 
+merge_compatible_scopes( Scope< VarsA... > const& left, ScopeB const& right )
+{
+    Scope< VarsA... > scope;
+#ifndef NDEBUG
+    if( not compatible_scopes( left, right ))
+        throw std::logic_error( "incompatible scopes cannot be merged." );
+#endif
+    auto set_variable_value = [&]< variable Var >( Var var ) constexpr 
+    {
+        // if the right scope is dirty then it's value must be equal
+        // to left by the compatibility assumption, so we use it.
+        if( right.is_dirty( var ))
+            scope.set_value( right.get_value( var ), var );
+        
+        // otherwise if the left scope is dirty we use it's value
+        else if( left.is_dirty( var ))
+            scope.set_value( left.get_value( var ), var );
+
+        // neither scope contains a dirty Var so we do nothing
+        // so that the returned scope also has a clean Var and is
+        // therefore compatible with left and right.
+    };
+
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+    {( set_variable_value( VarsA...[ Is ]{} ), ... ); }; 
+
+    helper( make_seq< sizeof...( VarsA )>{} );
+    return scope;
+}
+
+template< variable... VarsA >
+constexpr Scope< VarsA... > const&
+merge_compatible_scopes( Scope< VarsA... > const& only )
+{ return only; }
+
+template< variable... VarsA, typename... OtherScopes >
+requires( isgreater( sizeof...( OtherScopes ), 1 ))
+constexpr Scope< VarsA... >
+merge_compatible_scopes( Scope< VarsA... > const& left, 
+    OtherScopes const&... others )
+{
+    Scope< VarsA... > scope = left;
+    return (( scope = merge_compatible_scopes( scope, others )), ... );
+}
+
+template< variable... VarsA, typename... OtherScopes >
+constexpr Scope< VarsA... >
+merge_compatible_scopes( 
+    std::tuple< Scope< VarsA... >, OtherScopes... > const& tup )
+{
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+    { return merge_compatible_scopes( std::get< 0 >( tup ),
+        std::get< 1 + Is >( tup )... ); };
+
+    return helper( make_seq< sizeof...( OtherScopes )>{} );
+}
+
+template< variable... VarsA, size_t Size >
+constexpr Scope< VarsA... >
+merge_compatible_scopes(
+    std::array< Scope< VarsA... >, Size > const& scopes )
+{
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+    { return merge_compatible_scopes( std::make_tuple( 
+        std::get< Is >( scopes )... )); };
+
+    return helper( make_seq< Size >{} );
 };
 
 ////////////////////
