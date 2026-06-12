@@ -86,12 +86,20 @@ concept static_expression = expression< T > and
 /// @tparam ExprT is the type of the expression solved by this solver.
 ///
 template< typename ExprT >
-struct Solver;
+struct Solver
+{
+    static constexpr bool is_solvable = false;
+    static_assert( is_solvable, "no solver defined for this expression" ); 
+
+    static consteval void operator ()( auto... )
+    { static_assert( is_solvable, "no solution operation defined for this expression" ); }
+};
 
 /// @brief an expression is considered solvable if a solver exists for it
-template< typename ExprT >
-concept solvable = requires( ExprT )
-{ typename Solver< ExprT >; };
+/// TODO: this concept would be nice, but whenever we are trying to detect if 
+/// a template specialization is complete we run into problems...
+//template< typename ExprT >
+//concept solvable = Solver< ExprT >::is_solvable(); 
 
 /////////////////////////////////////////
 /// solve_for expression manipulator ///
@@ -129,11 +137,13 @@ struct SolverParams: expression_scope_t< VarTuple >
     { 
         auto solve_ = Solver< ExprT >{ expr };
 
-        // helper that calls our solver with our scope and parameters
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { solve_( *this, std::get< Is >( _params )... ); };
+        //static_assert( not is_same_v< ExprT, Variable< 0, bool >>, "debug" );
 
-        helper( make_seq< sizeof...( Params )>{} );
+        // helper that calls our solver with our scope and parameters
+        auto helper = [&]< size_t... Is >( auto& solve_func, seq< Is... > ) constexpr
+        { solve_func( *this, std::get< Is >( _params )... ); };
+
+        helper( solve_, make_seq< sizeof...( Params )>{} );
 
         // return the value of expr using our solved scope
         _solved = static_cast< bool >( expr | eval( *this ));
@@ -220,6 +230,7 @@ struct Solver< ExprT >
 {
     using expression_type = ExprT;
     using result_type = result_t< expression_type >;
+    static constexpr bool is_solvable() { return true; }
 
     constexpr expression_type expression() const
     { return _expr; }
@@ -234,10 +245,35 @@ private:
     expression_type _expr;
 };
 
-///////////////////////////////
-/// Trival Equality Solver ///
-/////////////////////////////
+///////////////////////
+/// Trival Solvers ///
+/////////////////////
 /// 
+/// @brief solver for a boolean variable 
+template< size_t I >
+struct Solver< Variable< I, bool >>
+{
+    using expression_type = Variable< I, bool >;
+    using variable_type = Variable< I, bool >;
+    using result_type = bool;
+    static constexpr bool is_solvable() { return true; }
+
+    constexpr result_type operator()( auto& scope ) const
+    {
+        scope.template set_value< variable_type >( true );
+        return true;
+    }
+
+    constexpr expression_type expression() const
+    { return _expr; }
+
+    constexpr Solver( expression_type const& expr = {} ): _expr{ expr } { }
+
+private:
+    expression_type _expr;
+};
+
+
 template< size_t I, typename T, static_expression ExprT >
 struct Solver< Equals< Variable< I, T >, ExprT >> 
 {
@@ -245,6 +281,7 @@ struct Solver< Equals< Variable< I, T >, ExprT >>
     using result_type = result_t< expression_type >;
     using variable_type = Variable< I, T >;
     using right_expression_type = ExprT;
+    static constexpr bool is_solvable() { return true; }
 
     constexpr expression_type expression() const
     { return _expr; }
@@ -252,7 +289,8 @@ struct Solver< Equals< Variable< I, T >, ExprT >>
     template< typename ScopeT >
     constexpr result_type operator ()( ScopeT& scope ) const
     {
-        scope.template set_value< variable_type >( _expr.right_arg() | scope );
+        auto value = _expr.right_arg() | scope;
+        scope.template set_value< variable_type >( value );
         return _expr | scope;
     }
 
@@ -817,11 +855,13 @@ concept linear_system = is_linear_system_v< T >;
 
 /// @brief Solver specialization for linear systems
 template< linear_system ExprT >
-requires( detail::LinearSystem< ExprT >::is_solvable )
 struct Solver< ExprT >
 {
     using expression_type = ExprT;
     using variables_tuple = dependent_variables_t< ExprT >::variables_tuple;
+
+    static constexpr bool is_solvable() 
+    { return detail::LinearSystem< ExprT >::is_solvable; }
 
     template< typename ScopeT, typename... Params >
     constexpr bool operator ()( ScopeT& scope, Params... params )
@@ -841,7 +881,7 @@ struct Solver< ExprT >
 };
 
 template< expression ExprT >
-struct DNFSolver;
+struct DNFSolver: Solver< ExprT > { };
 
 /// @brief normalized disjunctions can be solved term by term
 template< expression... Terms >
@@ -867,23 +907,23 @@ private:
     constexpr bool solve_term( ExprU const& term, ScopeT& scope, Params... params )
     { return TermSolver< ExprU >{ term }( scope, params... ); }
 
-    constexpr bool helper( seq< > )
+    constexpr bool helper( auto& scope, seq< > )
     { return false; }
     
     // this could be rewritten to allow for parallel compilation.
     template< size_t I, size_t... Is >
-    constexpr bool helper( seq< I, Is... > )
+    constexpr bool helper( auto& scope, seq< I, Is... > )
     {
-        if( solve_term( get_argument< I >( _expr )))
+        if( solve_term( get_argument< I >( _expr ), scope ))
             return true;
 
-        return helper( seq< Is... >{} );
+        return helper( scope, seq< Is... >{} );
     }
 
 public:
     template< typename ScopeT, typename... Params >
     constexpr bool operator ()( ScopeT& scope, Params... params )
-    { return helper( make_seq< sizeof...( Terms )>{} ); }
+    { return helper( scope, make_seq< sizeof...( Terms )>{} ); }
 
     constexpr DNFSolver( expression_type const& expr ): _expr{ expr } { }
 
@@ -1036,36 +1076,27 @@ struct Solver< ExprT >:
     { }
 };
 
-/// @brief trivial boolean expression is just a boolean variable
-template< size_t I >
-struct Solver< Variable< I, bool >>: Scope< Variable< I, bool >>
-{
-    using variable_type = Variable< I, bool >;
-    using expression_type = variable_type;
-    using scope_type = Scope< expression_type >;
-
-    constexpr operator bool() const
-    { return scope_type::template get_value< variable_type >(); }
-
-    constexpr Solver( expression_type const& expr ):
-        scope_type{ make_scope< variable_type >( true )} { }
-};
-
 namespace test {
 
 constexpr bool test_boolean_satisfaction()
 {
-    auto vars = declare_variables(
+    static constexpr auto vars = declare_variables(
         var< bool >("b0"), var< bool >("b1"), var< bool >("b2"), var< bool >("b3"),
         var< bool >("b4"), var< bool >("b5"), var< bool >("b6"), var< bool >("b7")
     );
 
-    auto [ b0, b1, b2, b3, b4, b5, b6, b7 ] = vars.variables();
+    //static const auto [ b0, b1, b2, b3, b4, b5, b6, b7 ] = vars.variables();
+    //HACK: having trouble with constexpr variable names due to std::string's copy constructor
+    static constexpr auto b0 = Variable< 0, bool >{};
+    static constexpr auto b1 = Variable< 1, bool >{};
+    //b0.set_name("b0");
+    //b1.set_name("b1");
 
-   // static_assert( b0 | solve_for( b0 ), "FAILURE: solve( var< bool > ) is false" );
+
+    static_assert( b0 | solve_for( b0 ), "FAILURE: solve( var< bool > ) is false" );
 
 
-    //auto [ r0, r1 ] = ( b0 or b1 ) | solve_for( b0, b1 );
+    auto [ r0, r1 ] = ( b0 or b1 ) | solve_for( b0, b1 );
 
 
     return true;
@@ -1113,7 +1144,7 @@ static_assert( test_boolean_satisfaction() );
 // TODO: handle StaticValues which will require copying the values and not
 // just matching types
 template< expression LeftT, expression RightT >
-requires( solvable< Equals< RightT, LeftT >> )
+requires requires { typename Solver< Equals< RightT, LeftT >>; }
 struct Solver< Equals< LeftT, RightT >>: Solver< Equals< RightT, LeftT >>
 { 
     using expression_type = Equals< LeftT, RightT >;

@@ -256,6 +256,10 @@ constexpr bool is_variable_v = IsVariable< std::remove_cv_t< T >>::value;
 template< typename T >
 concept variable = is_variable_v< T >;
 
+template< typename Var, typename T >
+concept variable_of = is_variable_v< Var > and 
+    is_same_v< typename Var::value_type, T >;
+
 //////////////
 /// Scope ///
 ////////////
@@ -616,7 +620,7 @@ public:
     //{ return helper_for< Var >::name( _names ); }
 
     /// @brief returns a tuple of scoped variables
-    constexpr tuple< Vars... > variables() 
+    constexpr tuple< Vars... > variables() const
     { return { Vars{}... }; }
 
     /// @brief invocation against a constant will return the constant's value
