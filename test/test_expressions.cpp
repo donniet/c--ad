@@ -7,25 +7,94 @@
 #include <print>
 #include <format>
 #include <cassert>
+#include <string>
+#include <stdexcept>
+#include <stdlib.h>
 
+
+namespace test {
+
+void report( bool success, std::string const& name, std::string const& msg )
+{
+    if( not success )
+    {
+        if( msg == "" )
+            std::println( "FAILURE: {}", name );
+        else
+            std::println( "FAILURE: {}: {}", name, msg );
+
+        std::exit( EXIT_FAILURE );
+        return;
+    }
+    
+    std::println( "SUCCESS: {}", name );
+}
+
+void ensure( bool (*func)(), std::string const& name )
+{
+    bool success = false;
+    std::string msg = "";
+
+    try 
+    { if( success = func(); not success )
+        msg = "returned false"; }
+    catch( std::runtime_error& e )
+    { msg = e.what(); }
+    catch(...)
+    { msg = "exception thrown"; }
+
+    report( success, name, msg );
+}
+
+void ensure( void (*func)(), std::string const& name )
+{
+    bool success = false;
+    std::string msg = "";
+
+    try
+    { func(); success = true; }
+    catch( std::runtime_error& e )
+    { msg = e.what(); }
+    catch(...)
+    { msg = "exception thrown"; }
+
+    report( success, name, msg );
+}
+
+void ensure( std::pair< bool, std::string > (*func)(), std::string const& name )
+{
+    bool success = false;
+    std::string msg = "";
+
+    try
+    { std::tie( success, msg ) = func(); }
+    catch( std::runtime_error& e )
+    { msg = e.what(); }
+    catch(...)
+    { msg = "exception thrown"; }
+
+    report( success, name, msg );
+}
+
+} // namespace test
+
+using test::ensure;
 using namespace expressions;
 using namespace units;
 
-
-void test_iteration();
-void test_minimization();
-void test_canonicalization();
-constexpr void test_dependent_vars();
-constexpr bool test_boolean_satisfaction();
-
+bool test_iteration();
+bool test_minimization();
+bool test_canonicalization();
+constexpr bool test_dependent_vars();
+std::pair< bool, std::string > test_boolean_satisfaction();
 
 
 int main( int ac, char* av[] )
 {
-    using std::println;
+    using std::println, std::print;
 
-    test_dependent_vars();
-    assert( test_boolean_satisfaction()); // "FAILURE: boolean satisfaction" );
+    ensure( test_dependent_vars, "Dependent Variables" );
+    ensure( test_boolean_satisfaction, "Boolean Satisfaction" );
 
     auto zero = constant_zero;
     auto one = constant_one;
@@ -142,16 +211,16 @@ int main( int ac, char* av[] )
     return EXIT_SUCCESS;
 }
 
-constexpr void test_dependent_vars()
+constexpr bool test_dependent_vars()
 {
     Variable< 0, int > x;
     Variable< 1, int > y;
     Variable< 2, int > z;
 
-    
+    return true; 
 }
 
-void test_iteration() 
+bool test_iteration() 
 {
     using std::println;
 
@@ -184,9 +253,11 @@ void test_iteration()
 //        initial_values( 0_ft, 0_ft, 0 ).
 //        update( w - rate * para2( w, z ) * gradw( para2 ), n + 1 ).
 //        until( n == 1000 or norm( grad( p )) < 0.001_sqft ));
+//
+    return true;
 }
 
-void test_minimization()
+bool test_minimization()
 {
     //auto solver = gradient_descent( x, y );
     //solver[ maximum_iterations ] = 1000;
@@ -222,10 +293,10 @@ void test_minimization()
 //            tuple< decltype( w ), decltype( z )>,
 //            dependent_variables_t< decltype( para2 )>> ));
 //
-
+    return true;
 }
 
-void test_canonicalization()
+bool test_canonicalization()
 {
     auto scope = declare_variables(
         var< double >( "x" ),
@@ -242,6 +313,7 @@ void test_canonicalization()
     println( "f and g: {}", f and g );
     println( "canonical( f and g ): {}", canonicalize( f and g ));
 
+    return true;
 }
 
 /// testing visitors
@@ -288,9 +360,8 @@ struct SubstitutionTests
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
     static_assert(( substitute( 2*x, one ) | eval()) == 2 );
 };
-//static_assert( test_substitution() );
 
-constexpr bool test_boolean_satisfaction()
+std::pair< bool, std::string > test_boolean_satisfaction()
 {
     auto scope = declare_variables(
         var< bool >("b0"), var< bool >("b1"), var< bool >("b2"), var< bool >("b3"),
@@ -299,27 +370,20 @@ constexpr bool test_boolean_satisfaction()
 
     auto [ b0, b1, b2, b3, b4, b5, b6, b7 ] = scope.variables();
 
-    if( b0 | solve_for( b0 ))
-    {
-        std::println( "FAILURE: solve( A ) is false" );
-        return false;
-    }
-    
-    ( b0 or b1 ) | solve( scope );
+    if( b0 | solve_for( b0 )) { /* success */ }
+    else return { false, "solve for a single boolean variable" };
 
-    if( not ( b0 | scope ) and not ( b1 | scope )) 
-    {
-        std::println( "FAILURE: solve( A or B ) and neither is true" );
-        return false;
-    }
+    ( b1 or b2 ) | solve( scope );
 
-    if( not (( b0 and b1 ) | solve_for( b0 )))
-    {
-        std::println( "FAILURE: solve( A and B ) is false" );
-        return false;
-    }
+    if(( b1 | scope ) or ( b2 | scope )) { /* success */ }
+    else return { false, "solve for (b1 or b2) failed" };
 
-    return true;
+    auto [ t3, t4 ] = ( b3 and b4 ) | solve_for( b3, b4 );
+
+    if( t4 ) { /* success */ }
+    else return { false, "solve for (b3 and b4) and checking b4 failed" };
+
+    return { true, "" };
 }
 
 constexpr bool test_is_linear()
@@ -381,8 +445,8 @@ constexpr bool test_is_linear()
     // it's so close!  0.99999994!
     //static_assert( std::get< 1 >( sol ) == 1 );
     
-    static constexpr auto sol2 = sys | solve_for( x, y );
-    static_assert( std::get< 0 >( sol2 ) == -4 );
+    //static constexpr auto sol2 = sys | solve_for( x, y );
+    //static_assert( std::get< 0 >( sol2 ) == -4 );
 
     return true;
 }

@@ -99,6 +99,11 @@
 #include <limits>
 
 // #include <string_view>
+//
+
+//#ifndef NDEBUG
+#include <print>
+//#endif
 
 namespace expressions {
 
@@ -733,17 +738,31 @@ consteval bool
 is_sub_scope( Scope< VarsA... > const&, ScopeB const& )
 { return ( ScopeB::template has_value_v< VarsA > and ... ); }
 
+template< variable... Vars >
+constexpr std::string ScopeString( Scope< Vars... > const& scope )
+{
+    std::string ret = "";
+    ret += (( std::to_string( Vars::id ) + "==" + std::to_string( scope.get_value( Vars{} )) + "(" + std::to_string( scope.is_dirty( Vars{} )) + "), " ) + ... );
+    return ret;
+}
+
 template< variable... VarsA, typename ScopeB >
 constexpr bool 
 compatible_scopes( Scope< VarsA... > const& left, 
     ScopeB const& right )
 {
+    std::string avars = ScopeString( left );
+    std::string bvars = ScopeString( right );
+
+    std::println( "checking scope compatibility:\n{}\n{}", avars, bvars ); 
+    std::println( "subscopes: {} and {}", is_sub_scope( left, right ), is_sub_scope( right, left ));
+    
     // scopes must store the same variables...
     if( not is_sub_scope( left, right ) or not is_sub_scope( right, left ))
         return false;
 
-    // ... with the same values or are both un-flagged.
-    return (( not ( left.is_dirty( VarsA{} ) or right.is_dirty( VarsA{} )) or 
+    // ... and if they are both flagged they must have the same value.
+    return (( not ( left.is_dirty( VarsA{} ) and right.is_dirty( VarsA{} )) or 
         left.get_value( VarsA{} ) == right.get_value( VarsA{} )) and ... );
 }
 
@@ -769,6 +788,7 @@ template< variable... VarsA, size_t Size >
 constexpr bool compatible_scopes( 
     std::array< Scope< VarsA... >, Size > const& tup )
 {
+    std::println( "checking compatble scopes from an std::array" );
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
     { return compatible_scopes( std::make_tuple( std::get< Is >( tup )... )); };
 

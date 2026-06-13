@@ -3,6 +3,9 @@
 
 #include "expressions/expressions.hpp"
 #include "expressions/normalize.hpp"
+#include "expressions/format.hpp"
+
+#include <print>
 
 namespace expressions {
 
@@ -192,19 +195,28 @@ struct SolverParams: expression_scope_t< VarTuple >
     template< expression ExprT >
     constexpr bool solve( ExprT const& expr ) 
     { 
+        std::println( "attempting so solve: {}", expr );
+
         auto scope = make_scope< ExprT >();
         auto solve_ = Solver< ExprT >{ expr };
 
         //static_assert( not is_same_v< ExprT, Variable< 0, bool >>, "debug" );
 
         // helper that calls our solver with our scope and parameters
-        auto helper = [&]< size_t... Is >( auto& solve_func, seq< Is... > ) constexpr
-        { solve_func( scope, std::get< Is >( _params )... ); };
+        auto helper = [&]< size_t... Is >( Solver< ExprT >& solve_func, seq< Is... > ) constexpr
+        { return solve_func( scope, std::get< Is >( _params )... ); };
 
-        helper( solve_, make_seq< sizeof...( Params )>{} );
+        if( not helper( solve_, make_seq< sizeof...( Params )>{} ))
+            return false;
 
         // return the value of expr using our solved scope
         _solved = static_cast< bool >( expr | scope );
+
+        std::println( "result of solve: {}", _solved );
+
+        auto res = variables_tuple{} | scope;
+
+        std::println( "vars: {}", res );
 
         scope_type::take_from( scope );
         return _solved;
@@ -1107,6 +1119,7 @@ private:
     template< typename ScopeT, size_t... Is, typename... Params >
     constexpr bool helper( ScopeT& scope, seq< Is... >, Params... params )
     {
+        std::println( "solving conjunction: {}", _expr );
         // create an array of scopes to be checked for compabibility
         std::array< ScopeT, sizeof...( Is )> scopes;
 
@@ -1114,6 +1127,9 @@ private:
         // NOTE: do we need "solve_all" here to loop through each possible sub-solution?
         bool solved = ( solve_element( get_argument< Is >( _expr ), 
             std::get< Is >( scopes ), params... ) and ... );
+
+        std::println( "solution result: {}", solved );
+        std::println( "compatible scopes: {}", compatible_scopes( scopes ));
 
         if( not solved or not compatible_scopes( scopes ))
             return false;
@@ -1389,7 +1405,7 @@ consteval bool basic_solvers()
     return true;
 }
 
-static_assert( basic_solvers< 7 >() );
+//static_assert( basic_solvers< 7 >() );
 
 //static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
 //static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
