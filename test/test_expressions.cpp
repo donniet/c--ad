@@ -454,3 +454,30 @@ constexpr bool test_is_linear()
 static_assert( test_is_linear() );
 
 
+template< auto Value >
+consteval bool basic_solvers()
+{
+    using value_type = std::remove_cv_t< decltype( Value )>;
+    static constexpr Variable< 0, value_type > x;
+    Constant< Value > value;
+    Constant< static_cast< value_type >( 1 )> one;
+    Constant< static_cast< value_type >( 2 )> two;
+
+    static_assert(( x == value | solve_for( x )) == Value );
+    static_assert(( x == static_expr( Value ) | solve_for( x )) == Value );
+    static_assert(( x + one == value + one | solve_for( x )) == Value );
+    static_assert(( x + two == value + one + one | solve_for( x )) == Value );
+
+
+    return true;
+}
+
+//static_assert( basic_solvers< 7 >() );
+
+//static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+//
+
+

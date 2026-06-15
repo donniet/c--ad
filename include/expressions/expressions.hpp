@@ -352,6 +352,14 @@ private:
     value_type _value;
 };
 
+/// @brief helper function to construct SetVariableValue expressions
+template< variable Var >
+constexpr SetVariableValue< Var > 
+set_variable( typename Var::value_type const& value, Var var = {} )
+{ return { var, value }; }
+
+
+
 /// @brief a placeholder in an expression whose value can change
 /// @tparam I is the id in the declared variables to this variable
 /// @tparam T is the type of this variable
@@ -382,7 +390,6 @@ struct Variable: detail::ExpressionTag
 private:
     string _name;
 };
-
 
 template< typename Var >
 struct variable_traits: integral_constant< bool, false > { };
@@ -673,6 +680,12 @@ public:
     constexpr T operator ()( StaticValue< T > const& static_value ) const
     { return static_cast< T >( static_value ); }
 
+    template< typename T >
+    requires( not expression< T > )
+    constexpr T 
+    operator ()( T const& value ) const
+    { return value; }
+
     // @brief sets the value of a variable in this scope
     template< variable Var >
     requires( has_value_v< Var >)
@@ -738,6 +751,7 @@ consteval bool
 is_sub_scope( Scope< VarsA... > const&, ScopeB const& )
 { return ( ScopeB::template has_value_v< VarsA > and ... ); }
 
+#ifndef NDEBUG
 template< variable... Vars >
 constexpr std::string ScopeString( Scope< Vars... > const& scope )
 {
@@ -745,18 +759,20 @@ constexpr std::string ScopeString( Scope< Vars... > const& scope )
     ret += (( std::to_string( Vars::id ) + "==" + std::to_string( scope.get_value( Vars{} )) + "(" + std::to_string( scope.is_dirty( Vars{} )) + "), " ) + ... );
     return ret;
 }
+#endif // DEBUG
 
 template< variable... VarsA, typename ScopeB >
 constexpr bool 
 compatible_scopes( Scope< VarsA... > const& left, 
     ScopeB const& right )
 {
+#ifndef NDEBUG
     std::string avars = ScopeString( left );
     std::string bvars = ScopeString( right );
 
     std::println( "checking scope compatibility:\n{}\n{}", avars, bvars ); 
     std::println( "subscopes: {} and {}", is_sub_scope( left, right ), is_sub_scope( right, left ));
-    
+#endif // DEBUG
     // scopes must store the same variables...
     if( not is_sub_scope( left, right ) or not is_sub_scope( right, left ))
         return false;
@@ -788,7 +804,6 @@ template< variable... VarsA, size_t Size >
 constexpr bool compatible_scopes( 
     std::array< Scope< VarsA... >, Size > const& tup )
 {
-    std::println( "checking compatble scopes from an std::array" );
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
     { return compatible_scopes( std::make_tuple( std::get< Is >( tup )... )); };
 
@@ -1389,9 +1404,11 @@ substitution( ExprT expr, Args... args );
 /// operator() and application of a manipulator via operator|.
 ///
 template< template< typename... > class Op, typename... Args >
-struct Arguments: detail::ExpressionTag, tuple< Args... >
+struct Arguments: tuple< Args... >, detail::ExpressionTag
 {
     using arguments_tuple = tuple< Args... >;
+    static constexpr size_t arguments_size = sizeof...( Args );
+    static constexpr make_seq< arguments_size > for_arguments;
 
     template< typename... Subs >
     using make_expression_t = Op< Subs... >;
@@ -1401,23 +1418,20 @@ struct Arguments: detail::ExpressionTag, tuple< Args... >
     make_expression( Subs&&... subs )
     { return { subs... }; }
 
-private:
     using expression_type = Op< Args... >;
-
-    /// @brief Reconstructs an instance of the parent class from our arguments
-    /// @tparam ...Is are indices into ...Args
-    ///
-    ///
-    template< size_t... Is >
-    constexpr expression_type expression_helper( seq< Is... > ) const
-    { return { std::get< Is >( static_cast< arguments_tuple >( *this ))... }; }
 
     /// @brief reconstructs the expression from arguments using the curiously
     /// recurring template pattern
-    constexpr expression_type expression() const
-    { return expression_helper( make_seq< sizeof...( Args )>{} ); }
+    constexpr expression_type 
+    expression() const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            expression_type
+        { return { std::get< Is >( static_cast< arguments_tuple >( *this ))... }; };
 
-public:
+        return helper( for_arguments ); 
+    }
+
     /// @brief Substitution via invocation operator
     ///
     /// For each dependent variable in this expression, ordered by I by it's 
@@ -1433,7 +1447,7 @@ public:
     requires( is_compatible_substitution_v< Op< Args... >, Subs... > )
     constexpr typename Substitution< Op< Args... >, Subs... >::type
     operator ()( Subs... subs ) const
-    { return substitution( expression(), subs... ); }
+    { return substitute( expression(), subs... ); }
 
     /// @brief Apply a manipulator
     ///
@@ -1456,7 +1470,7 @@ public:
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
         { return expression_type::value(( get< Is >( *this ) | manipulator )... ); };
 
-        return helper( make_seq< sizeof...( Args )>{} );
+        return helper( for_arguments );
     }
 
 protected:
@@ -1465,6 +1479,113 @@ protected:
 
     constexpr Arguments() = default;
 };
+
+///////////////////////////////
+/// Second-order Variables ///
+/////////////////////////////
+///
+/// @brief variable specialization for an expression with dependent
+/// variables
+template< size_t I, expression ExprT >
+requires( not expression< result_t< ExprT >> and 
+    isgreater( std::tuple_size_v< dependent_variables_t< ExprT >>, 0 ))
+struct Variable< I, ExprT >: detail::ExpressionTag
+{
+    using value_type = ExprT;
+    using result_type = value_type;
+    static constexpr size_t id = I;
+    using this_type = Variable< id, value_type >;
+
+    constexpr SetVariableValue< Variable >
+    operator =( value_type const& other ) const
+    { return { *this, other }; }
+
+    constexpr string const& name() const
+    { return _name; }
+
+    constexpr void set_name( string const& new_name )
+    { _name = new_name; }
+    
+    /// @brief substitution operator for second-order variables
+    ///
+    /// Case 1: no dependent variables in substitution
+    template< typename... Subs >
+    requires( is_compatible_substitution_v< result_type, Subs... > and
+        std::tuple_size_v< dependent_variables_t< tuple< Subs... >>> == 0 )
+    constexpr typename Substitution< result_type, Subs... >::type
+    operator ()( Subs... subs ) const;
+//    { return substitute( expression(), subs... ); }
+
+
+    constexpr Variable( string const& name = "expr" ): _name{ name } { };
+    constexpr Variable( Variable const& ) = default;
+    constexpr Variable( Variable&& ) = default;
+
+private:
+    string _name;
+};
+
+/////////////////
+/// Sequence ///
+///////////////
+///
+
+
+///////////////////////////////
+/// Conditional Expression ///
+/////////////////////////////
+/// 
+
+template< typename T >
+constexpr T if_( bool cond, T true_value, T false_value = {} )
+{ return cond ? true_value : false_value; }
+
+template< typename ConditionT, typename TrueResultT,
+    typename FalseResultT >
+requires( is_same_v< result_t< ConditionT >, bool > and
+    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
+struct Conditional;
+
+template< expression ConditionT, typename TrueResultT, typename FalseResultT >
+constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
+if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result );
+
+template< typename ConditionT, typename TrueResultT,
+    typename FalseResultT >
+requires( is_same_v< result_t< ConditionT >, bool > and
+    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
+struct Conditional: Arguments< Conditional, ConditionT, 
+    TrueResultT, FalseResultT >
+{
+    using condition_type = ConditionT;
+    using true_result_type = TrueResultT;
+    using false_result_type = FalseResultT;
+
+    constexpr condition_type condition() const 
+    { return get_argument< 0 >( *this ); }
+
+    constexpr true_result_type true_result() const
+    { return get_argument< 1 >( *this ); }
+
+    constexpr false_result_type false_result() const
+    { return get_argument< 2 >( *this ); }
+
+    template< typename C, typename T, typename F >
+    static constexpr auto value( C cond, T true_case, F false_case )
+    { return if_( cond, true_case, false_case ); }
+
+    constexpr Conditional() = default;
+    constexpr Conditional( condition_type condition,
+        true_result_type true_result, false_result_type false_result ): 
+        Arguments< Conditional, ConditionT, TrueResultT, FalseResultT >{ 
+            condition, true_result, false_result }
+    { }
+};
+
+template< expression ConditionT, typename TrueResultT, typename FalseResultT >
+constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
+if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result )
+{ return { condition, true_result, false_result }; }
 
 //////////////////////////////////
 /// Evaluation of Expressions ///
@@ -1509,6 +1630,12 @@ struct Evaluator
     operator ()( StaticValue< T > const& static_value ) const
     { return static_value.get_value(); }
 
+    template< typename T >
+    requires( not expression< T > )
+    constexpr T
+    operator ()( T const& value ) const
+    { return value; }
+
     constexpr Evaluator() = delete;
     constexpr Evaluator( Evaluator const& ) = default;
     constexpr Evaluator( scope_type const& scope ): _scope{ scope } { }
@@ -1541,10 +1668,6 @@ constexpr Evaluator< ScopeT > eval( ScopeT const& scope )
 constexpr Evaluator< void > eval()
 { return {}; }
 
-template< typename ExprT, typename ScopeT >
-requires( not expression< ExprT >)
-constexpr ExprT operator |( ExprT const& expr, Evaluator< ScopeT > const& eval )
-{ return expr; }
 
 //////////////////////////////
 /// Manipulation Operator ///
@@ -1559,41 +1682,81 @@ constexpr ExprT operator |( ExprT const& expr, Evaluator< ScopeT > const& eval )
 /// @param expr is the expression value
 /// @param manipulator is the manipulator value
 /// @returns the result of calling apply on expr with the manipulator parameter
-template< expression ExprT, typename ManipulatorT >
-requires std::invocable< ManipulatorT, ExprT >
-constexpr auto operator |( ExprT const& expr, ManipulatorT&& manipulator )
-{ return manipulator( expr ); }
 
-template< expression ExprT, typename ManipulatorT >
+/// @brief application of a non-expression value against an evaluator yields the 
+/// value
+template< typename T, typename ScopeT >
+requires( not expression< T >)
+constexpr T 
+operator |( T const& value, Evaluator< ScopeT > const& eval )
+{ return value; }
+
+/// @brief application of a non-expression value against a scope that cannot be
+/// invoked on the value yields the value
+template< typename T, typename ScopeT >
+requires( not expression< T > and is_scope_v< ScopeT > and 
+    not std::invocable< const ScopeT, T > )
+constexpr T
+operator |( T const& value, ScopeT const& scope )
+{ return value; }
+
+/// @brief application of a value or expression against a manipulator reference
+/// that has an overloaded invocation operator yields the inovocation of the 
+/// manipulator on the value or expression
+template< typename T, typename ManipulatorT >
+requires std::invocable< ManipulatorT, T >
+constexpr auto operator |( T const& value_or_expression, ManipulatorT& manipulator )
+{ return manipulator( value_or_expression ); }
+
+/// @brief application of a compound expression against a manipulator reference
+/// that does not have an overloaded invocation operator starts a dual recursion
+/// between the compound expression's apply method and the application operator|
+template< compound_expression ExprT, typename ManipulatorT >
 requires( not std::invocable< ManipulatorT, ExprT >)
-constexpr auto operator |( ExprT const& expr, ManipulatorT&& manipulator )
+constexpr auto operator |( ExprT const& expr, ManipulatorT& manipulator )
 { return expr.apply( manipulator ); }
 
-template< expression ExprT, typename ManipulatorT >
-requires std::invocable< const ManipulatorT, ExprT >
-constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
-{ return manipulator( expr ); }
+/// @brief application of a value or expression against a const manipulator
+/// reference that has an overloaded invocation operator yields the invocation of
+/// the manipulator on the value or expression
+template< typename T, typename ManipulatorT >
+requires std::invocable< const ManipulatorT, T >
+constexpr auto operator |( T const& value_or_expression, ManipulatorT const& manipulator )
+{ return manipulator( value_or_expression ); }
 
-template< expression ExprT, typename ManipulatorT >
+/// @brief application of a compound expression against a const manipulator
+/// reference that does not have an overloaded inovcation operator starts a dual
+/// recursion between the compound expression's apply method and the application
+/// operator|
+template< compound_expression ExprT, typename ManipulatorT >
 requires( not std::invocable< const ManipulatorT, ExprT >)
 constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
 { return expr.apply( manipulator ); }
 
-template< expression... Exprs, typename ManipulatorT >
-//requires( not compound_expression< tuple< Exprs... >> )
-constexpr auto operator |( tuple< Exprs... > const& expr_tup, 
+/// @brief application of a tuple of at least one expression and a manipulator
+/// that is not invocable on the tuple yields a tuple of the result of applying
+/// the manipulator against each element of the tuple.
+template< typename... Ts, typename ManipulatorT >
+requires( expression< tuple< Ts... >> and 
+    not std::invocable< ManipulatorT, tuple< Ts... >> )
+constexpr auto operator |( tuple< Ts... > const& expr_tup, 
     ManipulatorT& manipulator )
 {
+    make_seq< sizeof...( Ts )> for_tuple_elements;
+
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
     { return std::make_tuple(
         ( std::get< Is >( expr_tup ) | manipulator )... ); };
 
-    return helper( make_seq< sizeof...( Exprs )>{} );
+    return helper( for_tuple_elements );
 }
 
-/// @brief Manipulation operator for tensors of expressions
-///
+/// @brief application of a tensor of at least one expression and a manipulator
+/// that is not invocable on the tensor yields a tensor of the result of applying
+/// the manipulator against each element of the tensor.
 template< typename ShapeT, typename... Exprs, typename ManipulatorT >
+requires( expression< Tensor< ShapeT, Exprs... >> and
+    not std::invocable< ManipulatorT, Tensor< ShapeT, Exprs... >> )
 constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten, 
     ManipulatorT& manipulator )
 {
@@ -1605,7 +1768,7 @@ constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten,
 }
 
 /// @brief compound expressions MUST implement an apply method for manipulator
-/// types
+/// types which is primarily accomplished by inheriting from Arguments< Op, Args... >
 template< variable... Vars >
 template< compound_expression ExprT >
 //requires( scope_contains_dependent_variables_v< ExprT, Scope< Vars... >> )
@@ -2047,13 +2210,21 @@ struct SubstitutionFor: PredicateSubstitution<
     ForVariable< Var::id >::template Is, ExprT, SubU >
 { };
 
+/////////////////////
+/// Substitution ///
+///////////////////
+/// 
+
+
 /// @brief expression manipulator for substitution of the variable with an 
 /// expression
 template< typename ExprT, typename... Args >
 requires( sizeof...( Args ) == dependent_variables_t< ExprT >::size )
-struct Substitution< ExprT, Args... > {
-private:
-    using variables = dependent_variables_t< ExprT >;
+struct Substitution< ExprT, Args... >: 
+    Arguments< Substitution, ExprT, Args... > 
+{
+    using expression_type = ExprT;
+    using variables = dependent_variables_t< expression_type >;
 
     template< typename ExprU, typename Seq >
     struct Helper;
@@ -2081,7 +2252,8 @@ private:
 
     public:
         // recursively define our resultant type
-        using type = Helper< typename ith_substituter::type, seq< Is... >>::type;
+        using type = Helper< typename ith_substituter::type, seq< Is... >>::
+            type;
 
         // recursively define our final substitution value
         static constexpr type value( ExprU expr, Args const&... args )
@@ -2089,13 +2261,43 @@ private:
             ith_substituter::value( expr, args...[ I ]), args... ); }
     };
 
-    using helper_type = Helper< ExprT, make_seq< sizeof...( Args )>>;
+    using helper_type = Helper< expression_type, make_seq< sizeof...( Args )>>;
 
-public:
+
+    // Type Manipulator Requirements //
     using type = helper_type::type;
 
-    static constexpr type value( ExprT const& expr, Args const&... args )
-    { return helper_type::value( expr, args... ); }
+//    static constexpr type value( expression_type const& expr, 
+//        Args const&... args )
+//    { return helper_type::value( expr, args... ); }
+    // //
+    
+    // Compound Expression Requirements //
+    using result_type = type;
+
+    constexpr expression_type expression_arg() const
+    { return get_argument< 0 >( *this ); }
+
+    template< size_t I >
+    constexpr Args...[ I ] substitution_arg() const
+    { return get_argument< I - 1 >( *this ); }
+
+    constexpr Substitution( expression_type expr, Args... args ):
+        Arguments< Substitution, expression_type, Args... >{ expr, args... }
+    { }
+    constexpr Substitution() = default;
+    // //
+    
+    // Joint Type-Manipulator and Compound Expression Requirements //
+    template< typename ExprU, typename... OtherArgs >
+    static constexpr typename Substitution< ExprU, OtherArgs... >::template
+        Helper< ExprU, make_seq< sizeof...( OtherArgs )>>::type
+    value( ExprU const& expr, OtherArgs const&... args )
+    { return Substitution< ExprU, OtherArgs... >::template
+        Helper< ExprU, make_seq< sizeof...( OtherArgs )>>::
+            value( expr, args... ); }
+    // //
+
 };
 
 template< variable Var, expression ExprT, expression SubU >

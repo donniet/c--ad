@@ -116,6 +116,12 @@ struct SolveScope
     constexpr scope_type const& scope() const
     { return _scope; }
 
+    // forward applicable invocations to our private scope
+//    template< typename T >
+//    requires( std::is_invocable_v< scope_type, T > )
+//    auto operator ()( T const& expr ) 
+//    { return _scope( expr ); }
+
     template< typename... MoreParams >
     constexpr SolveScope< scope_type, Params..., MoreParams... >
     operator []( MoreParams... more_params ) const
@@ -151,8 +157,10 @@ constexpr SolveScope< ScopeT >
 solve( ScopeT& scope )
 { return { scope }; }
 
+// HACK: specialize application operator until SolveScope is a proper compound
+// expression
 template< typename ExprT, typename ScopeT, typename... Params >
-constexpr auto operator |( ExprT const& expr, SolveScope< ScopeT, Params... >& solution )
+constexpr auto operator |( ExprT const& expr, SolveScope< ScopeT, Params... >&& solution )
 { return solution.solve( expr ); }
 
 /// @brief an expression is considered solvable if a solver exists for it
@@ -287,10 +295,18 @@ struct SolveFor< tuple< Vars... >, Params... >:
     }
 };
 
+// HACK: define application operator until SolveFor is upgraded to a
+// compound expression
 template< expression ExprT, typename... Params >
 constexpr auto operator |( ExprT const& expr, 
     SolveFor< tuple<>, Params... >&& scope )
 { return scope( expr ); }
+
+template< expression ExprT, variable... Vars, typename... Params >
+requires( isgreater( sizeof...( Vars ), 0 )) // and solvable< ExprT > )
+constexpr auto operator |( ExprT const& expr, 
+    SolveFor< tuple< Vars... >, Params... >&& solve_for )
+{ return solve_for( expr ); }
 
 //////////////////////////////////
 /// Static Expression Solvers ///
@@ -1069,49 +1085,6 @@ private:
     template< expression ExprU >
     struct ElementSolver: Solver< ExprU > { };
 
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< Equals< LeftU, RightU >>>:
-//        Solver< NotEquals< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< Equals< LeftU, RightU >> const& expr ):
-//        Solver< NotEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-//
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< NotEquals< LeftU, RightU >>>:
-//        Solver< NotEquals< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< NotEquals< LeftU, RightU >> const& expr ):
-//        Solver< Equals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-//
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< LessThan< LeftU, RightU >>>:
-//        Solver< GreaterThanOrEquals< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< LessThan< LeftU, RightU >> const& expr ):
-//        Solver< GreaterThanOrEqualsEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-//
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< LessThanOrEquals< LeftU, RightU >>>:
-//        Solver< GreaterThan< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< LessThanOrEquals< LeftU, RightU >> const& expr ):
-//        Solver< GreaterThan< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-//
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< GreaterThan< LeftU, RightU >>>:
-//        Solver< LessThanOrEquals< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< GreaterThan< LeftU, RightU >> const& expr ):
-//        Solver< LessThanOrEqualsEquals< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-//
-//    template< expression LeftU, expression RightU >
-//    struct ElementSolver< Compliment< GreaterThanOrEquals< LeftU, RightU >>>:
-//        Solver< LessThan< LeftU, RightU >>
-//    { constexpr ElementSolver( Compliment< GreaterThanOrEquals< LeftU, RightU >> const& expr ):
-//        t
-//        Solver< LessThan< LeftU, RightU >>{{ expr.arg().left_arg(), expr.arg().right_arg() }}
-//      {} };
-
     template< expression ExprU, typename ScopeT, typename... Params >
     constexpr bool solve_element( ExprU const& element, ScopeT& scope, Params... params )
     { return ElementSolver< ExprU >{ element }( scope, params... ); }
@@ -1119,7 +1092,6 @@ private:
     template< typename ScopeT, size_t... Is, typename... Params >
     constexpr bool helper( ScopeT& scope, seq< Is... >, Params... params )
     {
-        std::println( "solving conjunction: {}", _expr );
         // create an array of scopes to be checked for compabibility
         std::array< ScopeT, sizeof...( Is )> scopes;
 
@@ -1127,9 +1099,6 @@ private:
         // NOTE: do we need "solve_all" here to loop through each possible sub-solution?
         bool solved = ( solve_element( get_argument< Is >( _expr ), 
             std::get< Is >( scopes ), params... ) and ... );
-
-        std::println( "solution result: {}", solved );
-        std::println( "compatible scopes: {}", compatible_scopes( scopes ));
 
         if( not solved or not compatible_scopes( scopes ))
             return false;
@@ -1385,34 +1354,97 @@ struct Solver< Equals< Difference< SubendT, Variable< I, T >, Subends... >, Expr
         base_solver{ translate( expr )} { }
 };
 
-namespace test {
+template< std::invocable UntilFunc >
+constexpr UntilFunc 
+loop_until( UntilFunc until )
+{ for(;;) { if( until() ) return until; } }
 
-template< auto Value >
-consteval bool basic_solvers()
+template< std::invocable WhileFunc >
+constexpr WhileFunc
+loop_while( WhileFunc cond )
+{ for(;;) { if( not cond() ) return cond; } }
+
+template< typename UntilExpr >
+struct LoopUntil;
+
+template< typename WhileExpr >
+struct LoopWhile;
+
+template< expression UntilE >
+constexpr LoopUntil< UntilE >
+loop_until( UntilE until_expr );
+
+template< expression WhileE >
+constexpr LoopWhile< WhileE >
+loop_while( WhileE while_expr );
+
+template< expression UntilExpr >
+struct LoopUntil< UntilExpr >: Arguments< LoopUntil, UntilExpr >
 {
-    using value_type = std::remove_cv_t< decltype( Value )>;
-    static constexpr Variable< 0, value_type > x;
-    Constant< Value > value;
-    Constant< static_cast< value_type >( 1 )> one;
-    Constant< static_cast< value_type >( 2 )> two;
+    using until_expression_type = UntilExpr;
+    using scope_type = expression_traits< until_expression_type >::scope_type;
+    
+    template< std::invocable U >
+    static constexpr U value( U expr )
+    { return loop_until( expr ); }
 
-    static_assert(( x == value | solve_for( x )) == Value );
-    static_assert(( x == static_expr( Value ) | solve_for( x )) == Value );
-    static_assert(( x + one == value + one | solve_for( x )) == Value );
-    static_assert(( x + two == value + one + one | solve_for( x )) == Value );
+    template< expression U >
+    static constexpr U value( U expr )
+    {
+        
+        return loop_until( expr ); 
+    }
 
+    constexpr until_expression_type
+    until_arg() const
+    { return _until; }
 
-    return true;
-}
+    constexpr LoopUntil( until_expression_type const& until ):
+        _until{ until } { }
 
-//static_assert( basic_solvers< 7 >() );
+private:
+    until_expression_type _until;
+};
 
-//static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+// We need a version of an iteration that works as a compound_expression. 
+// Perhaps it's a sequence, something that can accomodate:
 //
-} // namespace test
+// x_n == x_{n-1} + x_{n-2}
+// x_0 == 0
+// x_1 == 1
+//
+// x:N->R
+// 
+// x(n) == x(n-1) + x(n-2) and x(0) == 0 and x(1) == 1
+// 
+
+template< typename VarTuple >
+struct IsSequenceVariables: std::false_type {};
+
+// sequencees have a single dependent variable that is unsigned and integral
+template< variable N >
+struct IsSequenceVariables< dependent_variables< N >>: 
+    integral_constant< bool, std::is_unsigned_v< typename N::value_type > and
+        std::is_integral_v< typename N::value_type >> { };
+
+template< typename T >
+constexpr bool is_sequence_variables_v = IsSequenceVariables< T >::value;
+
+template< typename T >
+struct IsSequence: integral_constant< bool, 
+    expression< T > and is_sequence_variables_v< dependent_variables_t< T >>> 
+{ };
+
+template< typename T >
+constexpr bool is_sequence_v = IsSequence< T >::value;
+
+template< template< typename... > class Op, typename... Args >
+requires( is_sequence_v< Op< Args... >> )
+struct SequenceSolver
+{
+    
+};
+
 
 /// @brief Represents an iterative expression. An instance of an iteration is 
 /// created by the builder types IterationInitializer and IterationUpdater
@@ -1489,36 +1521,84 @@ IterationInitializer< Vars... >::update(
 { return { *this, updates... }; }
 
 template< expression UntilE, expression... Updates, variable... Vars >
-struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: detail::ExpressionTag 
+struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: 
+    detail::ExpressionTag 
 {
     using argument_types = tuple< UntilE, Updates..., Vars... >;
     using result_type = tuple< result_t< Vars >... >;
+    using scope_type = Scope< Vars... >;
+    using until_expression_type = UntilE;
+    using updates_tuple = tuple< Updates... >;
+    using variables_tuple = tuple< Vars... >; 
 
-    constexpr UntilE until_expr() const { return _until_expr; }
-    constexpr tuple< Updates... > updates() const{ return _updates; }
-    constexpr tuple< Vars... > vars() const { return _vars; }
+    static constexpr size_t variables_size = sizeof...( Vars );
+    static constexpr auto for_variables = make_seq< variables_size >{};
+
+    constexpr until_expression_type until_expr() const { return _until_expr; }
+    constexpr updates_tuple updates() const{ return _updates; }
+    constexpr variables_tuple vars() const { return _vars; }
+
+    template< size_t Is >
+    typename Vars...[ Is ]::result_type const&
+    initial_value() const
+    { return std::get< Is >( _inits ); }
+
+    template< size_t Is >
+    Updates...[ Is ] const& 
+    update_expr() const
+    { return std::get< Is >( _updates ); }
+
+    template< typename ScopeT, size_t... Is >
+    constexpr void initialize( ScopeT& scope, seq< Is... >) const 
+    { ( scope( set_variable< Vars...[ Is ]>( initial_value< Is >() )), 
+        ... ); }
+
+    template< typename ScopeT, typename... Ts, size_t... Is >
+    static constexpr void 
+    initialize( ScopeT& scope, tuple< Ts... > const& inits, 
+        seq< Is... > )
+    { ( scope( set_variable< Vars...[ Is ]>( std::get< Is >( inits ))),
+        ... ); }
+
+    template< typename ScopeT, size_t... Is >
+    constexpr void 
+    update( ScopeT& scope, seq< Is... > ) const
+    { ( scope( set_variable< Vars...[ Is ]>( update_expr< Is >() | scope )), 
+        ... ); }
+
+    template< typename ScopeT, typename... Ts, size_t... Is >
+    static constexpr void update( ScopeT& scope, tuple< Ts... > const& updates,
+        seq< Is... > )
+    { ( scope( set_variable< Vars...[ Is ]>( std::get< Is >( updates ))),
+        ... ); }
+
+    // a static method cannot read the values of static_expr inside the
+    // updates and until expressions. 
+    // is there a static way to do an iteration so that it can be a full
+    // citizen of the expressions?  Maybe only with Constant<...> and no
+    // StaticValues.
+    template< typename... InitialValues >
+    requires( sizeof...( InitialValues ) == sizeof...( Vars ))
+    static auto value( InitialValues... inits )
+    {
+        scope_type scope;
+
+
+    }
 
     // TODO: should this be re-wrtten as the value method which would let
     // manipulator do it's thing?
     template< typename ManipulatorT >
-    constexpr auto apply( ManipulatorT const& manipulator ) const
+    constexpr auto apply( ManipulatorT& manipulator ) const
     {
-        auto scope = Scope< Vars... >{ Vars{}... };
+        scope_type scope;
 
-        auto scope_initializer = [&]< size_t... Is >( seq< Is... > )
-        { ( scope.template set_value< Vars...[ Is ]>( std::get< Is >( _inits )), ...); };
-
-        // scope update helper
-        // TODO: enforce the tuple-type here with a requires on the IterationBuilder
-        auto scope_updater = [&]< size_t... Is >( seq< Is... > )
-        { (( scope.template set_value< Vars...[Is]>( std::get< Is >( _updates ) | scope )), ... ); };
-
-        scope_initializer( make_seq< sizeof...( Updates )>{} );
+        initialize( scope, for_variables );
 
         while( not ( until_expr() | scope ))
-            scope_updater( make_seq< sizeof...( Updates )>{} );
+            update( scope, for_variables );
 
-        return vars() | scope;
+        return make_tuple(( scope( Vars{} ) | manipulator )... );
     }
 
     constexpr Iteration() = default;
@@ -1547,6 +1627,15 @@ constexpr IterationInitializer< typename
     variable_traits< Vars >::variable_type... > 
 iteration( Vars... )
 { return { variable_traits< Vars >::variable()... }; }
+
+// HACK: overload application operator until Iteration can be formalized as a 
+// compound expression properly
+template< typename UntilE, typename... Updates, variable... Vars, 
+    typename ManipulatorT >
+constexpr auto 
+operator |( Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> const& iteration,
+    ManipulatorT& applicand )
+{ return iteration.apply( applicand ); }
 
 
 
