@@ -305,6 +305,10 @@ struct SubstitutionTests
     static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
     static_assert(( substitute( 2*x, one ) | eval()) == 2 );
+    static_assert(( ( 2*x )( 1.f ) | eval()) == 2 );
+    static_assert(( ( 3*x )( 2.f ) | eval()) == 6 );
+    static_assert(( ( 3*x )( 2*y )( 2.f ) | eval()) == 12 );
+    static_assert(( ( 3*x( 2.f ))( 2*y ) | eval()) == 12 );
 };
 
 std::pair< bool, std::string > test_boolean_satisfaction()
