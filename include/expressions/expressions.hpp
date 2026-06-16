@@ -2523,13 +2523,13 @@ struct Variable< I, ExprT >: detail::ExpressionTag
     constexpr void set_name( string const& new_name )
     { _name = new_name; }
     
-    /// @brief substitution operator for second-order variables
+    /// @brief substitution operator for second-order variables.  
     ///
-    /// Case 1: no dependent variables in substitution
+    /// We do not have a value for the expression_type this variable is
+    /// a placeholder for.  
     template< typename... Subs >
-    requires( is_compatible_substitution_v< result_type, Subs... > and
-        std::tuple_size_v< dependent_variables_t< tuple< Subs... >>> == 0 )
-    constexpr typename Substitution< result_type, Subs... >::type
+    requires( is_compatible_substitution_v< result_type, Subs... > )
+    constexpr Substitution< result_type, Subs... >
     operator ()( Subs... subs ) const;
 //    { return substitute( expression(), subs... ); }
 
