@@ -729,7 +729,7 @@ struct IsLinearOf
 
     // if the Is-th var is Var then replace it with itself, otherwise replace it with a constant
     template< size_t... Is >
-    struct Helper< seq< Is... >>: Substitution< ExprT, 
+    struct Helper< seq< Is... >>: Substituter< ExprT, 
         std::conditional_t< ith_var< Is >::id == Var::id, 
             Var, Constant< ith_var_result_type< Is >{ 0 }>>... >
     { };
