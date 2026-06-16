@@ -1415,13 +1415,10 @@ template< >
 struct CompatibleSubstitutionHelper< dependent_variables<>, tuple<> >: 
     integral_constant< bool, true > { };
 
+// substituting nothing is always ok
 template< typename ExprT, typename... Subs >
-struct CompatibleSubstitution;
-
-template< typename ExprT, typename... Subs >
-requires( not variable< ExprT > and not compound_expression< ExprT > )
-struct CompatibleSubstitution< ExprT, Subs... >: integral_constant< bool, 
-    false > { };
+struct CompatibleSubstitution: 
+    std::integral_constant< bool, sizeof...( Subs ) == 0 > { };
 
 template< variable Var, typename U >
 requires( variable_traits< Var >::order == 1 )
@@ -1434,6 +1431,26 @@ template< variable Var, typename... Subs >
 requires( variable_traits< Var >::order == 2 )
 struct CompatibleSubstitution< Var, Subs... >: std::true_type { };
 
+template< typename... Ts, typename... Subs >
+struct CompatibleSubstitution< tuple< Ts... >, Subs... >:
+    CompatibleSubstitutionHelper< dependent_variables_t< tuple< Ts... >>,
+        tuple< Subs... >>
+{ };
+
+template< shape ShapeT, typename... Ts, typename... Subs >
+struct CompatibleSubstitution< Tensor< ShapeT, Ts... >, Subs... >:
+    CompatibleSubstitutionHelper< dependent_variables_t< Tensor< ShapeT, Ts... >>,
+        tuple< Subs... >>
+{ };
+
+// we haven't defined Substitution as an expression yet, but we can 
+// still decide whether or not substituting into a substitution would work
+// or not by pretending we are substituting into a tuple of the substitution
+// expressions substitutions.
+template< typename ExprT, typename... Subs, typename... SubSubs >
+struct CompatibleSubstitution< Substitution< ExprT, Subs... >, SubSubs... >:
+    CompatibleSubstitution< tuple< Subs... >, SubSubs... > { };
+
 template< typename ExprT, typename... Subs >
 requires( compound_expression< ExprT > )
 struct CompatibleSubstitution< ExprT, Subs... >:
@@ -1445,6 +1462,9 @@ struct CompatibleSubstitution< ExprT, Subs... >:
 template< typename ExprT, typename... Subs >
 constexpr bool is_compatible_substitution_v = 
     detail::CompatibleSubstitution< ExprT, Subs... >::value;
+
+static_assert( is_compatible_substitution_v< Variable< 0, float >, float >);
+static_assert( is_compatible_substitution_v< tuple< float, Variable< 0, float >>, float >);
 
 //////////////////////////////////////////////////////
 /// Arguments Base Class for Compound Expressions ///
@@ -1687,10 +1707,10 @@ struct Evaluator
 {
     using scope_type = ScopeT;
 
-    template< size_t I, typename T >
-    constexpr T
-    operator ()( Variable< I, T > const& var ) const
-    { return _scope.template get_value< Variable< I, T >>(); }
+    template< variable Var >
+    constexpr typename Var::value_type
+    operator ()( Var const& var ) const
+    { return _scope.get_value( var ); }
 
     template< auto Value >
     constexpr typename Constant< Value >::value_type
@@ -1708,6 +1728,10 @@ struct Evaluator
     operator ()( T const& value ) const
     { return value; }
 
+    template< typename ExprT, typename... Subs >
+    constexpr auto
+    operator ()( Substitution< ExprT, Subs... > const& sub_expr ) const;
+
     constexpr Evaluator() = delete;
     constexpr Evaluator( Evaluator const& ) = default;
     constexpr Evaluator( scope_type const& scope ): _scope{ scope } { }
@@ -1718,6 +1742,12 @@ struct Evaluator
 template< >
 struct Evaluator< void >
 {
+    template< typename T >
+    requires( not expression< T > )
+    constexpr T
+    operator ()( T const& val ) const
+    { return val; }
+
     template< auto Value >
     constexpr typename Constant< Value >::value_type
     operator ()( Constant< Value > const& constant ) const
@@ -1727,6 +1757,10 @@ struct Evaluator< void >
     constexpr T
     operator ()( StaticValue< T > const& static_value ) const
     { return static_value.get_value(); }
+
+    template< typename ExprT, typename... Subs >
+    constexpr auto
+    operator ()( Substitution< ExprT, Subs... > const& sub_expr ) const;
 };
 
 template< typename FuncT >
@@ -1860,59 +1894,40 @@ constexpr auto operator |( Tensor< ShapeT, Exprs... > const& expr_ten,
 /// no arguments were manipulated then this result is applied against the
 /// manipulator and returned.
 ///
-/// Case: Expression's args recognize this manipulator. Recurse down.
-template< template< typename... > class Op, typename... Args >
-template< typename ManipulatorT >
-requires requires( ManipulatorT manip, Args... args ) {(( args | manip ), ... ); }
-struct Arguments< Op, Args... >::Applier< ManipulatorT >
-{
-    using type = std::remove_cv_t< decltype( 
-        expression_type::value(( Args{} | ManipulatorT{} )... ))>;
-
-    static constexpr type value( Arguments< Op, Args... > const& args,
-        ManipulatorT& manip )
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value(( std::get< Is >( args ) | manip )... ); };
-
-        return helper( for_arguments );
-    }
-};
 /// 
 /// Case: Some Expression's args recognize this manipulator, some are
 ///       recognized by the manipulator
 template< template< typename... > class Op, typename... Args >
 template< typename ManipulatorT >
-requires( not requires( ManipulatorT manip, Args... args ) {(( args | manip ), ...); } and
-        (( requires( ManipulatorT manip, Args arg ) { arg | manip; } or
-           requires( ManipulatorT manip, Args arg ) { manip( arg ); }) and ... ))
-struct Arguments< Op, Args... >::Applier< ManipulatorT >
+struct Arguments< Op, Args... >::Applier
 {
+    // recurse down until the manipulator can accept the argument
     template< typename Arg >
-    static constexpr bool can_recurse_down = 
-        requires( ManipulatorT manip, Arg arg ) { arg | manip; };
+    static constexpr bool terminal = 
+        requires( ManipulatorT manip, Arg arg ) { manip( arg ); };
 
     template< typename Arg >
     struct Helper;
 
     template< typename Arg >
-    requires can_recurse_down< Arg >
-    struct Helper< Arg >
-    {
-        using type = std::remove_cv_t< decltype( Arg{} | ManipulatorT{} )>;
-
-        static constexpr type value( Arg const& arg, ManipulatorT& manip )
-        { return arg | manip; }
-    };
-
-    template< typename Arg >
-    requires( not can_recurse_down< Arg >)
+    requires( terminal< Arg > )
     struct Helper< Arg >
     {
         using type = std::remove_cv_t< decltype( ManipulatorT{}( Arg{} ))>;
 
         static constexpr type value( Arg const& arg, ManipulatorT& manip )
         { return manip( arg ); }
+    };
+
+    template< template< typename... > class ArgOp, typename... ArgArgs >
+    requires( not terminal< ArgOp< ArgArgs... >> and
+        compound_expression< ArgOp< ArgArgs... >> )
+    struct Helper< ArgOp< ArgArgs... >>
+    {
+        using type = std::remove_cv_t< decltype( ArgOp< ArgArgs... >{} | ManipulatorT{} )>;
+
+        static constexpr type value( ArgOp< ArgArgs... > const& arg, ManipulatorT& manip )
+        { return arg | manip; }
     };
 
     using type = std::remove_cv_t< decltype( 
@@ -1924,49 +1939,6 @@ struct Arguments< Op, Args... >::Applier< ManipulatorT >
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
         { return expression_type::value( 
             Helper< Args...[ Is ]>::value( std::get< Is >( args ), manip )... ); };
-
-        return helper( for_arguments );
-    }
-};
-///
-/// Case: At least one, but not all, arg and the manipulator are strangers.  
-///       We should simply avoid this.
-/// 
-/// Case: No expression args recognize this manipulator but all are 
-///       recognized by the manipulator.
-template< template< typename... > class Op, typename... Args >
-template< typename ManipulatorT >
-requires( not ( requires( ManipulatorT manip, Args arg ) { arg | manip; } or ... ) and
-    requires( ManipulatorT manip, Args... args ) {( manip( args ), ... );} )
-struct Arguments< Op, Args... >::Applier< ManipulatorT >
-{
-    using type = std::remove_cv_t< decltype( 
-        expression_type::value( ManipulatorT{}( Args{} )... ))>;
-
-    static constexpr type value( Arguments< Op, Args... > const& args,
-        ManipulatorT& manip )
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return expression_type::value( manip( std::get< Is >( args ))... ); };
-
-        return helper( for_arguments );
-    }
-};
-/// 
-/// Case: All args are strangers to this manipulator.  Return up.
-template< template< typename... > class Op, typename... Args >
-template< typename ManipulatorT >
-requires( not ( requires( ManipulatorT manip, Args args ) { args | manip; } or ... ))
-struct Arguments< Op, Args... >::Applier< ManipulatorT >
-{
-    using type = std::remove_cv_t< decltype(
-        expression_type::value( Args{}... ))>;
-
-    static constexpr type value( Arguments< Op, Args... > const& args,
-        ManipulatorT& manip )
-    { 
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value( std::get< Is >( args )... ); };
 
         return helper( for_arguments );
     }
@@ -2352,7 +2324,12 @@ public:
 /// like object-type (ie: has a constexpr static bool value member) which
 /// flags the expression passed as the template parameter as substitutable
 template< template< typename > class Predicate, typename ExprT, typename WithT >
-struct PredicateSubstitution;
+struct PredicateSubstitution
+{
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr, WithT const& )
+    { return expr; }
+};
 
 template< template< typename > class Predicate, typename ExprT, typename WithT >
 requires( Predicate< ExprT >::value )
@@ -2363,12 +2340,12 @@ struct PredicateSubstitution< Predicate, ExprT, WithT >
     { return with; } 
 };
 
-template< template< typename > class Predicate, size_t I, typename T, typename WithT >
-requires( not Predicate< Variable< I, T >>::value )
-struct PredicateSubstitution< Predicate, Variable< I, T >, WithT >
+template< template< typename > class Predicate, variable Var, typename WithT >
+requires( not Predicate< Var >::value )
+struct PredicateSubstitution< Predicate, Var, WithT >
 {
-    using type = Variable< I, T >;
-    static constexpr type value( Variable< I, T > const& var, WithT const& with )
+    using type = Var;
+    static constexpr type value( Var const& var, WithT const& with )
     { return var; }
 };
 
@@ -2432,8 +2409,8 @@ struct Substituter;
 ///
 template< typename ExprT, typename... Args >
 //requires( sizeof...( Args ) == dependent_variables_t< ExprT >::size )
-requires( is_compatible_substitution_v< ExprT, Args... > and
-    ( not is_variable_v< ExprT > or variable_order_v< ExprT > == 1 ))
+requires( is_compatible_substitution_v< ExprT, Args... > ) //and
+//    ( not is_variable_v< ExprT > or variable_order_v< ExprT > == 1 ))
 struct Substituter< ExprT, Args... > {
 private:
     using expression_type = ExprT;
@@ -2508,13 +2485,13 @@ struct Substitution: Arguments< Substitution, ExprT, Subs... >
     template< typename ExprU, typename... OtherSubs >
     static constexpr typename Substituter< ExprU, OtherSubs... >::type 
     value( ExprU expr, OtherSubs... other_subs )
-    { return Substituter< ExprU, OtherSubs... >::value( expr, other_subs... ); } 
+    { return substitute( expr, other_subs... ); } 
 
     constexpr typename Substituter< expression_type, Subs... >::type 
     value() const
     { 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return value( expression(), arg< Is >()... ); };
+        { return substitute( expression(), arg< Is >()... ); };
 
         return helper( for_arguments );
     };
@@ -2533,11 +2510,17 @@ constexpr Substitution< Op< Args... >, Subs... >
 Arguments< Op, Args... >::operator ()( Subs... subs ) const
 { return { expression(), subs... }; }
 
-// substitution takes precedence over manipulation
-template< typename ExprT, typename... Subs, typename ManipulatorT >
-constexpr auto operator |( Substitution< ExprT, Subs... > const& expr,
-    ManipulatorT& manip )
-{ return expr.value() | manip; }
+// when evaluating a substitution, apply the substitution then continue evaluating
+template< typename ExprT, typename... Subs >
+constexpr auto Evaluator< void >::
+operator ()( Substitution< ExprT, Subs... > const& sub_expr ) const
+{ return sub_expr.value() | *this; }
+
+template< typename ScopeT >
+template< typename ExprT, typename... Subs >
+constexpr auto Evaluator< ScopeT >::
+operator ()( Substitution< ExprT, Subs... > const& sub_expr ) const
+{ return sub_expr().value() | *this; }
 
 //
 //    // Compound Expression Requirements //
@@ -2958,6 +2941,9 @@ struct Product< T, Ts... >: Arguments< Product, T, Ts... >
         Arguments< Product, Ts... >{ ts... } { }
     constexpr Product() = default;
 };
+
+static_assert( is_compatible_substitution_v< Product< StaticValue< int >, Variable< 0, float >>, float >,
+    "FAILURE: substitution into product" );
 
 /// @brief quotient expression
 /// @tparam T 
