@@ -371,6 +371,85 @@ template< typename T >
 constexpr bool is_substitution_expression_v = 
     IsSubstitutionExpression< T >::value;
 
+// traits to handle substitutions in our bootstraping
+template< typename Sub >
+struct SubstitutionFormula;
+
+template< typename ExprT, typename... Subs >
+struct SubstitutionFormula< Substitution< ExprT, Subs... >>
+{ 
+    using type = ExprT;
+    static constexpr type value( Substitution< ExprT, Subs... > const& sub )
+    { return std::get< 0 >( sub ); }
+};
+
+template< size_t I, typename Sub >
+struct SubstitutionSub;
+
+template< size_t I, typename ExprT, typename... Subs >
+struct SubstitutionSub< I, Substitution< ExprT, Subs... >>
+{
+    using type = Subs...[ I ];
+    static constexpr type value( Substitution< ExprT, Subs... > const& sub )
+    { return std::get< I + 1 >( sub ); }
+};
+
+/// Variable Order
+template< typename >
+struct VariableOrder: integral_constant< size_t, 0 > { };
+
+template< size_t I, typename T >
+struct VariableOrder< Variable< I, T >>: integral_constant< size_t, 
+    1 + VariableOrder< T >::value > { };
+
+template< typename... Ts >
+struct VariableOrder< tuple< Ts... >> {
+private:
+    static constexpr size_t tuple_size = sizeof...( Ts );
+    typedef make_seq< tuple_size > for_elements;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t I, size_t... Is >
+    struct Helper< seq< I, Is... >> {
+    private:
+        static constexpr size_t first_order = 
+            VariableOrder< Ts...[ I ]>::value;
+        static constexpr size_t rest_order = Helper< seq< Is... >>::value;
+    public:
+        static constexpr size_t value = 
+            ( first_order >= rest_order )? first_order : rest_order;
+    };
+
+    template< >
+    struct Helper< seq< >>
+    { static constexpr size_t value = 0; };
+
+public:
+    static constexpr size_t value = Helper< for_elements >::value;
+};
+
+template< compound_expression ExprT >
+struct VariableOrder< ExprT >: 
+    VariableOrder< typename ExprT::arguments_tuple > { };
+
+template< typename V >
+constexpr size_t variable_order_v = VariableOrder< V >::value;
+
+// we need trait for substitution since it requires a bespoke means of 
+// calculating the dependent variables
+template< typename T >
+struct IsSubstitutionExpression: std::false_type { };
+
+template< typename ExprT, typename... Subs >
+struct IsSubstitutionExpression< Substitution< ExprT, Subs... >>:
+    std::integral_constant< bool, true > { };
+
+template< typename T >
+constexpr bool is_substitution_expression_v = 
+    IsSubstitutionExpression< T >::value;
+
 /// forward delaration
 template< typename ExprT, typename... Args >
 constexpr typename Substituter< ExprT, Args... >::type 
