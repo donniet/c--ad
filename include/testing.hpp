@@ -1,8 +1,13 @@
 #ifndef __TESTING_HPP__
 #define __TESTING_HPP__
 
-#include <string>
 #include <print>
+#include <format>
+#include <cassert>
+#include <string>
+#include <stdexcept>
+#include <stdlib.h>
+
 
 namespace test {
 
@@ -67,6 +72,7 @@ void ensure( std::pair< bool, std::string > (*func)(), std::string const& name )
 
     report( success, name, msg );
 }
+
 } // namespace test
 
-#endif
+#endif // __TESTING_HPP__

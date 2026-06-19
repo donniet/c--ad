@@ -26,7 +26,6 @@ bool test_simple_expressions();
 constexpr bool test_dependent_vars();
 std::pair< bool, std::string > test_boolean_satisfaction();
 
-
 int main( int ac, char* av[] )
 {
     ensure( test_dependent_vars, "Dependent Variables" );
