@@ -393,6 +393,9 @@ struct SubstitutionSub< I, Substitution< ExprT, Subs... >>
     static constexpr type value( Substitution< ExprT, Subs... > const& sub )
     { return std::get< I + 1 >( sub ); }
 };
+// represents the Ith variable/substitution match 
+template< size_t I, typename SubT >
+struct SubstitutionMatch;
 
 /// Variable Order
 template< typename >
