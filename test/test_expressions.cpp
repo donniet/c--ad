@@ -229,14 +229,14 @@ bool test_minimization()
 
     //assert( para2( 2_ft, 3_ft ) == 3_ft * 1_ft );
 
-    // verify the dependent_variables_t trait works
+    // verify the free_variables_t trait works
 //    static_assert( 
 //        ( z.index < w.index and is_same_v< 
 //            tuple< decltype( z ), decltype( w )>,
-//            dependent_variables_t< decltype( para2 )>> ) or 
+//            free_variables_t< decltype( para2 )>> ) or 
 //        ( w.index < z.index and is_same_v< 
 //            tuple< decltype( w ), decltype( z )>,
-//            dependent_variables_t< decltype( para2 )>> ));
+//            free_variables_t< decltype( para2 )>> ));
 //
     return true;
 }
@@ -381,13 +381,49 @@ constexpr bool test_is_linear()
 
     static_assert( non_homogeneous_term_of( 2*x + 3*y + 4 ) == 4 ); 
 
+    static constexpr auto fx = ( 5 * x );
+    using deps_fx  = free_variables_t< std::remove_cv_t< decltype( fx )>>;
+    using deps_fx2 = free_variables_t< tuple< StaticValue< int >, Variable< 0, float >>>;
+    
+    static_assert( std::is_same_v< deps_fx, deps_fx2 >);
+    static_assert( std::is_same_v< Product< StaticValue<int>, Variable< 0, float >>,
+        std::remove_cv_t< decltype( fx )>> );
+    static_assert( std::tuple_size_v< deps_fx > == 1 );
+
+    static constexpr auto fxy = ( 5*x + 4*y );
+    using deps_fxy  = free_variables_t< std::remove_cv_t< decltype( fxy )>>;
+    using deps_fxy2 = free_variables_t< tuple< tuple< StaticValue<int>, Variable<0, float>>,
+        tuple< StaticValue<int>, Variable<1, float>>>>;
+
+    static_assert( std::is_same_v< deps_fxy, deps_fxy2 >);
+    static_assert( std::tuple_size_v< deps_fxy > == 2 );
+
     static constexpr auto sys = 
         (   x - 7*y == -11 ) and
         ( 5*x + 2*y == -18 );
 
-    using deps = dependent_variables_t< decltype( sys )>;
+    using sys_type = Conjunction< 
+        Equals< 
+            Difference< 
+                Variable<0,float>, 
+                Product< StaticValue<int>,Variable<1,float>>>, 
+            StaticValue<int>>,
+        Equals< 
+            Sum< 
+                Product< StaticValue<int>, Variable<0,float>>, 
+                Product< StaticValue<int>,Variable<1,float>>>, 
+            StaticValue<int>>>;
+
+    static_assert( std::is_same_v< sys_type, std::remove_cv_t< decltype( sys )>> );
+
+    using deps = free_variables_t< decltype( sys )>;
+    using deps2 = free_variables_t< sys_type >;
+
+    static_assert( std::is_same_v< deps, deps2 > );
+    
 
     // verifying dependent variables
+    static_assert( std::tuple_size_v< deps > == 2 );
     static_assert( deps::template element_t< 0 >::id == 0 );
     static_assert( deps::template element_t< 1 >::id == 1 );
     static_assert( deps::size == 2 );
