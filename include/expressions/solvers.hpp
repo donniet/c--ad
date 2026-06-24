@@ -75,7 +75,7 @@ using namespace normalization;
 
 template< typename T >
 concept static_expression = expression< T > and
-    dependent_variables_t< T >::size == 0;
+    free_variables_t< T >::size == 0;
 
 /// @brief specializations of this template find values of the dependent
 /// variables of ExprT which result in a true-like value for the 
@@ -618,7 +618,7 @@ struct ComparisonCanonicalizer< I, Compliment< LessThan< A, B >>>:
 template< typename ExprT >
 constexpr auto canonical_comparison( ExprT const& expr )
 { 
-    using dependent_vars_tuple = dependent_variables_t< ExprT >;
+    using dependent_vars_tuple = free_variables_t< ExprT >;
 
     static constexpr size_t first_variable_id = next_variable_id_v< ExprT >;
 
@@ -716,7 +716,7 @@ struct IsLinear< Quotient< First, Rest... >>:
 template< variable Var, typename ExprT >
 struct IsLinearOf
 {
-    using dependent_variables = dependent_variables_t< ExprT >;
+    using dependent_variables = free_variables_t< ExprT >;
 
     template< size_t I >
     using ith_var = dependent_variables::template element_t< I >;
@@ -773,7 +773,7 @@ struct ScalarOf< Var, ExprT >
         template< typename ExprU >
         constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
         requires( depends_on_variable_v< Var, ExprU > and
-            dependent_variables_t< ExprU >::size == 1 )
+            free_variables_t< ExprU >::size == 1 )
         { return expr | make_scope< Var >( 1 ); }
 
         // otherwise continue parsing the expression (default manipulation behavior)
@@ -796,13 +796,13 @@ struct ScalarOf< Var, ExprT >
 template< typename ExprT >
 struct NonHomogeneousTerm
 {
-    using variables = dependent_variables_t< ExprT >;
+    using variables = free_variables_t< ExprT >;
 
     template< typename Vars >
     struct Helper;
 
     template< variable... Vars >
-    struct Helper< dependent_variables< Vars... >>
+    struct Helper< unique_variables< Vars... >>
     {
         using type = result_t< ExprT >;
 
@@ -857,7 +857,7 @@ struct LinearSystem< Conjunction< Exprs... >>:
     integral_constant< bool, ( IsLinearEquation< Exprs >::value and ... )> 
 {
     using expression_type = Conjunction< Exprs... >;
-    using variables = dependent_variables_t< expression_type >;
+    using variables = free_variables_t< expression_type >;
 
     static constexpr size_t size = sizeof...( Exprs );
 
@@ -947,7 +947,7 @@ template< linear_system ExprT >
 struct Solver< ExprT >
 {
     using expression_type = ExprT;
-    using variables_tuple = dependent_variables_t< ExprT >::variables_tuple;
+    using variables_tuple = free_variables_t< ExprT >::variables_tuple;
 
     static constexpr bool is_solvable() 
     { return detail::LinearSystem< ExprT >::is_solvable; }
@@ -1423,7 +1423,7 @@ struct IsSequenceVariables: std::false_type {};
 
 // sequencees have a single dependent variable that is unsigned and integral
 template< variable N >
-struct IsSequenceVariables< dependent_variables< N >>: 
+struct IsSequenceVariables< unique_variables< N >>: 
     integral_constant< bool, std::is_unsigned_v< typename N::value_type > and
         std::is_integral_v< typename N::value_type >> { };
 
@@ -1432,7 +1432,7 @@ constexpr bool is_sequence_variables_v = IsSequenceVariables< T >::value;
 
 template< typename T >
 struct IsSequence: integral_constant< bool, 
-    expression< T > and is_sequence_variables_v< dependent_variables_t< T >>> 
+    expression< T > and is_sequence_variables_v< free_variables_t< T >>> 
 { };
 
 template< typename T >

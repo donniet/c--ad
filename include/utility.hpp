@@ -437,7 +437,17 @@ constexpr T max_of( T first, Ts... rest )
     return first >= rest_max ? first : rest_max;
 }
 
-/// @brief determines if the values passed are equal even if they are different
+/// @brief is_same_v for template-template parameters 
+template <template <typename...> typename T, template <typename...> typename U>
+struct is_same_template : std::false_type {};
+
+template <template <typename...> typename T>
+struct is_same_template<T, T> : std::true_type {};
+
+template <template <typename...> typename T, template <typename...> typename U>
+inline constexpr bool is_same_template_v = is_same_template<T, U>::value;
+
+//// @brief determines if the values passed are equal even if they are different
 /// types
 /// @tparam ...Ts the types of the parameters
 /// @param ...ts the values
@@ -480,6 +490,38 @@ constexpr bool are_equal( T t, U u )
 template< typename T, typename U, typename... Ts >
 constexpr bool are_equal( T t, U u, Ts... ts )
 { return t == u && are_equal( u, ts... ); }
+
+//////////////////////
+/// Tuple to Pack ///
+////////////////////
+/// 
+/// Converts a tuple to a parameter pack
+
+template< template< typename... > class Packer, typename TupleT >
+struct PackTuple;
+
+template< template< typename... > class Packer, typename... Ts >
+struct PackTuple< Packer, std::tuple< Ts... >> {
+private:
+    typedef make_seq< sizeof...( Ts )> for_elements;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        using type = Packer< Ts...[ Is ]... >;
+        static constexpr type value( std::tuple< Ts... > const& tup )
+        { return { std::get< Is >( tup )... }; }
+    };
+
+public:
+    using type = Helper< for_elements >::type;
+    static constexpr type value( std::tuple< Ts... > const& tup )
+    { return Helper< for_elements >::value( tup ); }
+};
+
 
 /////////////////////////
 /// Sequence Helpers ///
