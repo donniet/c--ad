@@ -838,6 +838,54 @@ namespace expressions {
 ///////////////////////////////////////
 ///
 namespace detail {
+
+template< typename... Ts >
+struct UniqueTypes: std::tuple< Ts... > 
+{ static constexpr size_t size = sizeof...( Ts ); };
+
+template< typename T >
+struct IsUniqueTypes: integral_constant< bool, false > { };
+
+template< typename... Ts >
+struct IsUniqueTypes< UniqueTypes< Ts... >>: integral_constant< bool,
+    true > { };
+
+template< typename... ValueTypes >
+struct MergeValueTypes;
+
+template< >
+struct MergeValueTypes< >
+{ using type = UniqueTypes< >; };
+
+template< typename First, typename... Rest >
+requires( not IsUniqueTypes< First >::value )
+struct MergeValueTypes< First, Rest... > {
+private:
+    using rest_merged = MergeValueTypes< Rest... >::type;
+
+    template< typename T, typename RestMerged >
+    struct Helper;
+
+    template< typename T, typename... Ts >
+    requires(( not std::is_same_v< T, Ts > and ... ))
+    struct Helper< T, UniqueTypes< Ts... >>
+    { using type = UniqueTypes< T, Ts... >; };
+
+    template< typename T, typename... Ts >
+    requires(( std::is_same_v< T, Ts > or ... ))
+    struct Helper< T, UniqueTypes< Ts... >>
+    { using type = UniqueTypes< Ts... >; };
+
+public:
+    using type = Helper< First, rest_merged >::type;
+};
+
+template< typename... Ts, typename... Rest >
+struct MergeValueTypes< UniqueTypes< Ts... >, Rest... > 
+{ using type = MergeValueTypes< Ts..., 
+    typename MergeValueTypes< Rest... >::type >::type; };
+
+
 template< typename VarsT, typename VarsU, variable... Merged >
 struct MergeUniqueVars;
 
@@ -886,19 +934,44 @@ struct MergeUniqueVars< unique_variables< T, Ts... >,
             base_type{ left, right.rest(), merged..., right.first() } { }
 };
 
-// Case: T and U are the same
+// Case: T and U are the same and their value_types are also
 template< variable T, variable... Ts, variable U, variable... Us,
     variable... Merged >
-requires( variable_traits< T >::id == variable_traits< U >::id )
+requires( variable_traits< T >::id == variable_traits< U >::id and 
+    std::is_same_v< typename variable_traits< T >::value_type, 
+        typename variable_traits< U >::value_type > )
 struct MergeUniqueVars< unique_variables< T, Ts... >,
     unique_variables< U, Us... >, Merged... >:
         MergeUniqueVars< unique_variables< Ts... >, 
             unique_variables< Us... >, Merged..., T >
 { 
-    static_assert( is_same_v< typename variable_traits< T >::value_type,
-        typename variable_traits< U >::value_type >, 
-            "variables with the same id must have the same value_type" );
+    using base_type = MergeUniqueVars< unique_variables< Ts... >, 
+        unique_variables< Us... >, Merged..., T >;
 
+    constexpr MergeUniqueVars( unique_variables< T, Ts... > left,
+        unique_variables< U, Us... > right, Merged... merged ):
+            base_type{ left.rest(), right.rest(), merged..., left.first() } { }
+};
+
+// Case: T and U are the same but their value_types differ.  In this case
+//       the value_type of the merged variable will be a tuple of the value
+//       types of the matched variables.  This signifies that any expression
+//       substituted into the matched variable must be valid against both
+//       value_types
+template< variable T, variable... Ts, variable U, variable... Us,
+    variable... Merged >
+requires( variable_traits< T >::id == variable_traits< U >::id and 
+    not std::is_same_v< typename variable_traits< T >::value_type, 
+        typename variable_traits< U >::value_type > )
+struct MergeUniqueVars< unique_variables< T, Ts... >,
+    unique_variables< U, Us... >, Merged... >:
+        MergeUniqueVars< unique_variables< Ts... >, 
+            unique_variables< Us... >, Merged..., 
+                Variable< variable_traits< T >::id, 
+                    typename MergeValueTypes< 
+                        typename variable_traits< T >::value_type,
+                        typename variable_traits< U >::value_type >::type >>
+{ 
     using base_type = MergeUniqueVars< unique_variables< Ts... >, 
         unique_variables< Us... >, Merged..., T >;
 
