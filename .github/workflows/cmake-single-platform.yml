@@ -33,7 +33,7 @@ jobs:
         sudo ./llvm.sh 21 all
         
         # Verify the installation
-        clang--21 --version
+        clang-21 --version
 
     - name: Configure Environment Variables
       run: |
