@@ -22,7 +22,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install CMake 4.2
-      uses: lukka/get-cmake@v3
+      uses: lukka/get-cmake@latest
       with:
         cmake-version: '4.2.7'
     
