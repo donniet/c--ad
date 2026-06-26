@@ -47,7 +47,11 @@ jobs:
         # Fetch Eigen and place it into a standard search path
         wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
         tar -xf eigen-3.4.0.tar.gz
-        sudo cp -r eigen-3.4.0/Eigen /usr/local/include/
+        # Configure and generate the required package config tracking files
+        cmake -S eigen-3.4.0 -B eigen-build -DCMAKE_INSTALL_PREFIX=/usr/local
+            
+        # Install headers AND the CMake configuration targets system-wide
+        sudo cmake --install eigen-build
 
     - name: Configure Environment Variables
       run: |
