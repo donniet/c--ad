@@ -37,7 +37,7 @@ jobs:
         sudo ./llvm.sh 21 all
 
         # Install TBB Development Headers & Library
-        sudo apt-get install -y libtbb-dev ninja
+        sudo apt-get install -y libtbb-dev ninja-build
         
         # Verify the installation
         clang-21 --version
