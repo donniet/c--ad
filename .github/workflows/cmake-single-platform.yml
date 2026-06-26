@@ -35,9 +35,19 @@ jobs:
         # Run the script targeting version 21
         # 'all' installs extra tools like clang-format, tidy, lld, etc.
         sudo ./llvm.sh 21 all
+
+        # Install TBB Development Headers & Library
+        sudo apt-get install -y libtbb-dev
         
         # Verify the installation
         clang-21 --version
+        
+    - name: Install Eigen (Header-Only)
+      run: |
+        # Fetch Eigen and place it into a standard search path
+        wget https://gitlab.com
+        tar -xf eigen-3.4.0.tar.gz
+        sudo cp -r eigen-3.4.0/Eigen /usr/local/include/
 
     - name: Configure Environment Variables
       run: |
