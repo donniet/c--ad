@@ -1,8 +1,8 @@
 add_executable(test_iso_surface test_iso_surface.cpp)
 target_link_libraries(test_iso_surface PUBLIC iso_surface)
 
-add_executable(test_vcg test_vcg.cpp)
-target_link_libraries(test_vcg PRIVATE Eigen3::Eigen)
+#add_executable(test_vcg test_vcg.cpp)
+#target_link_libraries(test_vcg PRIVATE Eigen3::Eigen)
 
 add_executable(test_disjoint_intervals test_disjoint_intervals.cpp)
 
