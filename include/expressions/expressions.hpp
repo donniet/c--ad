@@ -696,7 +696,7 @@ public:
     // @brief invoking with a parameter list will evaluate
     // the comma operator on the invocation of each argument
     template< typename... Args >
-    requires( isgreater( sizeof...( Args ), 1 ))
+    requires( is_greater( sizeof...( Args ), 1 ))
     constexpr auto 
     operator ()( Args const&... args )
     { return ( operator ()( args ), ... ); }
@@ -726,7 +726,7 @@ public:
         tuple< Vars... >{ vars } 
     { initialize_flags( make_seq< size >{} ); }
 
-    constexpr Scope( Vars&&... vars ) requires( isgreater( sizeof...( Vars ), 0 )): 
+    constexpr Scope( Vars&&... vars ) requires( is_greater( sizeof...( Vars ), 0 )): 
         tuple< Vars... >{ vars... } 
     { initialize_flags( make_seq< size >{} ); }
 
@@ -783,7 +783,7 @@ compatible_scopes( Scope< VarsA... > const& left,
 }
 
 template< variable... VarsA, typename... OtherScopes >
-requires( isgreater( sizeof...( OtherScopes ), 1 ))
+requires( is_greater( sizeof...( OtherScopes ), 1 ))
 constexpr bool 
 compatible_scopes( Scope< VarsA... > const& left, 
     OtherScopes const&... others )
@@ -855,7 +855,7 @@ merge_compatible_scopes( Scope< VarsA... > const& only )
 { return only; }
 
 template< variable... VarsA, typename... OtherScopes >
-requires( isgreater( sizeof...( OtherScopes ), 1 ))
+requires( is_greater( sizeof...( OtherScopes ), 1 ))
 constexpr Scope< VarsA... >
 merge_compatible_scopes( Scope< VarsA... > const& left, 
     OtherScopes const&... others )
@@ -1039,7 +1039,7 @@ struct MergeDependentVars< dependent_variables< >, dependent_variables< >,
 // Case: T is Ith variable
 template< variable T, variable... Ts, variable U, variable... Us, 
     variable... Merged >
-requires( isless( variable_traits< T >::id, variable_traits< U >::id ))
+requires( is_less( variable_traits< T >::id, variable_traits< U >::id ))
 struct MergeDependentVars< dependent_variables< T, Ts... >,
     dependent_variables< U, Us... >, Merged... >:
         MergeDependentVars< dependent_variables< Ts... >, 
@@ -1056,7 +1056,7 @@ struct MergeDependentVars< dependent_variables< T, Ts... >,
 // Case: U is the next variable
 template< variable T, variable... Ts, variable U, variable... Us,
     variable... Merged >
-requires( isgreater( variable_traits< T >::id, variable_traits< U >::id ))
+requires( is_greater( variable_traits< T >::id, variable_traits< U >::id ))
 struct MergeDependentVars< dependent_variables< T, Ts... >,
     dependent_variables< U, Us... >, Merged... >:
         MergeDependentVars< dependent_variables< T, Ts... >, 
@@ -1488,7 +1488,7 @@ protected:
 /// variables
 template< size_t I, expression ExprT >
 requires( not expression< result_t< ExprT >> and 
-    isgreater( std::tuple_size_v< dependent_variables_t< ExprT >>, 0 ))
+    is_greater( std::tuple_size_v< dependent_variables_t< ExprT >>, 0 ))
 struct Variable< I, ExprT >: detail::ExpressionTag
 {
     using value_type = ExprT;
@@ -1939,7 +1939,7 @@ struct ForExpression< Var >
 ///
 template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> and 
-    isgreater( dependent_variables_t< Op< Args... >>::size, 0 ))
+    is_greater( dependent_variables_t< Op< Args... >>::size, 0 ))
 struct ForExpression< Op< Args... >> {
 private:
     using expression_type = Op< Args... >;
@@ -2028,7 +2028,7 @@ private:
     { using matches_type = tuple< LeftMatches... >; };
 
     template< typename... RightMatches >
-    requires( isgreater( sizeof...( RightMatches ), 0 )) // remove ambiguity
+    requires( is_greater( sizeof...( RightMatches ), 0 )) // remove ambiguity
     struct CompatibilityHelper< tuple< >, tuple< RightMatches... >, seq< >>:
         integral_constant< bool, true >
     { using matches_type = tuple< RightMatches... >; };
@@ -2036,8 +2036,8 @@ private:
     // neither side is empty
     template< typename LeftMatches, typename RightMatches, size_t... Is >
     requires( 
-        isgreater( tuple_size_v< typename LeftMatches::matches_type >, 0 ) and
-        isgreater( tuple_size_v< typename RightMatches::matches_type >, 0 ))
+        is_greater( tuple_size_v< typename LeftMatches::matches_type >, 0 ) and
+        is_greater( tuple_size_v< typename RightMatches::matches_type >, 0 ))
     struct CompatibilityHelper< LeftMatches, RightMatches, seq< Is... >>
     {
         static constexpr size_t left_matches_size = tuple_size_v< typename
@@ -2091,7 +2091,7 @@ private:
     // when we have more than two variable matching tuples to compare, check
     // the tail.  if that is compatible, compare those matches to the first
     template< typename First, typename... Rest >
-    requires( isgreater( sizeof...( Rest ), 1 ) and 
+    requires( is_greater( sizeof...( Rest ), 1 ) and 
         AreArgumentMatchesCompatible< Rest... >::value )
     struct AreArgumentMatchesCompatible< First, Rest... >:
         AreArgumentMatchesCompatible< First, AreArgumentMatchesCompatible< Rest... >>
@@ -2100,7 +2100,7 @@ private:
     // when the tail is incompatible simply evaluate to false with an empty
     // tuple of matches
     template< typename First, typename... Rest >
-    requires( isgreater( sizeof...( Rest ), 1 ) and not
+    requires( is_greater( sizeof...( Rest ), 1 ) and not
         AreArgumentMatchesCompatible< Rest... >::value )
     struct AreArgumentMatchesCompatible< First, Rest... >:
         integral_constant< bool, false >
@@ -2546,7 +2546,7 @@ static_assert( dependent_variables_t< Sum< Variable< 0, int >, Variable< 1, int 
 static_assert( requires { typename ForExpression< Sum< Variable< 0, int >, Variable< 1, int >>>; } );
 
 template< typename... Ts >
-requires( isgreater( sizeof...( Ts ), 2 ))
+requires( is_greater( sizeof...( Ts ), 2 ))
 struct Sum< Ts... >: Arguments< Sum, Ts... >
 {
     using result_type = decltype(( result_t< Ts >{} + ... ));
@@ -2601,7 +2601,7 @@ struct Difference< T, U >: Arguments< Difference, T, U >
 };
 
 template< typename... Ts >
-requires( isgreater( sizeof...( Ts ), 2 ))
+requires( is_greater( sizeof...( Ts ), 2 ))
 struct Difference< Ts... >: Arguments< Difference, Ts... >
 {
     using result_type = decltype(( result_t< Ts >{} - ... ));
@@ -2657,7 +2657,7 @@ struct Product< T, U >: Arguments< Product, T, U >
 };
 
 template< typename T, typename... Ts >
-requires( isgreater( sizeof...( Ts ), 1 ))
+requires( is_greater( sizeof...( Ts ), 1 ))
 struct Product< T, Ts... >: Arguments< Product, T, Ts... >
 {
     using result_type = decltype( result_t< T >{} * ( result_t< Ts >{} * ... ));

@@ -2,6 +2,7 @@
 #define __UTILITY_HPP__
 
 #include <utility>
+#include <vector>
 #include <tuple>
 #include <ranges>
 #include <memory>
@@ -22,10 +23,16 @@ using std::tuple, std::tuple_cat, std::tuple_size_v, std::tuple_element_t,
 using std::is_same_v, std::is_convertible_v;
 using std::string, std::to_string;
 using std::isspace;
-using std::isless, std::isgreater;
+//using std::is_less, std::is_greater;
 using std::array;
 using std::function;
 using std::any, std::make_any, std::any_cast;
+
+constexpr auto is_greater( auto left, auto right )
+{ return left > right; }
+
+constexpr auto is_less( auto left, auto right )
+{ return left < right; }
 
 ////////////////
 /// Simple Stack
@@ -283,7 +290,7 @@ namespace detail {
 /// @tparam ...Is the remaining values
 template< size_t I, size_t... Is >
 struct Min: integral_constant< size_t, 
-    ( isless( I,  Min< Is... >::value ) ? I : Min< Is... >::value ) > { };
+    ( is_less( I,  Min< Is... >::value ) ? I : Min< Is... >::value ) > { };
 
 /// @brief minimum of a single value is the value
 /// @tparam I the value
@@ -295,7 +302,7 @@ struct Min< I >: integral_constant< size_t, I > { };
 /// @tparam ...Is the remaining values
 template< size_t I, size_t... Is >
 struct Max: integral_constant< size_t, 
-    ( isgreater( I,  Max< Is... >::value) ? I : Max< Is... >::value )> { };
+    ( is_greater( I,  Max< Is... >::value) ? I : Max< Is... >::value )> { };
 
 /// @brief maximum of a single value is the value
 /// @tparam I the value
@@ -560,7 +567,7 @@ struct SequencePrefixSum< seq<>, false >
 { using type = seq< 0 >; };
 
 template< size_t... Is >
-requires( isgreater( sizeof...( Is ), 0 ))
+requires( is_greater( sizeof...( Is ), 0 ))
 struct SequencePrefixSum< seq< Is... >, false > {
 private:
     template< typename Seq >
@@ -607,17 +614,17 @@ template< size_t I >
 struct SequenceLowerBound< I, seq< >>: integral_constant< size_t, 0 > { };
 
 template< size_t I, size_t J, size_t... Js >
-requires( not isgreater( I, J ))
+requires( not is_greater( I, J ))
 struct SequenceLowerBound< I, seq< J, Js... >>: integral_constant< size_t,
     0 > { };
 
 template< size_t I, size_t J0, size_t J1, size_t... Js >
-requires( isgreater( I, J0 ) and isless( I, J1 ))
+requires( is_greater( I, J0 ) and is_less( I, J1 ))
 struct SequenceLowerBound< I, seq< J0, J1, Js... >>: integral_constant< size_t,
     0 > { };
 
 template< size_t I, size_t J0, size_t J1, size_t... Js >
-requires( isgreater( I, J0 ) and not isless( I, J1 ))
+requires( is_greater( I, J0 ) and not is_less( I, J1 ))
 struct SequenceLowerBound< I, seq< J0, J1, Js... >>: integral_constant< size_t,
     1 + SequenceLowerBound< I, seq< J1, Js... >>::value > { };
 
@@ -675,7 +682,7 @@ struct ConcatSeq< seq< Is... >, seq< Js... >>
 { using type = seq< Is..., Js... >; };
 
 template< typename First, typename... Rest >
-requires( isgreater( sizeof...( Rest ), 1 ))
+requires( is_greater( sizeof...( Rest ), 1 ))
 struct ConcatSeq< First, Rest... >
 { using type = ConcatSeq< First, typename ConcatSeq< Rest... >::type >; };
 
@@ -683,7 +690,7 @@ template< typename Seq >
 struct IsSortedUniqueSeq;
 
 template< size_t... Is >
-requires( not isgreater( sizeof...( Is ), 1 ))
+requires( not is_greater( sizeof...( Is ), 1 ))
 struct IsSortedUniqueSeq< seq< Is... >>: integral_constant< bool, true > { };
 
 template< size_t First, size_t Second, size_t... Rest >
@@ -705,7 +712,7 @@ struct MinimumSequenceElement< seq< I >>
 { static constexpr size_t value = I; };
 
 template< size_t I, size_t... Is >
-requires( isgreater( sizeof...( Is ), 0 ))
+requires( is_greater( sizeof...( Is ), 0 ))
 struct MinimumSequenceElement< seq< I, Is... >>
 { static constexpr size_t value = (( I <= Is ) and ... ) ? I : 
     MinimumSequenceElement< seq< Is... >>::value; };
@@ -740,7 +747,7 @@ struct SortUniqueSequence< seq< I >>
 { using type = seq< I >; };
 
 template< size_t... Is >
-requires( isgreater( sizeof...( Is ), 0 ))
+requires( is_greater( sizeof...( Is ), 0 ))
 struct SortUniqueSequence< seq< Is... >>
 { 
 protected:
@@ -770,7 +777,7 @@ struct MergeUniqueSortedSequences< seq< Is... >>
 { using type = seq< Is... >; };
 
 template< size_t... Js >
-requires( isgreater( sizeof...( Js ), 0 )) // for disambiguation
+requires( is_greater( sizeof...( Js ), 0 )) // for disambiguation
 struct MergeUniqueSortedSequences< seq< Js... >, seq< >>
 { using type = seq< Js... >; };
 
@@ -779,19 +786,19 @@ struct MergeUniqueSortedSequences< seq< >, seq< Js... >>
 { using type = seq< Js... >; };
 
 template< size_t I, size_t... Is, size_t J, size_t... Js >
-requires( isless( I, J ))
+requires( is_less( I, J ))
 struct MergeUniqueSortedSequences< seq< I, Is... >, seq< J, Js... >>
 { using type = ConcatSeq< seq< I >, typename MergeUniqueSortedSequences< 
     seq< Is... >, seq< J, Js... >>::type >::type; };
 
 template< size_t I, size_t... Is, size_t J, size_t... Js >
-requires( not isless( I, J ))
+requires( not is_less( I, J ))
 struct MergeUniqueSortedSequences< seq< I, Is... >, seq< J, Js... >>
 { using type = ConcatSeq< seq< J >, typename MergeUniqueSortedSequences< 
     seq< I, Is... >, seq< Js... >>::type >::type; };
 
 template< typename First, typename... Rest >
-requires( isgreater( sizeof...( Rest ), 1 ))
+requires( is_greater( sizeof...( Rest ), 1 ))
 struct MergeUniqueSortedSequences< First, Rest... >
 { using type = MergeUniqueSortedSequences< First, 
         typename MergeUniqueSortedSequences< Rest... >::type >::type; };
@@ -1051,7 +1058,7 @@ struct TupleInsert< 0, T, tuple< Ts... >>
 { using type = tuple< T, Ts... >; };
 
 template< size_t I, typename T, typename First, typename... Rest >
-requires( isgreater( I, 0 ))
+requires( is_greater( I, 0 ))
 struct TupleInsert< I, T, tuple< First, Rest... >>
 { using type = tuple_cat_t< tuple< First >, 
     typename TupleInsert< I-1, T, tuple< Rest... >>::type >; };
@@ -1103,7 +1110,7 @@ struct MergeUniqueTuples< tuple< Ts... >, tuple< Us... >>:
     TupleUnique< tuple< Ts..., Us... >> { };
 
 template< typename First, typename... Rest >
-requires( isgreater( sizeof...( Rest ), 1 ))
+requires( is_greater( sizeof...( Rest ), 1 ))
 struct MergeUniqueTuples< First, Rest... >:
     MergeUniqueTuples< First, typename MergeUniqueTuples< Rest... >::type > 
 { };
@@ -1340,7 +1347,7 @@ struct FlattenTuple< std::tuple< Ts... >>
             I - sequence_at< tuple_index< I >, cumulative_tuple_sizes_seq >> { };
 //
 //        template< size_t I >
-//        requires( isless(
+//        requires( is_less(
 //            I, sequence_at< tuple_index< I >, cumulative_tuple_sizes_seq >))
 //        struct Remainder< I >: integral_constant< size_t, I > { };
 //

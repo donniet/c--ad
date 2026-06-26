@@ -271,7 +271,7 @@ struct ShapeGet< 0, Shape< First, Rest... >>
 /// @tparam First the first element of the shape
 /// @tparam ...Rest the remaining elements of a shape
 template< size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
+requires( is_greater( I, 0 ))
 struct ShapeGet< I, Shape< First, Rest... >>
 { 
     static constexpr size_t value( Shape< First, Rest... > shp ) 
@@ -425,7 +425,7 @@ struct RemoveShapeElement< 0, Shape< First, Rest... >>
 /// @tparam First the first size of a shape
 /// @tparam ...Rest the remaining sizes
 template< size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
+requires( is_greater( I, 0 ))
 struct RemoveShapeElement< I, Shape< First, Rest... >>
 { 
     using type = ShapeCat< Shape< First >, 
@@ -442,7 +442,7 @@ struct RemoveShapeElement< I, Shape< First, Rest... >>
 /// @tparam J the second dimension to contract
 /// @tparam S the shape of the tensor
 template< size_t I, size_t J, typename S >
-requires( isless( I, J ) and 
+requires( is_less( I, J ) and 
     ShapeElement< I, S >::value == ShapeElement< J, S >::value )
 struct ContractShape
 { using type = RemoveShapeElement< I, 
@@ -470,7 +470,7 @@ struct InsertShapeElement< K, 0, Shape< Is... >>
 /// @tparam First the size of the first dimension of the shape
 /// @tparam ...Rest the sizes of the remaining dimensions
 template< size_t K, size_t I, size_t First, size_t... Rest >
-requires( isgreater( I, 0 ))
+requires( is_greater( I, 0 ))
 struct InsertShapeElement< K, I, Shape< First, Rest... >>
 { 
     using type = ShapeCat< Shape< First >, 
@@ -488,7 +488,7 @@ struct SubTensorShape;
 /// @brief reduce each dimension of a tensor's shape by 1
 /// @tparam ...Sizes are the sizes of each dimension of the shape
 template< size_t... Sizes >
-requires(( isgreater( Sizes, 1 ) and ... ))
+requires(( is_greater( Sizes, 1 ) and ... ))
 struct SubTensorShape< Shape< Sizes... >>
 { using type = Shape< (Sizes - 1)... >; };
 
@@ -498,7 +498,7 @@ struct SubTensorShape< Shape< Sizes... >>
 /// @tparam J the second contraction dimension
 /// @tparam S the shape to uncontract
 template< size_t K, size_t I, size_t J, typename S >
-requires( isless( I, J ))
+requires( is_less( I, J ))
 struct UncontractShape
 { 
     using type = InsertShapeElement< K, J, 
@@ -1053,7 +1053,7 @@ concept tensor = is_tensor_v< T >;
 /// @returns a tensor of uniform type T and shape S with each element
 /// set to 0
 template< shape S, typename T >
-requires( isgreater( S::size(), 1 ))
+requires( is_greater( S::size(), 1 ))
 constexpr uniform_tensor_t< S, T > zero_tensor()
 { return detail::zero_tensor_helper< uniform_tensor_t< S, T >>( 
     make_seq< S::size() >{} ); }
@@ -1090,7 +1090,7 @@ using uniform_vector_t = uniform_tensor_t< Shape< N >, T >;
 /// @tparam N is the size of the vector
 /// @tparam T is the type of the elements
 template< size_t N, typename T >
-requires( isgreater( N, 1 ))
+requires( is_greater( N, 1 ))
 constexpr uniform_tensor_t< Shape< N >, T > zero_vector()
 { return zero_tensor< Shape< N >, T >(); }
 
@@ -1938,7 +1938,7 @@ namespace detail {
 /// @param ten the tensor value
 /// @return the determinant of ten
 template< typename TensorT, size_t... Is >
-requires( isgreater( sizeof...( Is ), 1 ))
+requires( is_greater( sizeof...( Is ), 1 ))
 constexpr auto det_helper( TensorT const& ten, seq< Is... > )
 { 
     // we know this is a 2D tensor with equal sizes, sizeof...( Is )
@@ -2032,12 +2032,12 @@ template< shape A, shape B >
 struct IsSubShape;
 
 template< size_t... As, size_t... Bs >
-requires( isless( sizeof...( As ), sizeof...( Bs )))
+requires( is_less( sizeof...( As ), sizeof...( Bs )))
 struct IsSubShape< Shape< As... >, Shape< Bs... >>: 
     integral_constant< bool, false > { };
 
 template< size_t... As, size_t... Bs >
-requires( not isless( sizeof...( As ), sizeof...( Bs )))
+requires( not is_less( sizeof...( As ), sizeof...( Bs )))
 struct IsSubShape< Shape< As... >, Shape< Bs... >>:
     integral_constant< bool, (( As >= Bs ) and ... )> { };
 
@@ -2071,7 +2071,7 @@ template< size_t Dim, size_t Elem, typename V >
 struct TranslationMatrixElement;
 
 template< size_t Dim, size_t Elem, typename V >
-requires( isless( Shape< Dim, Dim+1 >::from_element( Elem )[ 1 ], Dim ))
+requires( is_less( Shape< Dim, Dim+1 >::from_element( Elem )[ 1 ], Dim ))
 struct TranslationMatrixElement< Dim, Elem, V >:
     TranslationMatrixSquareElement< 
         Shape< Dim, Dim+1 >::from_element( Elem )[ 0 ], 

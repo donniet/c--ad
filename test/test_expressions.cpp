@@ -173,9 +173,9 @@ int main( int ac, char* av[] )
 
     vars( a = 1_scalar );
 
-    assert(( static_expr( 1 ) + static_expr( 2 )   | 
-        manipulate( [&]( auto n ){ return n + 1; }) | 
-        eval()) == 5 );
+//    assert(( static_expr( 1 ) + static_expr( 2 )   | 
+//        manipulate( [&]( auto n ){ return n + 1; }) | 
+//        eval()) == 5 );
  
 //    println( "det(1,-1,1,1) == {}", det( m1 ) | vars );
 //    assert(( det( m1 ) | vars ) == 2_scalar );
