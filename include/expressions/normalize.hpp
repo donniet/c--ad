@@ -262,13 +262,13 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     struct TermElementSizeHelper;
 
     template< size_t I, size_t J, size_t... Js >
-    requires( isless( I, subnormalizer< J >::terms_size ))
+    requires( is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementSizeHelper< I, seq< J, Js... >>: 
         integral_constant< size_t, subnormalizer< J >::
             template TermElementSize< I >::value > { };
         
     template< size_t I, size_t J, size_t... Js >
-    requires( not isless( I, subnormalizer< J >::terms_size ))
+    requires( not is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementSizeHelper< I, seq< J, Js... >>: 
         TermElementSizeHelper< I - subnormalizer< J >::terms_size, seq< Js... >>
     { };
@@ -287,7 +287,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
 
     /// @brief case where Ts...[J] contains the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
-    requires( isless( I, subnormalizer< J >::terms_size ))
+    requires( is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementHelper< I, K, seq< J, Js... >>
     { 
         using type = subnormalizer< J >::template TermElement< I, K >::type; 
@@ -298,7 +298,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
 
     /// @brief case where Ts...[J] contains the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
-    requires( not isless( I, subnormalizer< J >::terms_size ))
+    requires( not is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementHelper< I, K, seq< J, Js... >>:
         TermElementHelper< I - subnormalizer< J >::terms_size, K, seq< Js... >>
     { };
@@ -328,7 +328,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     struct Term;
 
     template< size_t I >
-    requires( isgreater( term_element_size< I >, 1 ))
+    requires( is_greater( term_element_size< I >, 1 ))
     struct Term< I >: TermHelper< I, make_seq< term_element_size< I >>> { };
 
     template< size_t I >
@@ -454,7 +454,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
 
     /// @brief case where Ts...[J] contributes the Kth element of the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
-    requires( isless( K, subterm_element_size< J, I >))
+    requires( is_less( K, subterm_element_size< J, I >))
     struct TermElementHelper< I, K, seq< J, Js... >>
     { 
         using type = subnormalizer< J >::
@@ -469,7 +469,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     /// Ith term.  We subtract the number of elements Ts...[J] contributes and
     /// search the remaining Js...
     template< size_t I, size_t K, size_t J, size_t... Js >
-    requires( not isless( K, subterm_element_size< J, I >))
+    requires( not is_less( K, subterm_element_size< J, I >))
     struct TermElementHelper< I, K, seq< J, Js... >>: 
         TermElementHelper< I, K - subterm_element_size< J, I >, seq< Js... >>
     { };
@@ -498,7 +498,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     struct Term;
 
     template< size_t I >
-    requires( isgreater( term_element_size< I >, 1 ))
+    requires( is_greater( term_element_size< I >, 1 ))
     struct Term< I >: TermHelper< I, make_seq< term_element_size< I >>> { };
 
     template< size_t I >

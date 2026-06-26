@@ -271,7 +271,7 @@ struct SolveFor< tuple< Var >, Params... >:
 };
 
 template< variable... Vars, typename... Params >
-requires( isgreater( sizeof...( Vars ), 1 ))
+requires( is_greater( sizeof...( Vars ), 1 ))
 struct SolveFor< tuple< Vars... >, Params... >:
     SolverParams< tuple< Vars... >, Params... >
 {
@@ -303,7 +303,7 @@ constexpr auto operator |( ExprT const& expr,
 { return scope( expr ); }
 
 template< expression ExprT, variable... Vars, typename... Params >
-requires( isgreater( sizeof...( Vars ), 0 )) // and solvable< ExprT > )
+requires( is_greater( sizeof...( Vars ), 0 )) // and solvable< ExprT > )
 constexpr auto operator |( ExprT const& expr, 
     SolveFor< tuple< Vars... >, Params... >&& solve_for )
 { return solve_for( expr ); }
@@ -709,7 +709,7 @@ struct IsLinear< Quotient< NumT, DenU >>: integral_constant< bool,
 /// linear
 template< typename First, typename... Rest >
 requires( not static_expression< Quotient< First, Rest... >> and 
-    isgreater( sizeof...( Rest ), 1 ))
+    is_greater( sizeof...( Rest ), 1 ))
 struct IsLinear< Quotient< First, Rest... >>: 
     IsLinear< Quotient< First, Quotient< Rest... >>> { };
 
@@ -1203,7 +1203,7 @@ struct Solver< Equals< Negation< Var >, ExprT >>:
 ///
 template< size_t I, typename T, static_expression... Addends, 
     static_expression ExprT >
-requires( isgreater( sizeof...( Addends ), 1 ))
+requires( is_greater( sizeof...( Addends ), 1 ))
 struct Solver< Equals< Sum< Variable< I, T >, Addends... >, ExprT >>:
     Solver< Equals< Variable< I, T >, Difference< ExprT, Sum< Addends... >>>>
 {
@@ -1254,7 +1254,7 @@ struct Solver< Equals< Sum< AddendT, Variable< I, T >>, ExprT >>:
 
 template< size_t I, typename T, static_expression AddendT,
     static_expression... Addends, static_expression ExprT >
-requires( isgreater( sizeof...( Addends ), 0 ))
+requires( is_greater( sizeof...( Addends ), 0 ))
 struct Solver< Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >>:
     Solver< Equals< Sum< Variable< I, T >, Addends... >, Difference< ExprT, AddendT >>>
 { 
@@ -1280,7 +1280,7 @@ struct Solver< Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >>:
 /// @brief solvers for X - ... = C
 template< size_t I, typename T, static_expression... Subends, 
     static_expression ExprT >
-requires( isgreater( sizeof...( Subends ), 1 ))
+requires( is_greater( sizeof...( Subends ), 1 ))
 struct Solver< Equals< Difference< Variable< I, T >, Subends... >, ExprT >>:
     Solver< Equals< Variable< I, T >, Sum< ExprT, Difference< Subends... >>>>
 { 
@@ -1331,7 +1331,7 @@ struct Solver< Equals< Difference< SubendT, Variable< I, T >>, ExprT >>:
 
 template< size_t I, typename T, static_expression SubendT,
     static_expression... Subends, static_expression ExprT >
-requires( isgreater( sizeof...( Subends ), 0 ))
+requires( is_greater( sizeof...( Subends ), 0 ))
 struct Solver< Equals< Difference< SubendT, Variable< I, T >, Subends... >, ExprT >>:
     Solver< Equals< Difference< Variable< I, T >, Subends... >, Difference< SubendT, ExprT >>>
 { 
