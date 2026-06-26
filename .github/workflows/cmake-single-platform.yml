@@ -45,7 +45,7 @@ jobs:
     - name: Install Eigen (Header-Only)
       run: |
         # Fetch Eigen and place it into a standard search path
-        wget https://gitlab.com
+        wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
         tar -xf eigen-3.4.0.tar.gz
         sudo cp -r eigen-3.4.0/Eigen /usr/local/include/
 
