@@ -31,6 +31,9 @@ int main( int ac, char* av[] )
     ensure( test_dependent_vars, "Dependent Variables" );
     ensure( test_boolean_satisfaction, "Boolean Satisfaction" );
     ensure( test_canonicalization, "Canonicalization" );
+    ensure( test_simple_expressions, "Simple Expressions" );
+    ensure( test_iteration, "Iteration" );
+    ensure( test_minimization, "Minimization" );
 
     return EXIT_SUCCESS;
 }
