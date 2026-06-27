@@ -17,7 +17,7 @@ concept view_of = std::ranges::view<T>;
  */
 template<typename ValueType>
 struct array_view : 
-    public std::ranges::view_interface<array_view>
+    public std::ranges::view_interface< array_view< ValueType >>
 {
     using value_type = ValueType;
     using const_iterator = value_type const*;
@@ -42,7 +42,7 @@ template<typename Map>
 auto select_from( Map const& map )
 { 
     auto selector = [&map]( auto const& key )
-    { return map[key]; }
+    { return map[key]; };
 
     return std::views::transform( selector );
 }

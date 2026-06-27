@@ -5,6 +5,7 @@ module;
 #include <tuple>
 #include <ranges>
 #include <numeric>
+#include <vector>
 
 #include "disjoint_intervals.hpp"
 

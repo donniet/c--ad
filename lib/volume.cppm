@@ -14,6 +14,7 @@ module;
 #include <functional>
 #include <numeric>
 #include <cmath>
+#include <algorithm>
 
 export module volume; 
 
@@ -33,9 +34,9 @@ public:
     {
         using coordinate_type = typename RangeType::value_type;
         auto index_of = [&range](coordinate_type const& x) -> size_t
-        { return std::distance(&(*range.begin()), &x); }
+        { return std::distance(&(*range.begin()), &x); };
 
-        for_each(coordinate_type const& x : range)
+        for(coordinate_type const& x : range)
         {
             size_t i = index_of(x);
             

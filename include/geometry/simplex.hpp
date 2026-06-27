@@ -3,7 +3,7 @@
 
 #include "utility.hpp"
 #include "tensors.hpp"
-#include "expressions.hpp"
+#include "expressions/expressions.hpp"
 
 #include <vector>
 #include <ranges>
@@ -96,7 +96,7 @@ struct Simplex: std::vector< Vertex< U >>
     Simplex project_at( U here ) const
     {
         Simplex ret;
-        for( Vertex const& v: *this )
+        for( Vertex v: *this )
             ret.push_back( v.extend( here ));
         return ret;
     }
@@ -286,7 +286,7 @@ struct Builder
     }
 
     template< typename SpecT, size_t Rows, size_t Cols >
-    auto adjust_spec_linear( SpecT spec, uniform_matrix_t< Rows, Cols, Scalar > const& mat )
+    auto adjust_spec_linear( SpecT spec, uniform_matrix_t< Rows, Cols, units::Scalar > const& mat )
     {
         
     }
@@ -311,7 +311,8 @@ private:
     template< typename... Specs >
     U maximum_extrusion_step( simplex_type const& simp, U from, U to, 
         Specs... specs )
-    { return min_of( specs.maximum_extrusion( simp, from, to )); }
+    { return from; }
+    //    return min_of( specs.maximum_extrusion( simp, from, to )... ); }
 
     static complex_type extrude_complex( complex_type const& c, U from, U to )
     { 
