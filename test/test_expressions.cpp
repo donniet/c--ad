@@ -1,4 +1,6 @@
 
+#include "testing.hpp"
+
 #include "units.hpp"
 #include "expressions/expressions.hpp"
 #include "expressions/solvers.hpp"
@@ -12,72 +14,6 @@
 #include <stdlib.h>
 
 
-namespace test {
-
-void report( bool success, std::string const& name, std::string const& msg )
-{
-    if( not success )
-    {
-        if( msg == "" )
-            std::println( "FAILURE: {}", name );
-        else
-            std::println( "FAILURE: {}: {}", name, msg );
-
-        std::exit( EXIT_FAILURE );
-        return;
-    }
-    
-    std::println( "SUCCESS: {}", name );
-}
-
-void ensure( bool (*func)(), std::string const& name )
-{
-    bool success = false;
-    std::string msg = "";
-
-    try 
-    { if( success = func(); not success )
-        msg = "returned false"; }
-    catch( std::runtime_error& e )
-    { msg = e.what(); }
-    catch(...)
-    { msg = "exception thrown"; }
-
-    report( success, name, msg );
-}
-
-void ensure( void (*func)(), std::string const& name )
-{
-    bool success = false;
-    std::string msg = "";
-
-    try
-    { func(); success = true; }
-    catch( std::runtime_error& e )
-    { msg = e.what(); }
-    catch(...)
-    { msg = "exception thrown"; }
-
-    report( success, name, msg );
-}
-
-void ensure( std::pair< bool, std::string > (*func)(), std::string const& name )
-{
-    bool success = false;
-    std::string msg = "";
-
-    try
-    { std::tie( success, msg ) = func(); }
-    catch( std::runtime_error& e )
-    { msg = e.what(); }
-    catch(...)
-    { msg = "exception thrown"; }
-
-    report( success, name, msg );
-}
-
-} // namespace test
-
 using test::ensure;
 using namespace expressions;
 using namespace units;
@@ -85,16 +21,24 @@ using namespace units;
 bool test_iteration();
 bool test_minimization();
 bool test_canonicalization();
+bool test_simple_expressions();
+
 constexpr bool test_dependent_vars();
 std::pair< bool, std::string > test_boolean_satisfaction();
 
 
 int main( int ac, char* av[] )
 {
-    using std::println, std::print;
-
     ensure( test_dependent_vars, "Dependent Variables" );
     ensure( test_boolean_satisfaction, "Boolean Satisfaction" );
+    ensure( test_canonicalization, "Canonicalization" );
+
+    return EXIT_SUCCESS;
+}
+
+bool test_simple_expressions() 
+{
+    using std::println, std::print;
 
     auto zero = constant_zero;
     auto one = constant_one;
@@ -206,9 +150,8 @@ int main( int ac, char* av[] )
 //    println( std::runtime_format( "solved: para2({:ft}, {:ft}) == {}" ), eval( w ), eval( z ), eval( para2 ));
 
     //test_iteration();
-    test_canonicalization();
 
-    return EXIT_SUCCESS;
+    return true;
 }
 
 constexpr bool test_dependent_vars()
@@ -400,7 +343,7 @@ constexpr bool test_is_linear()
     static_assert( is_linear_equation( x + y == zero ));
     static_assert( is_linear_equation( x / one - y == x ));
     static_assert( not is_linear_equation( x / y == one ));
-    // NOTE: pow is not considered linear until canonicalizer has been written
+    // NOTE: pow<(0|1)> is not considered linear until canonicalizer has been written
     // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + one ));
     static_assert( is_linear_equation( x == y + one ));
     static_assert( not is_linear_equation( x < y + one ));
@@ -472,7 +415,7 @@ consteval bool basic_solvers()
     return true;
 }
 
-//static_assert( basic_solvers< 7 >() );
+static_assert( basic_solvers< 7 >() );
 
 //static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
 //static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
