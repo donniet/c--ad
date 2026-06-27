@@ -203,7 +203,7 @@ struct SolverParams: expression_scope_t< VarTuple >
     template< expression ExprT >
     constexpr bool solve( ExprT const& expr ) 
     { 
-        std::println( "attempting so solve: {}", expr );
+        // std::println( "attempting so solve: {}", expr );
 
         auto scope = make_scope< ExprT >();
         auto solve_ = Solver< ExprT >{ expr };
@@ -220,11 +220,11 @@ struct SolverParams: expression_scope_t< VarTuple >
         // return the value of expr using our solved scope
         _solved = static_cast< bool >( expr | scope );
 
-        std::println( "result of solve: {}", _solved );
+        // std::println( "result of solve: {}", _solved );
 
         auto res = variables_tuple{} | scope;
 
-        std::println( "vars: {}", res );
+        //std::println( "vars: {}", res );
 
         scope_type::take_from( scope );
         return _solved;
