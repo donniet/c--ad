@@ -5,7 +5,7 @@
  */
 
 #include "utility.hpp"
-#include "matrix.hpp"
+#include "tensors.hpp"
 
 #include <iostream>
 #include <string>

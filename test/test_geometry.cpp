@@ -482,8 +482,8 @@ struct Extruded
 
     }
 
-    extrusion_type extrution_component() const
-    { return { proximal_component(), distal_component() }}
+    extrusion_type extrusion_component() const
+    { return { proximal_component(), distal_component() }; }
 
     components_type components() const
     { return { 
@@ -567,7 +567,7 @@ Extruded< ObjectType > extrude( ObjectType object )
 template< typename ObjectType >
 struct Interpolated
 {
-    // using range_type = typename ObjectType::range_type;
+    using range_type = typename ObjectType::range_type;
     using domain_type = typename ObjectType::domain_type;
     using dimensions_type = typename ObjectType::dimensions_type;
     using geometry_type = geometry_of< ObjectType >;

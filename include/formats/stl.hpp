@@ -168,9 +168,9 @@ struct STL
         Projection< ObjU, ProjectAt< From, Us... >> trans, 
         Specs... specs ) const
     { 
-        output( builder, trans.object(), 
-            builder_type::adjust_spec_translate( specs, 
-                trans.transform().offset() )... );
+        output( builder, trans.object()); //, 
+            // builder_type::adjust_spec_translate( specs, 
+            //     trans.transform().offset() )... );
                 
         builder.translate( translation_vector_from( trans.transform() ), 
             specs... ); 
@@ -211,8 +211,9 @@ struct STL
         Projection< ObjU, Linear< uniform_matrix_t< Rows, Cols, Scalar >>> proj, 
         Specs... specs ) const
     {
-        output( builder, proj.object(), builder_type::adjust_spec_linear( specs, 
-            proj.transformation().matrix())... );
+        output( builder, proj.object());
+        // , builder_type::adjust_spec_linear( specs, 
+        //     proj.transformation().matrix())... );
         builder.linear_transform( proj.transformation(), specs... );
     }
 
@@ -317,8 +318,8 @@ STLFile::Solid STLFile::Solid::from_complex( Complex< Length > const& plex )
     return ret;
 }
 
-template< typename ObjT, typename SpecProcessorT >
-std::ostream& STL< ObjT, SpecProcessorT >::write_to( std::ostream& os ) const
+template< typename ObjT >
+std::ostream& STL< ObjT >::write_to( std::ostream& os ) const
 {
     STLFile out;
     // out.set_minimum_length( _minimum_length );
@@ -367,8 +368,8 @@ std::ostream& STL< ObjT, SpecProcessorT >::write_to( std::ostream& os ) const
 /// @param os ostream instance
 /// @param stl the STL object wrapper
 /// @return the ostream operator
-template< typename ObjT, typename SpecProcessorT >
-std::ostream& operator <<( std::ostream& os, STL< ObjT, SpecProcessorT > const& stl )
+template< typename ObjT >
+std::ostream& operator <<( std::ostream& os, STL< ObjT > const& stl )
 { return stl.write_to( os ); }
 
 } // namespace formats

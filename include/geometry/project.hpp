@@ -2,7 +2,7 @@
 #define __GEOMETRY_PROJECT_HPP__
 
 #include "geometry/space.hpp"
-#include "expressions.hpp"
+#include "expressions/expressions.hpp"
 
 namespace geometry {
 
@@ -67,8 +67,8 @@ struct Differentiable
     using result_type = result_t< expression_type >;
     // using input_type = expression_variable_t< 0, ExprT >;
     // static constexpr size_t from_dimensions = shape_element_v< 0, shape_of_t< input_type >>;
-    static constexpr to_dimensions = shape_element_v< 0, 
-        shape_of_t< result_type >>;
+    static constexpr auto to_dimensions = tensors::shape_element_v< 0, 
+        typename result_type::shape_type >;
 
     template< vector V >
     constexpr auto operator ()( V point )

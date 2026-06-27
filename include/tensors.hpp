@@ -25,6 +25,8 @@
 /// auto rotated_vector = matmul( rotz, v );
 ///
 
+#include <algorithm>
+
 #include "utility.hpp"
 
 namespace tensors {
