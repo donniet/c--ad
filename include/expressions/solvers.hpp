@@ -89,15 +89,15 @@ concept static_expression = expression< T > and
 /// @tparam ExprT is the type of the expression solved by this solver.
 ///
 template< typename ExprT >
-struct Solver
-{
-    static constexpr bool is_solvable = false;
-    static_assert( is_solvable, "no solver defined for this expression" ); 
-
-    static consteval void operator ()( auto... )
-    { static_assert( is_solvable, "no solution operation defined for this expression" ); }
-};
-
+struct Solver;
+//{
+//    static constexpr bool is_solvable = false;
+//    static_assert( is_solvable, "no solver defined for this expression" ); 
+//
+//    static consteval void operator ()( auto... )
+//    { static_assert( is_solvable, "no solution operation defined for this expression" ); }
+//};
+//
 /// @brief solve method for scopes
 template< typename ScopeT, typename... Params >
 struct SolveScope
@@ -135,7 +135,7 @@ struct SolveScope
 
     template< typename ExprT >
     constexpr result_t< ExprT > 
-    solve( ExprT const& expr )
+    operator ()( ExprT const& expr )
     { return solve_with_parameters( expr, make_seq< sizeof...( Params )>{} ); }
 
     constexpr SolveScope( scope_type& scope, Params... params ):
@@ -159,9 +159,9 @@ solve( ScopeT& scope )
 
 // HACK: specialize application operator until SolveScope is a proper compound
 // expression
-template< typename ExprT, typename ScopeT, typename... Params >
-constexpr auto operator |( ExprT const& expr, SolveScope< ScopeT, Params... >&& solution )
-{ return solution.solve( expr ); }
+//template< typename ExprT, typename ScopeT, typename... Params >
+//constexpr auto operator |( ExprT const& expr, SolveScope< ScopeT, Params... >&& solution )
+//{ return solution.solve( expr ); }
 
 /// @brief an expression is considered solvable if a solver exists for it
 /// TODO: this concept would be nice, but whenever we are trying to detect if 
@@ -1122,7 +1122,8 @@ private:
 /// @brief boolean expressions are normalized before solving with a bespoke
 /// solver
 template< expression ExprT >
-requires(( is_disjunction_v< ExprT > or is_conjunction_v< ExprT > or is_compliment_v< ExprT >) and not linear_system< ExprT > )
+requires(( is_disjunction_v< ExprT > or is_conjunction_v< ExprT > or 
+    is_compliment_v< ExprT >) and not linear_system< ExprT > )
 struct Solver< ExprT >: 
     DNFSolver< normalized_t< Disjunction, Conjunction, Compliment, ExprT >>
 {
@@ -1475,7 +1476,8 @@ struct IterationInitializer;
 template< typename... Vars >
 requires(( variable_traits< Vars >::value and ... ))
 constexpr IterationInitializer< typename 
-    variable_traits< Vars >::variable_type... > iteration( Vars... );
+    variable_traits< Vars >::variable_type... > 
+iteration( Vars... );
 
 template< variable... Vars >
 struct IterationInitializer
@@ -1539,12 +1541,12 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>:
     constexpr variables_tuple vars() const { return _vars; }
 
     template< size_t Is >
-    typename Vars...[ Is ]::result_type const&
+    constexpr typename Vars...[ Is ]::result_type const&
     initial_value() const
     { return std::get< Is >( _inits ); }
 
     template< size_t Is >
-    Updates...[ Is ] const& 
+    constexpr Updates...[ Is ] const& 
     update_expr() const
     { return std::get< Is >( _updates ); }
 
@@ -1577,19 +1579,16 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>:
     // is there a static way to do an iteration so that it can be a full
     // citizen of the expressions?  Maybe only with Constant<...> and no
     // StaticValues.
-    template< typename... InitialValues >
-    requires( sizeof...( InitialValues ) == sizeof...( Vars ))
-    static auto value( InitialValues... inits )
-    {
-        scope_type scope;
-
-
-    }
+    //template< typename... InitialValues >
+    //requires( sizeof...( InitialValues ) == sizeof...( Vars ))
+    //static auto value( InitialValues... inits )
+    //{ }
 
     // TODO: should this be re-wrtten as the value method which would let
     // manipulator do it's thing?
     template< typename ManipulatorT >
-    constexpr auto apply( ManipulatorT& manipulator ) const
+    constexpr auto 
+    apply( ManipulatorT& manipulator ) const
     {
         scope_type scope;
 
@@ -1850,9 +1849,119 @@ struct GradientDescent:
 };
 
 template< variable... Vars >
-GradientDescent< Vars... > gradient_descent( Vars... vars )
+constexpr GradientDescent< Vars... > 
+gradient_descent( Vars... vars )
 { return { vars... }; }
 
+template< variable Var, typename ConstraintT >
+struct Minimizer: Arguments< Minimizer, Var, ConstraintT >
+{
+    using variable_type = Var;
+    using constraint_type = ConstraintT;
+
+    using result_type = expression_traits< variable_type >::result_type;
+
+    template< typename Uar, typename ConstraintU, typename... Params >
+    static constexpr result_type
+    value( Uar var, ConstraintU constraint, Params... params );
+
+    constexpr variable_type
+    var() const
+    { return _var; }
+
+    constexpr constraint_type 
+    constraint() const
+    { return _constraint; }
+
+    constexpr Minimizer( variable_type const& var,
+        constraint_type const& constraint ): 
+            _var{ var }, _constraint{ constraint } { }
+    constexpr Minimizer( Minimizer const& other ) = default;
+    constexpr Minimizer() = default;
+
+private:
+    variable_type _var;
+    constraint_type _constraint;
+};
+
+/// @brief Default minimization of a variable will use gradient descent (no params)
+//template< variable Var, typename ConstraintT >
+//template< variable Uar, typename ConstraintU >
+//constexpr typename Minimizer< Var, ConstraintT >::result_type
+//Minimizer< Var, ConstraintT >::value( Uar var, ConstraintU constraint )
+//{
+//    // this is a second order expression, meaning we expect Uar to be a variable itself,
+//    // not the result of a variable
+//
+//    
+//
+//}
+
+namespace methods {
+
+struct Gradient {
+
+}; 
+
+} // namespace methods
+
+template< variable Var, typename ConstraintT >
+struct Solver< Minimizer< Var, ConstraintT >>
+{
+    using variable_type = Var;
+    using constraint_type = ConstraintT;
+    using expression_type = Minimizer< variable_type, constraint_type >;
+
+    template< typename ScopeT > 
+    constexpr auto
+    operator ()( ScopeT& scope, methods::Gradient&& method = {} ) const;
+//    {
+//        // 1. Error Expression
+//        auto error_expr = constraint_error( _expr.constraint() );
+//
+//        // 2. Construct Gradient from Error Variables and Minimizing Expression
+//        auto grad_expr = grad( var )( error_expr );    
+//        
+//        // 2a. Create new scope with error and gradient variables
+//        auto iter_scope = extend_scope( scope,
+//            var< result_t< error_expr >>( "err" ),
+//            var< result_t< grad_expr >>( "grad_e" ));
+//
+//        auto [ err, grad_e, ...scope_vars ] = iter_scope.variables();
+//
+//        // 2b. Set initial values for error and gradient in our scope
+//        // TODO: do we need this?  I think the first run of the iteration will take care
+//        //       of our initialization
+//        iter_scope( err = error_expr, grad_e = grad_expr );
+//
+//        // 3. Construct Iteration
+//        auto iter = iteration( var, err, grad_e ).
+//                    update( var - learning_rate * err * grad_e, error_expr, grad_expr ).
+//                    until( iteration_limit or min_error or min_gradient ); 
+//        
+//        // 4. Evaluate Iteration against our iteration scope
+//        iter | iter_scope; 
+//
+//        // 5. merge iteration scope with our original scope
+//        scope.take_from( iter_scope );
+//       
+//        // 6. return true if our error or gradient are minimized 
+//        return ( min_error or min_gradient ) | iter_scope;
+//    }
+
+    constexpr Solver( expression_type const& expr ):
+        _expr{ expr } { }
+    constexpr Solver() = default;
+    constexpr Solver( Solver const& ) = default;
+
+private:
+    expression_type _expr;
+};
+
+template< typename ExprT, typename ConstraintT >
+constexpr Minimizer< ExprT, ConstraintT > 
+minimize( ExprT const& x, ConstraintT const& constraint ) 
+{ return { x, constraint }; }
 
 } // namespace expressions
 

@@ -1,0 +1,15 @@
+g( x * x, 3.f )
+
+sub( f(x), x*x, 3.f )
+
+
+Substitution< 
+    Substitution< g: Variable< 0, Variable< 0, float >>, x: Variable< 1, float >>, 
+    Product< x: Variable< 1, float >, x: Variable< 1, float >>, 
+    float >::value
+
+
+
+Arguments< Substitution, 
+    Product< StaticValue< float >, Variable< 0, float >>, float >::
+        Applier< Evaluator< void > >

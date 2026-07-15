@@ -18,10 +18,12 @@ add_executable(test_memory test_memory.cpp)
 #add_executable(test_constraint_playground2 test_constraint_playground2.cpp)
 add_executable(test_tensors test_tensors.cpp)
 add_executable(test_expressions test_expressions.cpp)
+add_executable(test_substitution test_substitution.cpp)
 #add_executable(test_geometry_v1.2 test_geometry.v1.2.cpp)
 add_executable(test_normalize test_normalize.cpp)
 
 add_test(NAME test_units COMMAND test_units)
+add_test(NAME test_substitution COMMAND test_substitution)
 
 # message("source dir ${CMAKE_SOURCE_DIR}")
 

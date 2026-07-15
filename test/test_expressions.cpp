@@ -22,6 +22,7 @@ bool test_iteration();
 bool test_minimization();
 bool test_canonicalization();
 bool test_simple_expressions();
+constexpr bool test_constraints(); 
 
 constexpr bool test_dependent_vars();
 std::pair< bool, std::string > test_boolean_satisfaction();
@@ -34,6 +35,7 @@ int main( int ac, char* av[] )
     ensure( test_simple_expressions, "Simple Expressions" );
     ensure( test_iteration, "Iteration" );
     ensure( test_minimization, "Minimization" );
+    ensure( test_constraints, "Constraints" );
 
     return EXIT_SUCCESS;
 }
@@ -290,38 +292,6 @@ struct PreOrderVisitTests
     static_assert(( count_expressions( v0 + zero * v1 / v2 + zero ) | eval( )) == 9ul );
 };
 
-struct SubstitutionTests
-{
-    static constexpr Variable< 16, int > n;
-    static constexpr Variable< 0, float > x;
-    static constexpr Variable< 1, float > y;
-    static constexpr Variable< 2, float > z;
-    static constexpr Constant< 0.f > zero;
-    static constexpr Constant< 1.f > one;
-    static constexpr Constant< (int)0 > zeroi;
-
-    static_assert( is_compatible_substitution_v<Substitution<expressions::Product<
-        expressions::StaticValue<int>, expressions::Variable<0, float>>, 
-            expressions::Product<expressions::StaticValue<int>, 
-                expressions::Variable<1, float>>>, float> );
-//    static_assert( is_compatible_substitution_v<
-//        expressions::Product<expressions::StaticValue<int>, float>, 
-//            expressions::Product<expressions::StaticValue<int>, expressions::Variable<1, float>>> );
-//    static_assert( is_compatible_substitution_v<
-//        expressions::Product<expressions::StaticValue<float>, float>, 
-//            expressions::Product<expressions::StaticValue<float>, 
-//                expressions::Variable<1, float>>> );
-
-    static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
-    static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
-    static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
-    static_assert(( substitute( 2*x, one ) | eval()) == 2 );
-    static_assert(( ( 2.f*x )( 1.f ) | eval()) == 2 );
-    static_assert(( ( 3.f*x )( 2.f ) | eval()) == 6 );
-//    static_assert(( ( 3.f*x )( 2.f*y )( 2.f ) | eval()) == 12 );
-//    static_assert(( ( 3.f*x( 2.f ))( 2.f*y ) | eval()) == 12 );
-};
-
 std::pair< bool, std::string > test_boolean_satisfaction()
 {
     auto scope = declare_variables(
@@ -340,6 +310,9 @@ std::pair< bool, std::string > test_boolean_satisfaction()
     else return { false, "solve for (b1 or b2) failed" };
 
     auto [ t3, t4 ] = ( b3 and b4 ) | solve_for( b3, b4 );
+
+    if( t3 ) { /* success */ }
+    else return { false, "solve for (b3 and b4) and checking for b3 failed" };
 
     if( t4 ) { /* success */ }
     else return { false, "solve for (b3 and b4) and checking b4 failed" };
@@ -475,6 +448,27 @@ static_assert( basic_solvers< 7 >() );
 //static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
 //static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
 //static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
-//
 
+constexpr bool test_constraints( )
+{
+    float minimum_chord_length = 0.1;
+    auto minimum_chord_length2 = minimum_chord_length * minimum_chord_length;
+
+    auto in_scope = declare_variables(
+        var< float >( "θ" ),
+        var< float >( "x" ),
+        var< float >( "y" ));
+
+    auto [ θ, x, y ] = in_scope.variables();
+
+    // revolve a point
+    auto constraint = (
+        x == 4.f * cos( θ ) and
+        y == 4.f * sin( θ ) and
+        ( x - 4.f ) * ( x - 4.f ) + y * y > minimum_chord_length2 );
+
+    //auto solved = constraint | solver::minimize( θ, in_scope );
+    //auto solution = minimize( θ, constraint ) | solve( in_scope );    
+    return true;
+}
 
