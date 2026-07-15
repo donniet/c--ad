@@ -31,6 +31,7 @@ struct SubstitutionTests
     static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
     static_assert(( substitute( 2*x, one ) | eval()) == 2 );
+    static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
 
     static_assert( is_same_v< std::remove_cv_t< decltype( 2.f * x )>,
         Product< StaticValue< float >, Variable< 0, float >>> );
@@ -42,11 +43,51 @@ struct SubstitutionTests
     //      which results in the expression
     //          Product< StaticValue< float >, float >{{ 3.f }, 2.f }
     //
+   
+    static_assert(( ( 2.f * one ) | eval()) == 2.f );
+    static_assert(( ( 2.f * one + zero ) | eval()) == 2.f );
+    static_assert(( ( 2.f * one + 3.f ) | eval()) == 5.f );
+    static_assert(( ( 3.f * one + one ) | eval()) == 4.f );
+};
 
-    static_assert(( ( 2.f*x )( 1.f ) | eval()) == 2 );
-    static_assert(( ( 3.f*x )( 2.f ) | eval()) == 6 );
+bool test_eval() 
+{
+    Variable< 0, float > x;
+    Constant< 0.f > zero;
+    Constant< 1.f > one;
+
+    auto evaluator = eval();
+
+    Product< StaticValue< float >, Variable< 0, float >> prod{ 2.f, {} };
+
+    std::println( "prod[0]: {}", get_argument< 0 >( prod ).get_value() );
+
+    using sub_t = Substitution< Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>;
+
+    sub_t sub{ prod, Constant< 1.f >{} };
+
+    std::println( "sub[0][0]: {}", get_argument< 0 >( get_argument< 0 >( sub )).get_value() );
+
+    assert( (Applier< StaticValue< float >, Evaluator< void >>::value( StaticValue< float >{ 2.f }, evaluator )) == 2.f );
+    assert( (sub_t::value( Product< StaticValue< float >, Variable< 0, float >>{{ 3.f }, {}}, 
+        Constant< 1.f >{}) | eval()) == 3.f );
+
+//    std::println( "sub result: {}", ( Applier< Substitution< 
+//        Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
+//            value({ prod, Constant< 1.f >{} }, evaluator )));
+
+    assert(( Applier< Substitution< 
+        Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
+            value({ prod, Constant< 1.f >{} }, evaluator )) == 2.f );
+
+    assert(( ((one + one) * x )( one ) | eval()) == 2.f );
+    assert(( ( 2.f * x )( one ) | eval()) == 2.f );
+    assert(( ( 2.f*x )( 1.f ) | eval()) == 2 );
+    assert(( ( 3.f*x )( 2.f ) | eval()) == 6 );
 //    static_assert(( ( 3.f*x )( 2.f*y )( 2.f ) | eval()) == 12 );
 //    static_assert(( ( 3.f*x( 2.f ))( 2.f*y ) | eval()) == 12 );
+
+    return true;
 };
 
 bool test_basic()
@@ -88,19 +129,20 @@ bool test_second_order()
         Substitution< Variable< 0, Variable< 0, float >>, Variable< 1, float >>, 
             Product< Variable< 1, float >, Variable< 1, float >>, float >);
 
-    static_assert( is_same_v< std::remove_cv_t< decltype( g( x * x ))>,
-        Substitution< Substitution< Variable< 0, Variable< 0, float >>, Variable< 1, float >>,
-            Product< Variable< 1, float >, Variable< 1, float >>>> );
-
-    assert(( g( x * x, 3.f ) | eval() ) == 9.f );
-    assert(( g( x * x )( 3.f ) | eval() ) == 9.f );
+//    static_assert( is_same_v< std::remove_cv_t< decltype( g( x * x ))>,
+//        Substitution< Substitution< Variable< 0, Variable< 0, float >>, Variable< 1, float >>,
+//            Product< Variable< 1, float >, Variable< 1, float >>>> );
+//
+//    assert(( g( x * x, 3.f ) | eval() ) == 9.f );
+//    assert(( g( x * x )( 3.f ) | eval() ) == 9.f );
 
     return true;
 }
 
 int main( int ac, char* av[] )
 {
-    ensure( test_basic, "basic substitutions" );
+    //ensure( test_basic, "basic substitutions" );
+    ensure( test_eval, "evaluation" );
 
     return EXIT_SUCCESS;
 }

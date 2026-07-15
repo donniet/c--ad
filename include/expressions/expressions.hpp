@@ -2030,6 +2030,98 @@ constexpr bool is_compatible_substitution_v =
 static_assert( is_compatible_substitution_v< Variable< 0, float >, float >);
 static_assert( is_compatible_substitution_v< tuple< float, Variable< 0, float >>, float >);
 
+
+// applies a manipulator to an expression potentially parsing it
+// a manipulator is a function-like object which accepts expressions or 
+// arithmetic values as it's sole-argument and returns a substitute.
+// If this substitute is an arithmetic value the expression is evaluated 
+template< typename ExprT, typename ManipulatorT >
+struct Applier
+{
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr, ManipulatorT& )
+    { return expr; }
+};
+
+// case: manipulator is invocable on the expression type
+//       return the invoked result
+template< typename ExprT, typename ManipulatorT >
+requires( std::is_invocable_v< ManipulatorT, ExprT const > ) 
+struct Applier< ExprT, ManipulatorT >
+{ 
+    using type = std::invoke_result_t< ManipulatorT, ExprT >;
+    static constexpr type value( ExprT const& expr, ManipulatorT& f )
+    { return std::invoke( f, expr ); }
+};
+
+// case: constant, non-invocable
+//       return the constant's value
+template< auto Value, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, Constant< Value > const > ) 
+struct Applier< Constant< Value >, ManipulatorT >
+{
+    using type = std::remove_cv_t< decltype( Value )>;
+    static constexpr type value( Constant< Value > const& expr, ManipulatorT& )
+    { return Value; }
+};
+
+// case: static value, non-invocable
+//       return the static_value's stored value
+template< typename T, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, StaticValue< T > const > )
+struct Applier< StaticValue< T >, ManipulatorT >
+{
+    using type = T;
+    static constexpr type value( StaticValue< T > const& expr, ManipulatorT& )
+    { return expr.get_value(); }
+};
+
+// case: variable, non-invocable
+//       return a default constructed instance of the variable's value type
+// DT: let's leave this to the default where it simply returns the variables.
+//template< size_t I, typename T, typename ManipulatorT >
+//requires( not std::is_invocable_v< ManipulatorT, Variable< I, T > const > )
+//struct Applier< Variable< I, T >, ManipulatorT >
+//{
+//    using type = T;
+//    static constexpr type value( Variable< I, T > const& expr, ManipulatorT& )
+//    { return {}; }
+//};
+
+// case: compound expression, non-invocable
+//       recurse into the arguments and return the static value method applied to the manipulator
+//
+// requires:
+//   - Op< ...Args > must be concrete
+//
+template< template< typename... > class Op, typename... Args, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, Op< Args... > const > and
+    compound_expression< Op< Args... >> )
+struct Applier< Op< Args... >, ManipulatorT >
+{
+    typedef make_seq< sizeof...( Args )> for_arguments;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        using type = std::remove_cvref_t< decltype( Op< Args... >::value( 
+            typename Applier< Args...[ Is ], ManipulatorT >::type{}... )) >;
+
+        // apply the manipulator to the arguments and recombind them with the value method
+        static constexpr type value( Op< Args... > const& expr, ManipulatorT& f )
+        { return Op< Args... >::value( Applier< Args...[ Is ], ManipulatorT >::
+            value( std::get< Is >( expr ), f )... ); }
+    };
+
+    using type = Helper< for_arguments >::type;
+    
+    static constexpr type value( Op< Args... > const& expr, ManipulatorT& f )
+    { return Helper< for_arguments >::value( expr, f ); }
+};
+
 //////////////////////////////////////////////////////
 /// Arguments Base Class for Compound Expressions ///
 ////////////////////////////////////////////////////
@@ -2106,13 +2198,14 @@ struct Arguments: tuple< Args... >, detail::ExpressionTag
     ///         evalulate() == 5 );
     ///
     /// @brief Helper class for apply method
-    template< typename ManipulatorT >
-    struct Applier;
+    //template< typename ManipulatorT >
+    //struct Applier;
     /// 
     /// @brief Applies a manipulator to the parent expression
     template< typename ManipulatorT >
-    constexpr typename Applier< ManipulatorT >::type 
-    apply( ManipulatorT& manipulator ) const;
+    constexpr typename Applier< Op< Args... >, ManipulatorT >::type 
+    apply( ManipulatorT&& f ) const
+    { return Applier< Op< Args... >, ManipulatorT >::value( expression(), f ); }
 
 protected:
     constexpr Arguments( Args... args ): 
@@ -2120,6 +2213,7 @@ protected:
 
     constexpr Arguments() = default;
 };
+
 
 /////////////////
 /// Sequence ///
@@ -2424,120 +2518,120 @@ using expression_value_t = ExpressionValue< T >::type;
 /// 
 /// Case: Some Expression's args recognize this manipulator, some are
 ///       recognized by the manipulator
-template< template< typename... > class Op, typename... Args >
-template< typename ManipulatorT >
-struct Arguments< Op, Args... >::Applier
-{
-    // recurse down until the manipulator can accept the argument
-    template< typename Arg >
-    static constexpr bool terminal = 
-        requires( ManipulatorT manip, Arg arg ) { manip( arg ); };
-
-    template< typename Arg >
-    struct Helper;
-
-    // Case:   The manipulator accepts this argument via operator()
-    // Result: We apply the manipulator on the argument and return the result
-    template< typename Arg >
-    requires( terminal< Arg > )
-    struct Helper< Arg >
-    {
-        using type = std::remove_cvref_t< ManipulatorT >::template ResultOf< Arg >::type;
-
-        static constexpr type value( Arg const& arg, ManipulatorT& manip )
-        { return manip( arg ); }
-    };
-
-    // Case:   The manipulator does not accept this compound expression argument
-    // Result: We recurse into the compound expression and return the result of it's
-    //         value(...) method
-    template< template< typename... > class ArgOp, typename... ArgArgs >
-    requires( not terminal< ArgOp< ArgArgs... >> and
-        compound_expression< ArgOp< ArgArgs... >> )
-    struct Helper< ArgOp< ArgArgs... >>
-    {
-        using type = std::remove_cv_t< decltype( ArgOp< ArgArgs... >{} | ManipulatorT{} )>;
-
-        static constexpr type value( ArgOp< ArgArgs... > const& arg, ManipulatorT& manip )
-        { return arg | manip; }
-    };
-
-    // Case:  The manipulator does not accept a constant, so we return it's value
-    template< auto Value >
-    requires( not terminal< Constant< Value >> )
-    struct Helper< Constant< Value >>
-    { 
-        using type = std::remove_cv_t< decltype( Value )>;
-
-        static constexpr type value( Constant< Value > const& const_expr, ManipulatorT& manip )
-        { return Value; }
-    };
-
-    // Case:  The manipulator does not accept a static value, so we return it's value
-    template< typename T > 
-    requires( not terminal< StaticValue< T >> )
-    struct Helper< StaticValue< T >>
-    { 
-        using type = T;
-
-        static constexpr type value( StaticValue< T > const& static_expr, ManipulatorT& manip )
-        { return static_expr.get_value(); }
-    };
-
-    // Case: non-terminal simple arithmetic type
-    template< typename T >
-    requires( not terminal< T > and std::is_arithmetic_v< T > )
-    struct Helper< T >
-    {
-        using type = T;
-
-        static constexpr type value( T const& value, ManipulatorT& manip )
-        { return value; }
-    };
-
-    // Case: non-terminal variable
-    //       We expose the value_type as the return type, and return the default-constructed
-    //       value.  This should allow things like substitutions to operate on second-order 
-    //       variables.
-    template< size_t I, typename T >
-    requires( not terminal< Variable< I, T >> )
-    struct Helper< Variable< I, T >>
-    {
-        using type = Variable< I, T >;
-
-        static constexpr type value( Variable< I, T > const& value, ManipulatorT& manip )
-        { return value; }
-        
-    };    
-
-    using expression_value_type = expression_value_t< Op< typename Helper< Args >::type... >>;
-    using type = ManipulatorT::template ResultOf< expression_value_type >::type;
-
-    static constexpr type value( Arguments< Op, Args... > const& args,
-        ManipulatorT& manip )
-    {
-        // process each argument in this compound expression and call the 
-        // expressions static method.  
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> expression_value_type
-        { return expression_type::value( 
-            Helper< Args...[ Is ]>::value( std::get< Is >( args ), manip )... ); };
-
-        // the value returned from the static value method is then also 
-        // passed to the manipulator as we go upward in the parsing tree
-        return helper( for_arguments ) | manip;
-    }
-};
-
+//template< template< typename... > class Op, typename... Args >
+//template< typename ManipulatorT >
+//struct Arguments< Op, Args... >::Applier
+//{
+//    // recurse down until the manipulator can accept the argument
+//    template< typename Arg >
+//    static constexpr bool terminal = 
+//        requires( ManipulatorT manip, Arg arg ) { manip( arg ); };
+//
+//    template< typename Arg >
+//    struct Helper;
+//
+//    // Case:   The manipulator accepts this argument via operator()
+//    // Result: We apply the manipulator on the argument and return the result
+//    template< typename Arg >
+//    requires( terminal< Arg > )
+//    struct Helper< Arg >
+//    {
+//        using type = std::remove_cvref_t< ManipulatorT >::template ResultOf< Arg >::type;
+//
+//        static constexpr type value( Arg const& arg, ManipulatorT& manip )
+//        { return manip( arg ); }
+//    };
+//
+//    // Case:   The manipulator does not accept this compound expression argument
+//    // Result: We recurse into the compound expression and return the result of it's
+//    //         value(...) method
+//    template< template< typename... > class ArgOp, typename... ArgArgs >
+//    requires( not terminal< ArgOp< ArgArgs... >> and
+//        compound_expression< ArgOp< ArgArgs... >> )
+//    struct Helper< ArgOp< ArgArgs... >>
+//    {
+//        using type = std::remove_cv_t< decltype( ArgOp< ArgArgs... >{} | ManipulatorT{} )>;
+//
+//        static constexpr type value( ArgOp< ArgArgs... > const& arg, ManipulatorT& manip )
+//        { return arg | manip; }
+//    };
+//
+//    // Case:  The manipulator does not accept a constant, so we return it's value
+//    template< auto Value >
+//    requires( not terminal< Constant< Value >> )
+//    struct Helper< Constant< Value >>
+//    { 
+//        using type = std::remove_cv_t< decltype( Value )>;
+//
+//        static constexpr type value( Constant< Value > const& const_expr, ManipulatorT& manip )
+//        { return Value; }
+//    };
+//
+//    // Case:  The manipulator does not accept a static value, so we return it's value
+//    template< typename T > 
+//    requires( not terminal< StaticValue< T >> )
+//    struct Helper< StaticValue< T >>
+//    { 
+//        using type = T;
+//
+//        static constexpr type value( StaticValue< T > const& static_expr, ManipulatorT& manip )
+//        { return static_expr.get_value(); }
+//    };
+//
+//    // Case: non-terminal simple arithmetic type
+//    template< typename T >
+//    requires( not terminal< T > and std::is_arithmetic_v< T > )
+//    struct Helper< T >
+//    {
+//        using type = T;
+//
+//        static constexpr type value( T const& value, ManipulatorT& manip )
+//        { return value; }
+//    };
+//
+//    // Case: non-terminal variable
+//    //       We expose the value_type as the return type, and return the default-constructed
+//    //       value.  This should allow things like substitutions to operate on second-order 
+//    //       variables.
+//    template< size_t I, typename T >
+//    requires( not terminal< Variable< I, T >> )
+//    struct Helper< Variable< I, T >>
+//    {
+//        using type = Variable< I, T >;
+//
+//        static constexpr type value( Variable< I, T > const& value, ManipulatorT& manip )
+//        { return value; }
+//        
+//    };    
+//
+//    using expression_value_type = expression_value_t< Op< typename Helper< Args >::type... >>;
+//    using type = ManipulatorT::template ResultOf< expression_value_type >::type;
+//
+//    static constexpr type value( Arguments< Op, Args... > const& args,
+//        ManipulatorT& manip )
+//    {
+//        // process each argument in this compound expression and call the 
+//        // expressions static method.  
+//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> expression_value_type
+//        { return expression_type::value( 
+//            Helper< Args...[ Is ]>::value( std::get< Is >( args ), manip )... ); };
+//
+//        // the value returned from the static value method is then also 
+//        // passed to the manipulator as we go upward in the parsing tree
+//        return helper( for_arguments ) | manip;
+//    }
+//};
+//
+////////////////////////////////////////////////////
+///// Arguments<...>::apply(...) Implementation ///
 //////////////////////////////////////////////////
-/// Arguments<...>::apply(...) Implementation ///
-////////////////////////////////////////////////
-///
-template< template< typename... > class Op, typename... Args >
-template< typename ManipulatorT >
-constexpr typename Arguments< Op, Args... >::template Applier< ManipulatorT >::type 
-Arguments< Op, Args... >::apply( ManipulatorT& manip ) const
-{ return Applier< ManipulatorT >::value( *this, manip ); }
-
+/////
+//template< template< typename... > class Op, typename... Args >
+//template< typename ManipulatorT >
+//constexpr typename Arguments< Op, Args... >::template Applier< ManipulatorT >::type 
+//Arguments< Op, Args... >::apply( ManipulatorT& manip ) const
+//{ return Applier< ManipulatorT >::value( *this, manip ); }
+//
 /////////////////////////////////////
 /// Scope< ...Vars >::operator() ///
 ///////////////////////////////////
@@ -3014,6 +3108,21 @@ struct Substituter< T, Args... >
     { return val; }
 };
 
+// helper function for substituter
+template< typename ExprT, typename... Subs >
+constexpr typename Substituter< ExprT, Subs... >::type
+do_substitution( Substitution< ExprT, Subs... > const& expr )
+{ 
+    static constexpr make_seq< sizeof...( Subs )> for_subs;
+
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
+        typename Substituter< ExprT, Subs... >::type
+    { return Substituter< ExprT, Subs... >::value( get_argument< 0 >( expr ),
+        get_argument< Is >( expr )... ); };
+
+    return helper( for_subs );
+};
+
 /// @brief substitution for higher-order variables results in an expression 
 /// 
 /// This is returened from the operator() of Arguments
@@ -3137,14 +3246,15 @@ public:
     value( ExprU expr, OtherSubs... other_subs )
     { return substitute( expr, other_subs... ); } 
 
-    //constexpr typename Substituter< expression_type, Subs... >::type 
-    //value() const
-    //{ 
-    //    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-    //    { return substitute( expression(), arg< Is >()... ); };
+    // when called with no arguments the substitution is applied
+    constexpr typename Substituter< expression_type, Subs... >::type 
+    value() const
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { return substitute( expression(), arg< Is >()... ); };
 
-    //    return helper( for_arguments );
-    //};
+        return helper( for_arguments );
+    };
     
     constexpr Substitution() = default;
     constexpr Substitution( Substitution const& ) = default;
@@ -3170,6 +3280,26 @@ struct Substitution< T, Ts... >: Arguments< Substitution, T, Ts... >
     constexpr Substitution( Substitution const& ) = default;
     constexpr Substitution( value_type v, Ts... ts ): 
         Arguments< Substitution, T, Ts... >{ v, ts... } { }
+};
+
+// appliers have a special implementation for Substitutions
+// DT: maybe we just return the variables as is instead of their value type?
+// DT: then the call to substitute in Substituter<...>::value will need to be
+//     sent to the manipulator
+//     so substitutions DO require a slightly different implementation of Applier
+template< typename ExprT, typename... Subs, typename ManipulatorT >
+requires( not std::is_invocable_v< Substitution< ExprT, Subs... >, ManipulatorT > )
+struct Applier< Substitution< ExprT, Subs... >, ManipulatorT >
+{
+    using expression_type = Substitution< ExprT, Subs... >;
+    using manipulator_type = ManipulatorT;
+    using substituter_type = Substituter< ExprT, Subs... >;
+    using substituted_expression_type = substituter_type::type;
+
+    using type = Applier< typename substituter_type::type, manipulator_type >::type;
+    static constexpr type value( expression_type const& expr, manipulator_type& f )
+    { return Applier< typename substituter_type::type, manipulator_type >::value(
+        expr.value(), f ); }
 };
 
 static_assert( std::is_same_v< 
