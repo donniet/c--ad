@@ -13,6 +13,37 @@
 #include <stdexcept>
 #include <stdlib.h>
 
+namespace test {
+
+static_assert( is_same_v< unique_variables< Variable< 0, int >>, 
+    free_variables_t< Variable< 0, int >>> );
+static_assert( is_same_v< unique_variables< Variable< 0, int >, Variable< 1, int >>, 
+    free_variables_t< tuple< Variable< 0, int >, Variable< 1, int >>>> );
+static_assert( is_same_v< unique_variables< Variable< 0, int >, Variable< 1, int >>, 
+    free_variables_t< tuple< Variable< 1, int >, Variable< 0, int >>>> );
+static_assert( is_same_v< unique_variables< Variable< 0, int >>, 
+    free_variables_t< tuple< Variable< 0, int >, Variable< 0, int >>>> );
+static_assert( is_same_v< unique_variables< Variable< 1, int >>, 
+    free_variables_t< tuple< Variable< 1, int >, Variable< 1, int >>>> );
+
+// tests for higher-order variables
+//
+// 1 free second order variable of type int
+//static_assert( is_same_v< unique_variables< Variable< 0, Variable< 0, int >>>,
+//    free_variables_t< Variable< 0, Variable< 0, int >>>> );
+////
+//// 1 free second order variable from a tuple of variables
+//static_assert( is_same_v< unique_variables< Variable< 0, Variable< 0, int >>>,
+//    free_variables_t< tuple< Variable< 0, Variable< 0, int >>>>> );
+//
+// A constant will be substituted into an expression substituted into variable 0
+static_assert( next_variable_id_v< Variable< 0, int >> == 1 );
+static_assert( next_variable_id_v< Variable< 1, int >> == 2 );
+static_assert( next_variable_id_v< Variable< 2, Variable< 2, int >>> == 3 );
+
+static_assert( next_variable_id_v< tuple< Variable< 0, int >, Variable< 1, int >>> == 2 );
+
+} // namespace test
 
 using test::ensure;
 using namespace expressions;

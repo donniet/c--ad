@@ -422,8 +422,13 @@ constexpr ContainerT remove_nth( size_t N, ContainerT const& list )
     return ret;
 }
 
+template< typename T >
+constexpr T min_of( T val )
+{ return val; }
+
 template< typename T, typename... Ts >
-requires(( is_same_v< T, Ts > and ... ))
+requires( is_greater( sizeof...( Ts ), 0 ) and
+    ( is_same_v< T, Ts > and ... ))
 constexpr T min_of( T first, Ts... rest )
 {
     if constexpr( sizeof...( Ts ) == 0 )
@@ -433,8 +438,13 @@ constexpr T min_of( T first, Ts... rest )
     return first <= rest_min ? first : rest_min;
 }
 
+template< typename T >
+constexpr T max_of( T val )
+{ return val; }
+
 template< typename T, typename... Ts >
-requires(( is_same_v< T, Ts > and ... ))
+requires( is_greater( sizeof...( Ts ), 0 ) and
+    ( is_same_v< T, Ts > and ... ))
 constexpr T max_of( T first, Ts... rest )
 {
     if constexpr( sizeof...( Ts ) == 0 )
@@ -631,7 +641,7 @@ private:
     template< size_t... Js >
     struct PrefixSum< seq< Js... >>
     { using type = seq< Element< Js >::value... >; };
-
+ 
 public:
     using type = PrefixSum< make_seq< 1 + sizeof...( Is )>>::type;
 };
@@ -802,6 +812,77 @@ public:
             min_element, seq< Is... >>::type >::type >::type;
 };
 
+template< typename Seq >
+struct MinElementIndex;
+
+template< size_t K >
+struct MinElementIndex< seq< K >>
+{ static constexpr size_t value = 0; };
+
+template< size_t K, size_t... Ks >
+requires( is_greater( sizeof...( Ks ), 0 ))
+struct MinElementIndex< seq< K, Ks... >> {
+private:
+    static constexpr size_t min_element_index_rest = 
+        MinElementIndex< seq< Ks... >>::value;
+
+public:
+    // we add one to the min_element_index_rest since we removed the first element
+    // in the recursive step.
+    static constexpr size_t value = 
+        ( K <= Ks...[ min_element_index_rest ] ? 0 : min_element_index_rest + 1 );
+};
+
+static_assert( MinElementIndex< seq< 5, 4, 3, 2, 1, 0 >>::value == 5 );
+static_assert( MinElementIndex< seq< 1, 5, 2, 0, 3, 4 >>::value == 3 );
+static_assert( MinElementIndex< seq< 1, 2, 0, 0, 1, 1 >>::value == 2 );
+
+template< typename Seq >
+struct SortIndexSeq;
+
+template< >
+struct SortIndexSeq< seq< >>
+{ using type = seq< >; };
+
+template< size_t... Ks >
+requires( is_greater( sizeof...( Ks ), 0 ))
+struct SortIndexSeq< seq< Ks... >> {
+private:
+    typedef make_seq< sizeof...( Ks )> for_keys;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t I >
+    struct Helper< seq< I >>
+    { using type = seq< I >; };
+
+    // Case: I is the index of the minimum element remaining
+    template< size_t I, size_t... Is >
+    requires( is_greater( sizeof...( Is ), 0 ) and 
+        (( Ks...[ I ] <= Ks...[ Is ] ) and ... ))
+    struct Helper< seq< I, Is... >>
+    { using type = ConcatSeq< seq< I >, typename 
+        Helper< seq< Is... >>::type >::type; };
+        
+
+    // Case: I is not the index of the minimum element remaining
+    template< size_t I, size_t... Is >
+    requires( is_greater( sizeof...( Is ), 0 ) and
+        (( Ks...[ I ] > Ks...[ Is ] ) or ... ))
+    struct Helper< seq< I, Is... >>:
+        Helper< seq< Is..., I >> 
+    { };
+    
+public:
+    using type = Helper< for_keys >::type;
+};
+
+static_assert( is_same_v< seq< 0, 1, 2 >, SortIndexSeq< seq< 4, 8, 16 >>::type > );
+static_assert( is_same_v< seq< 2, 1, 0 >, SortIndexSeq< seq< 81, 9, 3 >>::type > );
+static_assert( is_same_v< seq< 0, 2, 1 >, SortIndexSeq< seq< 4, 16, 8 >>::type > );
+static_assert( is_same_v< seq< 2, 0, 1 >, SortIndexSeq< seq< 9, 81, 3 >>::type > );
+
 static_assert( is_same_v< seq< >, SortUniqueSequence< seq< >>::type > );
 static_assert( is_same_v< seq< 1 >, SortUniqueSequence< seq< 1 >>::type > );
 static_assert( is_same_v< seq< 1, 2 >, SortUniqueSequence< seq< 1, 2 >>::type > );
@@ -845,7 +926,51 @@ struct MergeUniqueSortedSequences< First, Rest... >
 { using type = MergeUniqueSortedSequences< First, 
         typename MergeUniqueSortedSequences< Rest... >::type >::type; };
 
+template< typename Seq >
+struct IsNonRepeating;
+
+template< >
+struct IsNonRepeating< seq< >>: std::true_type { };
+
+template< size_t I, size_t... Is >
+requires((( I != Is ) and ... and true ))
+struct IsNonRepeating< seq< I, Is... >>: std::true_type { };
+
+template< size_t I, size_t... Is >
+requires((( Is == Is ) or ... or false ))
+struct IsNonRepeating< seq< I, Is... >>: std::false_type { };
+
+template< typename Seq >
+struct IncrementSeq;
+
+template< size_t... Is >
+struct IncrementSeq< seq< Is... >>
+{ using type = seq< (Is + 1)... >; };
+
+template< size_t I, typename Seq >
+struct IndexOfSeq;
+
+template< size_t I >
+struct IndexOfSeq< I, seq< >>: std::integral_constant< size_t, 0 >
+{ };
+
+template< size_t I, size_t J, size_t... Js >
+requires( I == J )
+struct IndexOfSeq< I, seq< J, Js... >>: std::integral_constant< size_t, 0 > { };
+
+template< size_t I, size_t J, size_t... Js >
+requires( I != J )
+struct IndexOfSeq< I, seq< J, Js... >>: std::integral_constant< size_t,
+    1 + IndexOfSeq< I, seq< Js... >>::value > { };
+
+
 } // namespace detail
+
+template< size_t I, typename Seq >
+constexpr size_t index_of_seq_v = detail::IndexOfSeq< I, Seq >::value;
+
+template< typename Seq >
+using increment_seq = detail::IncrementSeq< Seq >::type;
 
 template< typename... Seqs >
 using concat_seq = detail::ConcatSeq< Seqs... >::type;
@@ -854,7 +979,13 @@ template< typename Seq >
 using sort_unique_seq = detail::SortUniqueSequence< Seq >::type;
 
 template< typename Seq >
+using sort_index_seq = detail::SortIndexSeq< Seq >::type;
+
+template< typename Seq >
 constexpr bool is_sorted_unique_seq_v = detail::IsSortedUniqueSeq< Seq >::value;
+
+template< typename Seq >
+constexpr bool is_non_repeating_v = detail::IsNonRepeating< Seq >::value;
 
 template< typename... Seqs >
 using merge_unique_sorted_seq = 

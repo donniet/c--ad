@@ -2,14 +2,129 @@ g( x * x, 3.f )
 
 sub( f(x), x*x, 3.f )
 
+home/donniet/src/c++ad/include/expressions/expressions.hpp:3191:14: error: no viable conversion from returned value of type '
+Helper<
+    Substitution<
+        Substitution<
+            Variable<12, Variable<2, float>>, 
+            Variable<11, Variable<0, float>>>, 
+        float, 
+        Product<Variable<0, float>, Variable<0, float>>>>::type
+
+
+' (aka '
+
+Substitution<
+    Product<float, float>, 
+    Variable<11, Variable<0, float>>>
+
+') to function return type 'result_t<Substitution<Substitution<Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, float, Product<Variable<0, float>, Variable<0, float>>>>' (aka 'float')
+
+result_t<
+
+    Substitution<
+        Product<StaticValue<float>, Variable<1, float>>, 
+        Product<StaticValue<float>, Variable<0, float>>>>
+
+
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3032:18: error: no viable conversion from returned value of type 'typename 
+
+Substituter<
+    Substitution<
+        Variable<12, Variable<2, float>>, 
+        Variable<11, Variable<0, float>>>, 
+    float, 
+    Product<
+        Variable<0, float>, 
+        Variable<0, float>>>::type
+
+' (aka '
+
+Substitution<
+    Product<
+        Variable<0, float>, 
+        Variable<0, float>>, 
+    Variable<11, Variable< 0, float>>>
+
+') to function return type 'result_t<Substitution<Substitution<Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, float, Product<Variable<0, float>, Variable<0, float>>>>' (aka 'float')
+
+
+MakeUniqueVariables<
+    Variable<12, Substitution<
+        Variable<2, float>, Variable<0, float>>>, 
+    Variable<0, float>>::Inserter<unique_variables<>>
+
 
 Substitution< 
-    Substitution< g: Variable< 0, Variable< 0, float >>, x: Variable< 1, float >>, 
-    Product< x: Variable< 1, float >, x: Variable< 1, float >>, 
-    float >::value
+    Variable<12, Variable<2, float>>, 
+        Variable<11, Variable<0, float>>>
+
+free_variables:
+    unique_variables<
+        Variable<11, Variable<0, float>>, 
+        Variable<12, Substitution<Variable<2, float>, Variable<11, Variable<0, float>>>>>
+
+Substitution<
+    Substitution< 
+        Variable<12, Variable<2, float>>, 
+            Variable<11, Variable<0, float>>>, 
+    float, 
+    Product<Variable<0, float>, Variable<0, float>>>
+
+free_variables:
+    unique_variables<
+        Variable<0, float>, 
+        Variable<11, 
+            UniqueTypes<
+                Substitution<Variable<0, float>, float>, 
+                Substitution<Variable<0, float>, Product<Variable<0, float>, Variable<0, float>>>>>, 
+        Variable<12, 
+            Substitution<
+                Substitution< Variable<2, float>, Variable<11, Variable<0, float>>>, 
+                    Product<Variable<0, float>, Variable<0, float>>>>>
 
 
+Substitution<
+    Variable<0, Variable<0, float>>, Variable<1, float>>, 
+
+    Product<Variable<1, float>, Variable<1, float>>
 
 Arguments< Substitution, 
     Product< StaticValue< float >, Variable< 0, float >>, float >::
         Applier< Evaluator< void > >
+
+IsCompatibleSubstitutionHelper<
+    unique_variables<
+        // sub( sub( f, x ), x * x )
+        // sub( f, x * x )
+        Variable< 0, 
+            Substitution< Substitution< Variable<0, float>, Variable<1, float>>, 
+                Product< Variable< 1, float >, Variable< 1, float >>>>, 
+        // x
+        Variable<1, float>>, 
+
+    std::tuple<float>>
+
+Substituter<
+    Substitution<float, Variable<1, float>>, 
+    Product<Variable<1, float>, Variable<1, float>>>::Helper<
+        Substitution<float, Variable<1, float>>, std::integer_sequence<unsigned long, 0>>::Ith
+
+
+include/expressions/expressions.hpp:2202:18: 
+error: no viable conversion from returned value of type '
+typename Substituter<Product<Sum<Constant<1.000000e+00>, Constant<1.000000e+00>>, Variable<0, float>>, float>::type' (aka '
+
+Product< Sum< One, One >, float> 
+
+to function return type '
+
+result_t< Substitution< Product< Sum< One, One >, Variable<0, float>>, One >>
+
+' (aka 'float')
+
+Substitution< Substitution< Substitution< Variable<2, Variable<2, float>>, 
+    Variable<0, float>>, float>, 
+    Product<Variable<0, float>, Variable<0, float>>>
+
+Substitution<Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>
