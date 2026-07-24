@@ -84,7 +84,16 @@ bool test_eval()
 
     static_assert( std::is_same_v< std::remove_cvref_t< decltype(
         one * x )>, Product< Constant< 1.f >, Variable< 0, float >>> );
+    
+    static_assert( free_variables_t<Substitution< 
+        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>>::size == 0 );
+    static_assert( not non_expression<Substitution< 
+        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
+    static_assert( static_expression<Substitution< 
+        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
 
+    static_assert( not open_expression<Substitution< 
+        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
     static_assert( std::is_same_v< typename Applier< Substitution< 
         Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>, 
             Evaluator< void >>::type, float > );
@@ -181,9 +190,9 @@ bool test_second_order()
     //static_assert( std::is_same_v< void, free_variables_t<
     //    Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>> );
 
-    static_assert( std::is_same_v< typename Evaluator< void >::Helper<
-        Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>::type,
-        void > );
+//    static_assert( std::is_same_v< typename Evaluator< void >::Helper<
+//        Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>::type,
+//        void > );
 
     auto g = f(x);
     

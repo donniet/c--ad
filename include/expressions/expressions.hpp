@@ -276,40 +276,6 @@ constexpr size_t maximum_user_variable_id = 10;
 
 template< size_t I, typename T >
 struct IsExpression< Variable< I, T >>: std::true_type { };
-
-/// @brief trait to identify expressions with no variables. We default
-///        to true to allow all non-expression types as well as Constant
-///        and StaticValue expressions to be considered static.
-template< typename T >
-struct IsStaticExpression: IsExpression< T > { };
-
-/// @brief specialization that identifies variables as non-static expressions.
-template< size_t I, typename T >
-struct IsStaticExpression< Variable< I, T >>: std::false_type { };
-
-/// @brief a compound expression is static iff it's arguments are.
-template< template< typename... > class Op, typename... Args >
-requires compound_expression< Op< Args... >>
-struct IsStaticExpression< Op< Args... >> {
-private:
-    typedef make_seq< sizeof...( Args )> for_arguments;
-
-    template< typename Seq >
-    struct Helper;
-
-    template< size_t... Is >
-    struct Helper< seq< Is... >>
-    { static constexpr bool value = 
-        ( IsStaticExpression< Args...[ Is ]>::value and ... ); };
-
-public:
-    static constexpr bool value = Helper< for_arguments >::value;
-};
-
-/// @brief A static expression contains no variables
-template< typename T >
-concept static_expression = IsStaticExpression< T >::value;
-
 /// a trait to extract the variable ID during bootstrapping
 template< typename Var >
 struct VariableId;
@@ -1840,6 +1806,17 @@ template< typename ExprT >
 constexpr bound_variables_t< ExprT >
 bound_variables( ExprT const& expr )
 { return { expr }; }
+
+template< typename T >
+struct IsStaticExpression: std::integral_constant< bool, true > { };
+
+template< expression T >
+struct IsStaticExpression< T >: std::integral_constant< bool,
+    ( free_variables_t< T >::size == 0 )> { };
+
+/// @brief A static expression contains no variables
+template< typename T >
+concept static_expression = IsStaticExpression< T >::value; 
 
 //template< typename ExprT >
 //constexpr free_variables_t< ExprT >
@@ -3455,6 +3432,16 @@ struct Applier
         static constexpr type value( StaticValue< T > const& expr, manipulator_type& )
         { return expr.get_value(); }
     };
+
+    template< open_expression T, typename... History >
+    struct Processor< T, History... >:
+        Precondition< T, History... >
+    {
+        using type = T;
+        static constexpr type value( T const& open_expr, manipulator_type& )
+        { return open_expr; }
+    };
+    
 
     // Case: This is a compound expression
     template< template< typename... > class Op, typename... Args, 

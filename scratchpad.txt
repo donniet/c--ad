@@ -1,59 +1,35 @@
 g( x * x, 3.f )
 
+
+Substitutions repeat on processing:
+
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3453:26: error: implicit instantiation of undefined template 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Variable<0, float>, expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>'
+ 3453 |                 typename Processor< Args...[ Is ], Op< Args... >, History... >::type{}... )) >;
+      |                          ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3461:22: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>::Helper<std::integer_sequence<unsigned long, 0, 1>>' requested here
+ 3461 |         using type = Helper< for_arguments >::type;
+      |                      ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3453:26: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
+ 3453 |                 typename Processor< Args...[ Is ], Op< Args... >, History... >::type{}... )) >;
+      |                          ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3461:22: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>::Helper<std::integer_sequence<unsigned long, 0, 1>>' requested here
+ 3461 |         using type = Helper< for_arguments >::type;
+      |                      ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3487:32: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
+ 3487 |         using processed_type = Processor< Current, History... >::type;
+      |                                ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3495:18: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Repeater<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
+ 3495 |     using type = Repeater< expression_type >::type;
+      |                  ^
+/home/donniet/src/c++ad/test/test_substitution.cpp:97:45: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>' requested here
+   97 |     static_assert( std::is_same_v< typename Applier< Substitution< 
+      |                                             ^
+/home/donniet/src/c++ad/include/expressions/expressions.hpp:3405:12: note: template is declared here
+ 3405 |     struct Processor;
+      |            ^
+
+
 sub( f(x), x*x, 3.f )
-
-home/donniet/src/c++ad/include/expressions/expressions.hpp:3191:14: error: no viable conversion from returned value of type '
-Helper<
-    Substitution<
-        Substitution<
-            Variable<12, Variable<2, float>>, 
-            Variable<11, Variable<0, float>>>, 
-        float, 
-        Product<Variable<0, float>, Variable<0, float>>>>::type
-
-
-' (aka '
-
-Substitution<
-    Product<float, float>, 
-    Variable<11, Variable<0, float>>>
-
-') to function return type 'result_t<Substitution<Substitution<Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, float, Product<Variable<0, float>, Variable<0, float>>>>' (aka 'float')
-
-result_t<
-
-    Substitution<
-        Product<StaticValue<float>, Variable<1, float>>, 
-        Product<StaticValue<float>, Variable<0, float>>>>
-
-
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3032:18: error: no viable conversion from returned value of type 'typename 
-
-Substituter<
-    Substitution<
-        Variable<12, Variable<2, float>>, 
-        Variable<11, Variable<0, float>>>, 
-    float, 
-    Product<
-        Variable<0, float>, 
-        Variable<0, float>>>::type
-
-' (aka '
-
-Substitution<
-    Product<
-        Variable<0, float>, 
-        Variable<0, float>>, 
-    Variable<11, Variable< 0, float>>>
-
-') to function return type 'result_t<Substitution<Substitution<Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, float, Product<Variable<0, float>, Variable<0, float>>>>' (aka 'float')
-
-
-MakeUniqueVariables<
-    Variable<12, Substitution<
-        Variable<2, float>, Variable<0, float>>>, 
-    Variable<0, float>>::Inserter<unique_variables<>>
-
 
 Substitution< 
     Variable<12, Variable<2, float>>, 
