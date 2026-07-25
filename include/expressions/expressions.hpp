@@ -1808,15 +1808,31 @@ bound_variables( ExprT const& expr )
 { return { expr }; }
 
 template< typename T >
-struct IsStaticExpression: std::integral_constant< bool, true > { };
+struct IsClosedExpression: std::integral_constant< bool, true > { };
 
 template< expression T >
-struct IsStaticExpression< T >: std::integral_constant< bool,
+struct IsClosedExpression< T >: std::integral_constant< bool,
     ( free_variables_t< T >::size == 0 )> { };
 
 /// @brief A static expression contains no variables
 template< typename T >
-concept static_expression = IsStaticExpression< T >::value; 
+concept closed_expression = IsClosedExpression< T >::value; 
+
+template< typename ExprT >
+struct IsStaticExpression: std::integral_constant< bool, true > { };
+
+template< size_t I, typename T >
+struct IsStaticExpression< Variable< I, T >>: 
+    std::integral_constant< bool, false > { };
+
+template< template< typename... > class Op, typename... Args >
+requires( compound_expression< Op< Args... >> )
+struct IsStaticExpression< Op< Args... >>: std::integral_constant< bool, 
+    ( IsStaticExpression< Args >::value and ... )> { };
+
+template< typename T >
+concept static_expression = IsStaticExpression< T >::value;
+
 
 //template< typename ExprT >
 //constexpr free_variables_t< ExprT >
@@ -1848,10 +1864,9 @@ concept static_expression = IsStaticExpression< T >::value;
     { using type = unique_variables< >; };
 */
 
-/// @brief trait to construct a substitution into a variable (a higher-order
-///        substitution) 
+/// @brief trait to construct an object similar to a mathematical function
 template< typename FormulaVar, variable... Vars >
-struct VariableSubstitution;
+struct FunctionalSubstitution;
 
 /// @brief trait to construct a mathematical function-like substitution into
 ///        a variable
@@ -1860,7 +1875,7 @@ struct VariableSubstitution;
 /// according to DESIGN DECISION * Variable Substitutions.
 ///
 template< size_t I, typename T, variable... Vars >
-struct VariableSubstitution< Variable< I, T >, Vars... > {
+struct FunctionalSubstitution< Variable< I, T >, Vars... > {
 private:
     typedef make_seq< sizeof...( Vars )> for_variables;
     static constexpr size_t formula_id = I;
@@ -1987,9 +2002,9 @@ public:
     template< variable First, variable... Rest > 
     requires( is_non_repeating_v< seq< variable_id_v< First >,
         variable_id_v< Rest >... >> )
-    constexpr typename VariableSubstitution< this_type, First, Rest... >::type
+    constexpr typename FunctionalSubstitution< this_type, First, Rest... >::type
     operator ()( First first, Rest... rest ) const
-    { return VariableSubstitution< this_type, First, Rest... >::value(
+    { return FunctionalSubstitution< this_type, First, Rest... >::value(
         { name() }, first, rest... ); }
 
     // variables evaluate to themselves
@@ -3348,7 +3363,7 @@ template< typename T >
 concept non_expression = not expression< T >;
 
 template< typename T >
-concept open_expression = non_expression< T > or not static_expression< T >;
+concept open_expression = non_expression< T > or not closed_expression< T >;
 
 /// @brief void evaluator will recursively evaluate compound expressions
 ///        using the static value method, and understands non-expressions,
@@ -3399,25 +3414,30 @@ struct Applier
     using expression_type = ExprT;
     using manipulator_type = ManipulatorT;
 
-    static constexpr size_t max_processing_steps = 100;
+    static constexpr size_t max_processing_depth = 100;
+    static constexpr size_t max_processing_steps = 10;
 
     template< typename Current, typename... History > 
     struct Processor;
 
-    // we process until the manipulator accepts the expression, or we detect a
-    // error
     template< typename Current, typename... History >
-    struct Precondition: std::integral_constant< bool, true >
-    {
-        static_assert(( std::is_same_v< Current, History > or ... or true ),
-            "processing error: duplicated type in processing history." );     
-        static_assert(( sizeof...( History ) < max_processing_steps ), 
-            "processing error: maximum processing steps occured." );
-    };
+    requires( sizeof...( History ) >= max_processing_depth )
+    struct Processor< Current, History... >
+    { static_assert( sizeof...( History ) < max_processing_depth,
+        "maximum processing depth" ); };
+
+    template< int Steps, typename Current, typename... History >
+    struct Repeater;
+
+    template< int Steps, typename Current, typename... History >
+    requires( Steps >= max_processing_steps )
+    struct Repeater< Steps, Current, History... >
+    { static_assert( Steps < max_processing_steps, 
+        "maximum processing steps" ); };
 
     template< auto Value, typename... History >
-    struct Processor< Constant< Value >, History... >: 
-        Precondition< Constant< Value >, History... >
+    requires( sizeof...( History ) < max_processing_depth )
+    struct Processor< Constant< Value >, History... >
     {
         using type = std::remove_cvref_t< decltype( Value )>;
         static constexpr type value( Constant< Value > const&, manipulator_type& )
@@ -3425,8 +3445,8 @@ struct Applier
     };
 
     template< typename T, typename... History >
-    struct Processor< StaticValue< T >, History... >: 
-        Precondition< StaticValue< T >, History... >
+    requires( sizeof...( History ) < max_processing_depth )
+    struct Processor< StaticValue< T >, History... >
     {
         using type = T;
         static constexpr type value( StaticValue< T > const& expr, manipulator_type& )
@@ -3434,20 +3454,21 @@ struct Applier
     };
 
     template< open_expression T, typename... History >
-    struct Processor< T, History... >:
-        Precondition< T, History... >
+    requires( sizeof...( History ) < max_processing_depth )
+    struct Processor< T, History... >
     {
         using type = T;
         static constexpr type value( T const& open_expr, manipulator_type& )
         { return open_expr; }
     };
-    
 
     // Case: This is a compound expression
     template< template< typename... > class Op, typename... Args, 
         typename... History >
-    requires( compound_expression< Op< Args... >> )
-    struct Processor< Op< Args... >, History... >: Precondition< Op< Args... >, History... >
+    requires( compound_expression< Op< Args... >> and 
+    //    not is_substitution_expression_v< Op< Args... >> and
+        sizeof...( History ) < max_processing_depth )
+    struct Processor< Op< Args... >, History... >
     { 
         typedef make_seq< sizeof...( Args )> for_arguments;
     
@@ -3475,36 +3496,79 @@ struct Applier
         { return Helper< for_arguments >::value( expr, f ); }
     };
 
-    template< typename Current, typename... History >
-    struct Repeater;
+    // Case: This is a substitution expression. Substitutions are processed top down (maybe...)
+    //template< typename FormulaT, typename... Subs, typename... History >
+    //requires( sizeof...( History ) < max_processing_depth )
+    //struct Processor< Substitution< FormulaT, Subs... >, History... >
+    //{
+    //    using substituter = Substituter< FormulaT, Subs... >;
+    //    using substituted_type = substituter::type;
+    //    using type = Processor< substituted_type, 
+    //       Substitution< FormulaT, Subs... >, History... >;
 
-    template< typename Current, typename... History >
-    requires( std::is_invocable_v< manipulator_type, Current > )
-    struct Repeater< Current, History... >: Precondition< Current, History... >
+    //    static constexpr type value( Substitution< FormulaT, Subs... > const& sub, 
+    //        manipulator_type& f )
+    //    { 
+    //        static constexpr make_seq< sizeof...( Subs )> for_subs;
+
+    //        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+    //        { return Processor< substituted_type, 
+    //            Substitution< FormulaT, Subs... >, History... >::value( 
+    //                substituter::value( std::get< 0 >( sub ), 
+    //                    std::get< 1 + Is >( sub )... ), f ); };
+
+    //        return helper( for_subs );
+    //    }
+    //};
+
+    // our manipulator accepts this result
+    template< size_t Steps, typename ExprU, typename... History >
+    requires( std::is_invocable_v< manipulator_type, ExprU > and Steps < max_processing_steps )
+    struct Repeater< Steps, ExprU, History... >
     {
-        using type = std::invoke_result_t< manipulator_type, Current >;
+        using type = std::invoke_result_t< manipulator_type, ExprU >;
 
         static constexpr type 
-        value( Current const& expr, manipulator_type& f )
+        value( ExprU const& expr, manipulator_type& f )
         { return std::invoke( f, expr ); }
     };
 
-    template< typename Current, typename... History >
-    requires( not std::is_invocable_v< manipulator_type, Current > and
-        requires { typename Processor< Current, History... >; } )
-    struct Repeater< Current, History... >: Precondition< Current, History... >
+    // as long as the processor accepts it and the manipulator doesn't, keep processing
+    template< size_t Steps, typename Current, typename... History >
+    requires( not std::is_invocable_v< manipulator_type, Current > and requires { 
+        typename Processor< Current, History... >::type; } and
+            Steps < max_processing_steps )
+    struct Repeater< Steps, Current, History... >
     {
         using processed_type = Processor< Current, History... >::type;
-        using type = Repeater< processed_type, History... >::type;
+        using type = Repeater< Steps + 1, processed_type, Current, History... >::type;
 
         static constexpr type value( Current const& expr, manipulator_type& f )
-        { return Repeater< processed_type, History... >::value( 
-            Processor< Current, History... >::value( expr, f ), f); }
+        { return Repeater< Steps + 1, processed_type, Current, History... >::value(
+            Processor< Current, History... >::value( expr, f ), f ); }
+    };
+            
+    // if the processor does not accept it, return it
+    template< size_t Steps, typename Current, typename... History >
+    requires( not std::is_invocable_v< manipulator_type, Current > and not requires { 
+        typename Processor< Current, History... >::type; } and
+            Steps < max_processing_steps )
+    struct Repeater< Steps, Current, History... >
+    {
+        using type = Current;
+        static constexpr size_t execution_steps = Steps;
+        using processing_history = std::tuple< History... >;
+
+        static constexpr type value( Current const& expr, manipulator_type& )
+        { return expr; }
     };
 
-    using type = Repeater< expression_type >::type;
-    static constexpr type value( expression_type const& expr, ManipulatorT& f )
-    { return Repeater< expression_type >::value( expr, f ); }
+    using type = Repeater< 0, expression_type >::type;
+//    static constexpr type value( expression_type const& expr, ManipulatorT& f )
+//    { return Repeater< 0, expression_type >::value( expr, f ); }
+
+    static constexpr type value( expression_type expr, ManipulatorT& f )
+    { return Repeater< 0, expression_type >::value( expr, f ); }
 };
 
 //////////////////////////////////////////////////////
@@ -4051,9 +4115,12 @@ private:
     };
 
 public:
+    //using helper_type = Helper< expression_type, binding_order >;
+    using helper_type = Helper< expression_type, substitution_order >;
+
     // Type Manipulator Requirements //
     //using type = Helper< expression_type, binding_order >::type;
-    using type = Helper< expression_type, substitution_order >::type;
+    using type = helper_type::type;
 
     static constexpr type value( expression_type const& expr, 
         Args const&... args )
@@ -4061,7 +4128,7 @@ public:
         substitution_type sub{ expr, args... };
         bound_variables_type bound_vars{ sub };
 
-        return Helper< expression_type, binding_order >::value( expr, bound_vars ); 
+        return helper_type::value( expr, bound_vars ); 
     }
     // //
 };
@@ -4129,6 +4196,30 @@ struct Substituter< T, Args... >
 //};
 
 /// @brief substitution for higher-order variables results in an expression 
+///
+/// Substitutions are complex compound expressions. 
+///  (1) COLLECT FREE VARIABLES:
+///      Free variables are found in ExprT (see GetFreeVariables)
+///  (2) BIND VARIABLES:
+///      Each free variable is matched with a substitution expression from 
+///      ...Subs in var::id order (see BoundVariables)
+///  (3) DEPENDENCY SORTING:
+///      Bindings are sorted topologically by dependencies between the
+///      substitution arguments (...Subs) and the free variables from
+///      ExprT.
+///  (4) SUBSTITUTION EVALUATOIN:
+///      A `Substitution< ExprT, Subs... >` is evaluated by evaluating
+///      a recursive list of SubstitutionFor pseudo-expressions:
+///
+///      Variable< 0, int > x;
+///      Variable< 1, int > y;
+///      
+///      assert( 
+///         substitute( x + y, 3, 4 ) ==
+///         substitute_for( substitute_for( x + y, x, 3 ), y, 4 ));
+///     
+///      
+///
 /// 
 /// This is returened from the operator() of Arguments
 template< typename ExprT, typename... Subs >
