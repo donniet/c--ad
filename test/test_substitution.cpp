@@ -138,6 +138,7 @@ bool test_second_order()
     Variable< 2, float > f;
     
     using std::println;
+    using std::remove_cv_t;
 
     println( "SECOND ORDER SUBSTITUTION" );
     println( "-------------------------" );
@@ -146,6 +147,39 @@ bool test_second_order()
     
     auto h = x * x;
     println( "substitute_for( g, x, 3.f ) == {}", substitute_for( h, x, 3.f ) | eval() );
+
+    println( "h(3.f) == {}", h(3.f) );
+
+    auto l = f(x);
+    //println( "f(x): {}", f(x) );
+    
+    // OH! It's GetFreeVariables on substitution expressions 
+    static_assert( free_variables_t< 
+        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+            StaticValue< float >>>::size == 1, "TEST" );
+    static_assert( bound_variables_t< 
+        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+            StaticValue< float >>>::variable_set::size == 1 );
+
+    auto m = l(3.f);
+    static_assert( is_same_v< remove_cv_t< decltype( m )>,
+        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+            StaticValue< float >>> );
+    using m_type = remove_cv_t< decltype( m )>;
+    static_assert( free_variables_t< m_type >::size == 1 );
+    
+    auto n = m( x*x );
+    using n_type = remove_cv_t< decltype( n )>;
+    static_assert( free_variables_t< n_type >::size == 0 );
+
+
+
+    println( "f(x)(3.f)(x*x) == {}", n );
+    
+
+    // this goes into an infinite compiler loop
+    // so it's something in the unmatched compound expression case of the PredicateSubstitution
+    //println( "substitute_for( l(3.f), f, x*x ) = {}", substitute_for( l(3.f), f, x*x ));
     
 
     //static_assert( compound_expression<Product< Variable< 1, float >, Variable< 1, float >>> );

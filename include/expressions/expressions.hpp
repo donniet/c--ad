@@ -1638,185 +1638,13 @@ private:
     expression_type const* _expr_ptr;
 };
 
-///
-/// @brief trait to identify free variables in a tuple of expressions. 
-template< typename... Ts >
-struct GetFreeVariables< tuple< Ts... >>
-{ 
-    using type = merge_unique_variables_t< typename 
-        GetFreeVariables< Ts >::type... >; 
-    static constexpr type value( tuple< Ts... > const& expr )
-    { 
-        static constexpr make_seq< sizeof...( Ts )> for_elements;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return merge_unique_variables( GetFreeVariables< Ts >::value( 
-            std::get< Is >( expr ))... ); };
-
-        return helper( for_elements );
-    }
-};
-
-/// @brief trait to identify free variables in a compound expression.  We reduce
-///        to the tuple-case.
-template< template< typename... > class Op, typename... Args >
-requires( compound_expression< Op< Args... >> and 
-    not is_substitution_expression_v< Op< Args... >> )
-struct GetFreeVariables< Op< Args... >>: GetFreeVariables< tuple< Args... >> 
-{ };
-
-/// @brief variables have a single free variable
-template< size_t I, typename T >
-struct GetFreeVariables< Variable< I, T >>
-{ 
-    using type = unique_variables< Variable< I, T >>; 
-    static constexpr type value( Variable< I, T > const& var )
-    { return { var }; }
-};
-
-/// @brief trait to identify free variables in a functional (aka: variable
-///        substitution) expression such as `auto g = f(x, y);`. 
-template< size_t I, size_t J, typename ExprI, typename First, typename... Rest >
-requires( functional_expression< Substitution< Variable< I, Variable< J, ExprI >>,
-    First, Rest... >> )
-struct GetFreeVariables< Substitution< Variable< I, Variable< J, ExprI >>, 
-    First, Rest... >> 
-{
-private:
-    using expression_type = Substitution< Variable< I, Variable< J, ExprI >>, 
-        First, Rest... >;
-
-    // referent type of variable J will be a substitution of the values
-    // of First, Rest...
-    using referent_type = Substitution< Variable< J, ExprI >, 
-        variable_value_t< First >, variable_value_t< Rest >... >;
-
-public:
-    // temporary variable I (with referent_type replacing nested variable) is 
-    // free, as are any free variables in the value_types of First, Rest...
-    using type = make_unique_variables_t< Variable< I, referent_type >,
-        variable_value_t< First >, variable_value_t< Rest >... >;
-
-    
-    static constexpr type value( expression_type const& expr )
-    { 
-        static constexpr make_seq< sizeof...( Rest ) > for_rest;
-
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return make_unique_variables(
-            Variable< I, referent_type >{ std::get< 0 >( expr ).name() },
-            variable_value_t< First >{ std::get< 1 >( expr ).name() },
-            variable_value_t< Rest...[ Is ]>{ 
-                std::get< 2 + Is >( expr ).name() }... ); };
-
-        return helper( for_rest );
-    }
-};
-
-/// Free variables in a substitution expression must be defined early
-/// TODO: we need the topological sorting logic from the Substituter here
-///       to identify which variables remain open after substitution occurs
-/// DT:  See the DESIGN decision for substitution variable numbering and ordering.
-///      We may not need topological sorting afterall, and instead just let the 
-///      user shoot themselves in the foot, in true c++ fashion.
-///
-/// TODO: Assess whether the change to elevate subs of a variable substitution must
-///       be undone here?
-/// DT: I think we just need to consider it when applying the substition...
-template< typename ExprT, typename... Subs >
-requires( not functional_expression< Substitution< ExprT, Subs... >> )
-struct GetFreeVariables< Substitution< ExprT, Subs... >> {
-private:
-    using formula_type = ExprT;
-    using expression_type = Substitution< formula_type, Subs... >;
-
-    using formula_free_variable_set = GetFreeVariables< formula_type >::type;
-    using bound_variables_type = BoundVariables< expression_type >;
-
-    template< size_t BoundSize >
-    struct UnboundIndexSeq;
-
-    template< size_t BoundSize >
-    requires( is_less( BoundSize, formula_free_variable_set::size ))
-    struct UnboundIndexSeq< BoundSize >
-    { using type = make_seq< BoundSize - formula_free_variable_set::size >; };
-
-    template< size_t BoundSize >
-    requires( not is_less( BoundSize, formula_free_variable_set::size ))
-    struct UnboundIndexSeq< BoundSize >
-    { using type = seq< >; };
-
-    static constexpr size_t bound_size = bound_variables_type::size;
-    typedef UnboundIndexSeq< bound_size >::type for_unbound;
-    typedef make_seq< sizeof...( Subs )> for_subs;
-
-    template< typename Seq >
-    struct MergedArgumentVars;
-
-    template< size_t... Is >
-    struct MergedArgumentVars< seq< Is... >>
-    {
-        using type = merge_unique_variables_t<
-            typename GetFreeVariables< formula_type >::type,
-            typename GetFreeVariables< Subs...[ Is ]>::type... >;
-
-        static constexpr type value( formula_type const& formula,
-            Subs const&... subs )
-        {
-            return merge_unique_variables(
-                GetFreeVariables< formula_type >::value( formula ),
-                GetFreeVariables< Subs...[ Is ]>::value( subs...[ Is ])... );
-        }
-    };
-    
-public:
-    using type = subtract_unique_variables_t< 
-        typename MergedArgumentVars< for_subs >::type,
-        typename bound_variables_type::variable_set >;
-
-    //static_assert( is_same_v< typename MergedArgumentVars< for_subs >::type, void > );
-    //static_assert( is_same_v< typename bound_variables_type::variable_set, void > );
-
-    static constexpr type value( expression_type const& expr )
-    { 
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return subtract_unique_variables( MergedArgumentVars< for_subs >::value(
-            std::get< 0 >( expr ), std::get< 1 + Is >( expr )... ),
-                bound_variables_type{ expr }.variables()); };
-
-        return helper( for_subs{} );
-    }
-};
-
-/// @brief unique_variable list of free variables in an expression
-template< typename ExprT >
-using free_variables_t = 
-    GetFreeVariables< std::remove_cv_t< ExprT >>::type;
-
-template< typename ExprT >
-constexpr free_variables_t< ExprT > 
-get_free_variables( ExprT const& expr )
-{ return GetFreeVariables< ExprT >::value( expr ); }
-
-template< typename ExprT >
-using bound_variables_t = BoundVariables< std::remove_cv_t< ExprT >>;
+template< typename T >
+using bound_variables_t = BoundVariables< T >;
 
 template< typename ExprT >
 constexpr bound_variables_t< ExprT >
 bound_variables( ExprT const& expr )
 { return { expr }; }
-
-template< typename T >
-struct IsClosedExpression: std::integral_constant< bool, true > { };
-
-template< expression T >
-struct IsClosedExpression< T >: std::integral_constant< bool,
-    ( free_variables_t< T >::size == 0 )> { };
-
-/// @brief A static expression contains no variables
-template< typename T >
-concept closed_expression = IsClosedExpression< T >::value; 
 
 template< typename ExprT >
 struct IsStaticExpression: std::integral_constant< bool, true > { };
@@ -1833,6 +1661,130 @@ struct IsStaticExpression< Op< Args... >>: std::integral_constant< bool,
 template< typename T >
 concept static_expression = IsStaticExpression< T >::value;
 
+////////////////////
+/// StaticValue ///
+//////////////////
+/// 
+/// Class to hold a value considered to be unchanging in an expression
+///
+/// @brief wrapper to turn any type into an expression
+/// @tparam T the wrapped type
+///
+///
+template< typename T >
+struct StaticValue;
+
+template< typename T >
+struct IsExpression< StaticValue< T >>: std::true_type { };
+
+/// @brief result of a static value is the result of it's value type
+template< typename T >
+struct Result< StaticValue< T >>: Result< T > { };
+
+template< typename T >
+requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
+struct StaticValue< T >
+{ 
+    using value_type = std::remove_cv_t< T >;
+
+    // casting to and from an expression should be explicit
+    explicit constexpr operator value_type() const
+    { return _value; } 
+
+    constexpr value_type get_value() const
+    { return _value; }
+
+    constexpr value_type operator ()() const
+    { return _value; }
+
+    constexpr StaticValue(): _value{} { }
+    constexpr StaticValue( value_type const& other ): _value{ other } { }
+    constexpr StaticValue( StaticValue const& ) = default;
+    constexpr StaticValue( StaticValue&& ) = default;
+
+private:
+    value_type _value;
+};
+
+/// @brief helper to create expressions with unchanging values
+/// @tparam T the type of this expression
+/// @param value the value of this expression
+/// @return returns an expression that will always evaluate to value
+///
+template< typename T >
+requires( not is_expression_v< T > )
+constexpr StaticValue< T > static_expr( T const& value )
+{ return StaticValue< T >{ value }; }
+
+// results in a static expression unless T is already an expression type
+template< typename T >
+struct MakeExpression
+{ 
+    using type = StaticValue< T >;
+    static constexpr type 
+    value( T const& value )
+    { return { value }; }
+};
+
+template< expression T >
+struct MakeExpression< T >
+{
+    using type = T;
+    static constexpr type
+    value( T const& value )
+    { return value; }
+};
+
+template< typename T >
+constexpr typename MakeExpression< T >::type
+make_expression( T const& value )
+{ return MakeExpression< T >::value( value ); }
+
+/////////////////
+/// Constant ///
+///////////////
+///
+/// Wraps a compile-time constant as an expression. This allows
+/// for expression sipmlification at compile-time.
+///
+/// @brief a compile-time constant
+/// @tparam T the type of the constant
+/// @tparam Value of the constant
+///
+template< auto >
+struct Constant;
+
+template< auto Value >
+struct IsExpression< Constant< Value >>: std::true_type { };
+
+template< auto Value >
+struct Result< Constant< Value >>
+{ using type = std::remove_cv_t< decltype( Value )>; };
+
+template< auto Value >
+struct Constant
+{
+    using value_type = std::remove_cv_t< decltype( Value )>;
+
+    static constexpr value_type value = Value;
+
+    constexpr operator value_type() const
+    { return value; }
+
+    constexpr value_type operator ()() const
+    { return value; }
+
+    constexpr Constant() = default;
+};
+
+template< auto Value >
+using constant = Constant< Value >;
+
+// NOTE: not sure about the constants
+constexpr constant< 0 > constant_zero = constant< 0 >{};
+constexpr constant< 1 > constant_one = constant< 1 >{};
+constexpr constant< true > constant_true = constant< true >{};
+constexpr constant< false > constant_false = constant< false >{};
 
 //template< typename ExprT >
 //constexpr free_variables_t< ExprT >
@@ -2002,10 +1954,12 @@ public:
     template< variable First, variable... Rest > 
     requires( is_non_repeating_v< seq< variable_id_v< First >,
         variable_id_v< Rest >... >> )
-    constexpr typename FunctionalSubstitution< this_type, First, Rest... >::type
+    constexpr typename FunctionalSubstitution< this_type, 
+        typename MakeExpression< First >::type, typename MakeExpression< Rest >::type... >::type
     operator ()( First first, Rest... rest ) const
-    { return FunctionalSubstitution< this_type, First, Rest... >::value(
-        { name() }, first, rest... ); }
+    { return FunctionalSubstitution< this_type, 
+        typename MakeExpression< First >::type, typename MakeExpression< Rest >::type... >::
+            value( { name() }, first, rest... ); }
 
     // variables evaluate to themselves
     constexpr Variable const& 
@@ -2019,157 +1973,10 @@ public:
 private:
     string _name;
 };
-
-////////////////////
-/// StaticValue ///
-//////////////////
-/// 
-/// Class to hold a value considered to be unchanging in an expression
-///
-/// @brief wrapper to turn any type into an expression
-/// @tparam T the wrapped type
-///
-///
-template< typename T >
-struct StaticValue;
-
-template< typename T >
-struct IsExpression< StaticValue< T >>: std::true_type { };
-
-/// @brief result of a static value is the result of it's value type
-template< typename T >
-struct Result< StaticValue< T >>: Result< T > { };
-
-template< typename T >
-requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
-struct StaticValue< T >
-{ 
-    using value_type = std::remove_cv_t< T >;
-
-    // casting to and from an expression should be explicit
-    explicit constexpr operator value_type() const
-    { return _value; } 
-
-    constexpr value_type get_value() const
-    { return _value; }
-
-    constexpr value_type operator ()() const
-    { return _value; }
-
-    constexpr StaticValue(): _value{} { }
-    constexpr StaticValue( value_type const& other ): _value{ other } { }
-    constexpr StaticValue( StaticValue const& ) = default;
-    constexpr StaticValue( StaticValue&& ) = default;
-
-private:
-    value_type _value;
-};
-
-/// @brief helper to create expressions with unchanging values
-/// @tparam T the type of this expression
-/// @param value the value of this expression
-/// @return returns an expression that will always evaluate to value
-///
-template< typename T >
-requires( not is_expression_v< T > )
-constexpr StaticValue< T > static_expr( T const& value )
-{ return StaticValue< T >{ value }; }
-
-/////////////////
-/// Constant ///
-///////////////
-///
-/// Wraps a compile-time constant as an expression. This allows
-/// for expression sipmlification at compile-time.
-///
-/// @brief a compile-time constant
-/// @tparam T the type of the constant
-/// @tparam Value of the constant
-///
-template< auto >
-struct Constant;
-
-template< auto Value >
-struct IsExpression< Constant< Value >>: std::true_type { };
-
-template< auto Value >
-struct Result< Constant< Value >>
-{ using type = std::remove_cv_t< decltype( Value )>; };
-
-template< auto Value >
-struct Constant
-{
-    using value_type = std::remove_cv_t< decltype( Value )>;
-
-    static constexpr value_type value = Value;
-
-    constexpr operator value_type() const
-    { return value; }
-
-    constexpr value_type operator ()() const
-    { return value; }
-
-    constexpr Constant() = default;
-};
-
-template< auto Value >
-using constant = Constant< Value >;
-
-// NOTE: not sure about the constants
-constexpr constant< 0 > constant_zero = constant< 0 >{};
-constexpr constant< 1 > constant_one = constant< 1 >{};
-constexpr constant< true > constant_true = constant< true >{};
-constexpr constant< false > constant_false = constant< false >{};
-
-using t0 =Substitution< tuple< StaticValue< float >, Variable< 1, float >>, tuple< StaticValue< float >, Variable< 0, float >>>;
-using test_type0 = free_variables_t< t0 >;
-using test_type1 = BoundVariables< t0 >::variable_set; 
+//using t0 =Substitution< tuple< StaticValue< float >, Variable< 1, float >>, tuple< StaticValue< float >, Variable< 0, float >>>;
+//using test_type0 = free_variables_t< t0 >;
+//using test_type1 = BoundVariables< t0 >::variable_set; 
 //static_assert( std::is_same_v< test_type0, void > );
-
-
-////////////////////////
-/// Variable Traits ///
-//////////////////////
-///
-template< typename Var >
-struct variable_traits: integral_constant< bool, false > { };
-
-template< size_t I, typename T >
-struct variable_traits< Variable< I, T >>: integral_constant< bool, true > 
-{
-    using value_type = T;
-    using result_type = result_t< value_type >;
-    static constexpr size_t id = I;
-    static constexpr size_t order = variable_order_v< Variable< I, T >>; 
-    using variable_type = Variable< id, value_type >;
-    static constexpr variable_type variable() { return {}; }
-};
-
-template< variable Var, typename ExprT >
-constexpr bool depends_on_variable_v = free_variables_t< ExprT >::template 
-    contains< Var >(); 
-
-namespace detail {
-template< typename ExprT >
-struct NextVariableId;
-
-template< typename ExprT >
-requires( not requires { typename free_variables_t< ExprT >; })
-struct NextVariableId< ExprT >: integral_constant< size_t, 0 > { };
-
-template< typename ExprT >
-requires( free_variables_t< ExprT >::size == 0 )
-struct NextVariableId< ExprT >: integral_constant< size_t, 0 > { };
-
-template< typename ExprT >
-requires( free_variables_t< ExprT >::size != 0 )
-struct NextVariableId< ExprT >: integral_constant< size_t, 
-    variable_traits< typename free_variables_t< ExprT >::last_type >::
-        id + 1 > { };
-} // namespace detail
-
-template< typename ExprT >
-constexpr size_t next_variable_id_v = detail::NextVariableId< ExprT >::value;
 
 //////////////////////////
 /// Predicate Matches ///
@@ -2339,7 +2146,7 @@ template< variable... Vars >
 struct Scope: tuple< Vars... > 
 {
     using values_tuple_type = 
-        tuple< typename variable_traits< Vars >::value_type... >;
+        tuple< variable_value_t< Vars >... >;
     using dirty_tuple_type = std::array< bool, sizeof...( Vars )>;
     using variables_tuple_type = tuple< Vars... >;
     static constexpr size_t size = sizeof...( Vars );
@@ -2349,8 +2156,8 @@ protected:
     struct Helper;
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I == variable_traits< Vars...[ J ]>::id and 
-        1 == variable_traits< Vars...[ J ]>::order )
+    requires( I == variable_id_v< Vars...[ J ]> and 
+        1 == variable_order_v< Vars...[ J ]> )
     struct Helper< I, seq< J, Js... >>
     { 
         static constexpr tuple_element_t< J, values_tuple_type > 
@@ -2377,13 +2184,13 @@ protected:
     };
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I == variable_traits< Vars...[ J ]>::id and
-        1 != variable_traits< Vars...[ J ]>::order )
+    requires( I == variable_id_v< Vars...[ J ]> and
+        1 != variable_order_v< Vars...[ J ]> )
     struct Helper< I, seq< J, Js... >>
     { static constexpr bool has_value = false; };
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I != variable_traits< Vars...[ J ]>::id )
+    requires( I != variable_id_v< Vars...[ J ]> )
     struct Helper< I, seq< J, Js... >>:
         Helper< I, seq< Js... >>
     { };
@@ -2393,7 +2200,7 @@ protected:
     { static constexpr bool has_value = false; };
 
     template< variable Var >
-    using helper_for = Helper< variable_traits< Var >::id, make_seq< size >>;
+    using helper_for = Helper< variable_id_v< Var >, make_seq< size >>;
 
     template< size_t... Js >
     constexpr void initialize_flags( seq< Js... > )
@@ -2403,7 +2210,7 @@ public:
     /// @brief determines if the scope has a value for variable I
     template< variable Var >
     static constexpr bool 
-    has_value_v = Helper< variable_traits< Var >::id, 
+    has_value_v = Helper< variable_id_v< Var >, 
         make_seq< size >>::has_value;
 
     template< variable Var >
@@ -2494,9 +2301,9 @@ public:
     /// @brief invocation against a scoped variable will return the
     /// scoped value
     template< variable Var >
-    requires( scope_contains_variable_v< variable_traits< Var >::id, 
+    requires( scope_contains_variable_v< variable_id_v< Var >, 
         Scope< Vars... >> )
-    constexpr variable_traits< Var >::value_type 
+    constexpr variable_value_t< Var >
     operator ()( Var const& var ) const 
     { return helper_for< Var >::get( _values ); }
 
@@ -2535,7 +2342,7 @@ private:
 
     template< variable... Vars >
     struct Helper< unique_variables< Vars... >>: integral_constant< bool,
-        ( ScopeContainsVariable< variable_traits< Vars >::id, ScopeT >::value 
+        ( ScopeContainsVariable< variable_id_v< Vars >, ScopeT >::value 
             and ... )> { };
 
 public:
@@ -2738,242 +2545,6 @@ constexpr declare_variables( Decls... decls )
 { return SimpleScopeHelper< make_seq< sizeof...( Decls )>, typename
     Decls::value_type... >::from_names( decls.name()... ); }
 
-//////////////////////////
-/// Expression Traits ///
-////////////////////////
-///
-template< typename ExprT >
-struct expression_traits;
-
-template< typename ExprT >
-requires( expression< ExprT > and not compound_expression< ExprT >)
-struct expression_traits< ExprT >
-{
-    using variables = free_variables_t< ExprT >;
-    static constexpr size_t variables_size = variables::size;
-    using result_type = result_t< ExprT >;
-    using variable_values_tuple = variables::values_tuple;
-    using scope_type = variables::scope_type;
-    using arguments_tuple = tuple< >;
-
-    template< variable... Vars >
-    static constexpr bool is_valid_scope( Scope< Vars... > const& scope )
-    { return variables::is_valid_scope( scope ); }
-};
-
-template< template< typename... > class Op, typename... Args >
-requires( compound_expression< Op< Args... >>)
-struct expression_traits< Op< Args... >>
-{
-    using variables = free_variables_t< Op< Args... >>;
-    static constexpr size_t variables_size = variables::size;
-    using result_type = result_t< Op< Args... >>;
-    using variable_values_tuple = variables::values_tuple;
-    using scope_type = variables::scope_type;
-    using arguments_tuple = tuple< Args... >;
-
-    template< variable... Vars >
-    static constexpr bool is_valid_scope( Scope< Vars... > const& scope )
-    { return variables::is_valid_scope( scope ); }
-};
-
-template< typename ScopeT, expression ExprU >
-struct IsScopeFor;
-
-template< variable... Vars, expression ExprU >
-struct IsScopeFor< Scope< Vars... >, ExprU >: 
-    integral_constant< bool, expression_traits< ExprU >::
-        is_valid_scope( Scope< Vars... >{} )>
-{ };
-
-template< typename ScopeT, expression ExprU >
-constexpr bool is_scope_for_v = IsScopeFor< ScopeT, ExprU >::value;
-
-template< expression ExprT >
-using expression_scope_t = expression_traits< ExprT >::scope_type;
-
-/// @brief constructs a scope from the dependent variables of ExprT and init-
-/// ializes the values to ...ts in variable id order
-///
-template< expression ExprT, typename... Ts >
-constexpr typename expression_traits< ExprT >::scope_type
-make_scope( Ts const&... ts )
-{ 
-    using scope_type = expression_traits< ExprT >::scope_type;
-    using variables_tuple = scope_type::variables_tuple_type;
-
-    scope_type scope{ variables_tuple{} };
-
-    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-    { ( scope.template set_value< std::tuple_element_t< Is, variables_tuple >>( 
-        ts...[ Is ] ), ...); };
-
-    helper( make_seq< sizeof...( Ts )>{} );
-
-    return scope;
-}
-
-/////////////////////////////////
-/// Compatible Substitutions ///
-///////////////////////////////
-///
-/// Trait to verify whether a set of substitution arguments may bind the free
-/// variables in an expression.
-///
-namespace detail {
-template< typename ExprT, typename... Subs >
-struct IsCompatibleSubstitution;
-
-/// @brief Helper validates a single variable against a substitution argument
-template< typename Var, typename Sub >
-struct IsCompatibleVariableSubstitution;
-
-/// Case: First-order compatibility
-///
-/// If the result type of the variable and substitution do not match
-/// then this is not a compatible variable substitution.  We have a separate
-/// logical path for higher-order variables.
-///
-template< size_t I, typename ExprT, typename Sub >
-requires( not is_substitution_expression_v< ExprT > )
-struct IsCompatibleVariableSubstitution< Variable< I, ExprT >, Sub >: 
-    integral_constant< bool, 
-        std::is_convertible_v< result_t< ExprT >, result_t< Sub >>> { }; 
-
-/// Case: Higher-order compatibility
-///
-/// This variable has been substituted into by ...SubSubs.  We must check the
-/// result, but also we must ensure that the substitution into the variable
-/// will still be valid after Sub is substituted for Variable< I, ExprT >.
-///
-/// DT: This is creating a circular reference between variable sub compatability and
-///     overall expression sub compatibility.
-/// DT: With temporary variables, the ids don't have to match
-template< size_t I, size_t J, typename ExprT, typename... SubSubs, typename Sub >
-// DT: free_variables_t sticks the Substitution expression into the value_type
-//     of the second-order variables, but they could be part of a tuple...
-//requires( is_substitution_expression_v< ExprT > ) // redundant but kept for clarity
-struct IsCompatibleVariableSubstitution< 
-    Variable< I, Substitution< Variable< J, ExprT >, SubSubs... >>, Sub >:
-        integral_constant< bool,
-            std::is_convertible_v< result_t< ExprT >, result_t< Sub >> and
-            IsCompatibleSubstitution< Sub, SubSubs... >::value >
-{ };
-
-///
-/// @brief Helper decides whether substitution into tuple< Vars... > by 
-/// tuple< Subs... > is allowed
-///
-/// TODO: remove failed assertion here to allow SFINAE
-///
-template< typename UniqueFreeVariables, typename SubTuple >
-struct IsCompatibleSubstitutionHelper;
-//
-//{ 
-//    static_assert( IsCompatibleVariableSubstitution<
-//        std::tuple_element_t< 0, typename UniqueFreeVariables::variables_tuple >,
-//        std::tuple_element_t< 0, SubTuple >>::value,
-//            "NO COMPATIBLE SUBSTITUTION" ); 
-//};
-
-/// Case: The result of the first substitution argument is convertible to
-///       the result of the first variable.  Move on to the next variable and
-///       substitution pair.
-template< typename Var, typename... Vars, typename Sub, typename... Subs >
-requires( IsCompatibleVariableSubstitution< Var, Sub >::value )
-struct IsCompatibleSubstitutionHelper< 
-    unique_variables< Var, Vars... >, tuple< Sub, Subs... >>: 
-        IsCompatibleSubstitutionHelper< unique_variables< Vars... >, tuple< Subs... >> 
-{ };
-
-/// Case: The first variable's and substitution's results are not convertible
-///       so this substitution is incompatible.
-template< typename Var, typename... Vars, typename Sub, typename... Subs >
-requires( not IsCompatibleVariableSubstitution< Var, Sub >::value )
-struct IsCompatibleSubstitutionHelper< 
-    unique_variables< Var, Vars... >, tuple< Sub, Subs... >>: integral_constant< bool,
-        false > 
-{ };
-
-/// Case: We allow a partial substitution
-template< typename Var, typename... Vars >
-struct IsCompatibleSubstitutionHelper< unique_variables< Var, Vars... >, tuple<> >: 
-    integral_constant< bool, true > { };
-
-/// Case: We allow over-substitutions and empty substitutions
-template< typename... Subs >
-struct IsCompatibleSubstitutionHelper< unique_variables< >, tuple< Subs... >>:
-    integral_constant< bool, true > { };
-
-/// Finally we have the primary class to verify substitutions
-///
-/// Case: Empty substitutions are always valid 
-template< typename ExprT >
-struct IsCompatibleSubstitution< ExprT >: std::true_type { };
-
-/// Case: Substitution into a variable expression are valid if the result
-///       types are convertible, regardless of variable order
-template< variable Var, typename U >
-//requires( variable_traits< Var >::order == 1 )
-struct IsCompatibleSubstitution< Var, U >: std::is_convertible< 
-    result_t< U >, variable_value_t< Var >> 
-{ }; 
-
-// NOTE: let's do these higher-order compatibilities one by one so my head 
-//       doesn't hurt too much
-//
-/// Case: Substituting into a substitution expression's variable.
-///
-/// f(x)(n) [ it's sneakier than that 'cause it is substituting into the
-///           variable x itself, but maybe that's the same? ]
-///
-/// using  v0 = Variable< 0, float >;
-/// using vv0 = Variable< 0, v0 >;
-/// using  v1 = Variable< 1, float >;
-/// using vv1 = Variable< 1, v1 >;
-/// using  v2 = Variable< 2, float >;
-/// using vv2 = Variable< 2, v2 >;
-/// v0 f;
-/// v1 x;
-/// v2 y;
-///
-/// Substitution< vv0, v1 > fx = f(x);
-/// Substitution< Substitution< vv0, v1 >, v2 > fxy = fx(y);
-/// Substitution< vv0, v2 > fy = f(y);
-/// Substitution< Substitution< vv0, v2 >, v1 > fyx = fy(x);
-///
-//template< variable Var, typename... Subs >
-//requires( variable_traits< Var >::order == 2 )
-//struct IsCompatibleSubstitution< Var, Subs... >: std::true_type { };
-
-template< typename... Ts, typename... Subs >
-struct IsCompatibleSubstitution< tuple< Ts... >, Subs... >:
-    IsCompatibleSubstitutionHelper< free_variables_t< tuple< Ts... >>,
-        tuple< Subs... >>
-{ };
-
-template< shape ShapeT, typename... Ts, typename... Subs >
-struct IsCompatibleSubstitution< Tensor< ShapeT, Ts... >, Subs... >:
-    IsCompatibleSubstitutionHelper< free_variables_t< Tensor< ShapeT, Ts... >>,
-        tuple< Subs... >>
-{ };
-
-template< typename ExprT, typename... Subs >
-requires( compound_expression< ExprT > )
-struct IsCompatibleSubstitution< ExprT, Subs... >:
-    IsCompatibleSubstitutionHelper< 
-        free_variables_t< ExprT >, tuple< Subs... >>
-{ };
-} // namespace detail
-
-template< typename ExprT, typename... Subs >
-constexpr bool is_compatible_substitution_v = 
-    detail::IsCompatibleSubstitution< ExprT, Subs... >::value;
-
-// I'm not specializing IsCompatibleSubstitution properly.  When passed a substitution
-// It doesn't divide it into the formula and arguments properly, or something...
-static_assert( detail::IsCompatibleSubstitution<Substitution<tuple<StaticValue<float>, Variable<1, float>>, tuple<StaticValue<float>, Variable<0, float>>>, float>::value );
-
 //////////////////////////////////
 /// Substitution / Predicates ///
 ////////////////////////////////
@@ -3008,11 +2579,385 @@ struct ForVariable
     template< typename TestT >
     struct Is: integral_constant< bool, false > { };
 
-    // true case
-    template< typename T >
-    struct Is< Variable< I, T >>: integral_constant< bool, true > { };
+    // first order case
+    template< variable Var >
+    requires( not variable< variable_value_t< Var >> )
+    struct Is< Var >: integral_constant< bool, variable_id_v< Var > == I > { };
+
+    // higher order matches if the any of the nested variables match
+    template< variable Var >
+    requires( variable< variable_value_t< Var >> )
+    struct Is< Var >: Is< variable_value_t< Var >> { };
+};
+/// @brief expression manipulator that replaces any argument in an expression
+/// with the given WithT argument.
+///
+/// @tparam Predicate resolves to an integral_constant< bool, ... > like
+/// like object-type (ie: has a constexpr static bool value member) which
+/// flags the expression passed as the template parameter as substitutable
+///
+///
+/// Case: Default is idempotent
+///
+template< template< typename > class Predicate, typename ExprT, typename WithT >
+struct PredicateSubstitution
+{
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr, WithT const& )
+    { return expr; }
+};
+/// 
+/// Case: Predicate matched expression.  We resolve to our replacement
+///
+template< template< typename > class Predicate, typename ExprT, typename WithT >
+requires( Predicate< ExprT >::value )
+struct PredicateSubstitution< Predicate, ExprT, WithT >
+{
+    using type = WithT;
+    static constexpr type value( ExprT const& expr, WithT const& with )
+    { return with; } 
+};
+///
+/// Case: Unmatched non-compound expression is idempotent
+///
+template< template< typename > class Predicate, typename NonCompoundExprT, 
+    typename WithT >
+requires( not Predicate< NonCompoundExprT >::value and 
+    not requires { typename NonCompoundExprT::arguments_tuple; })
+struct PredicateSubstitution< Predicate, NonCompoundExprT, WithT >
+{
+    using type = NonCompoundExprT;
+    static constexpr type value( NonCompoundExprT const& expr, WithT const& with )
+    { return expr; }
+};
+///
+/// Case: Unmatched compound expression recurses
+///
+template< template< typename > class Predicate, 
+    template< typename... > class Op, typename... Args, typename WithT >
+requires( compound_expression< Op< Args... >> and 
+    not Predicate< Op< Args... >>::value )
+struct PredicateSubstitution< Predicate, Op< Args... >, WithT > {
+private:
+    template< typename ArgT >
+    using ArgumentSub = PredicateSubstitution< Predicate, ArgT, WithT >;
+
+    template< typename ArgT >
+    static constexpr typename ArgumentSub< ArgT >::type 
+    sub_argument( ArgT const& arg, WithT const& with )
+    { return ArgumentSub< ArgT >::value( arg, with ); }
+
+public:
+    using type = Op< typename ArgumentSub< Args >::type... >;
+
+private:
+    template< size_t... Is >
+    static constexpr type 
+    value_helper( Op< Args... > const& op, WithT const& with, seq< Is... > )
+    { return { sub_argument( get_argument< Is >( op ), with )... }; }
+
+public:
+    static constexpr type 
+    value( Op< Args... > const& op, WithT const& with )
+    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
 };
 
+/// @brief trait to substitute variable Var with expression SubU in formula
+///        ExprT
+template< typename ExprT, variable Var, typename SubU >
+struct SubstituteFor: PredicateSubstitution< 
+    ForVariable< Var::id >::template Is, ExprT, SubU >
+{ };
+
+template< typename ExprT, variable Var, typename SubU >
+using substitute_for_t = SubstituteFor< ExprT, Var, SubU >::type;
+
+template< typename ExprT, variable Var, typename SubU >
+constexpr substitute_for_t< ExprT, Var, SubU > 
+substitute_for( ExprT const& expr, Var const& var, SubU const& sub )
+{ return SubstituteFor< ExprT, Var, SubU >::value( expr, sub ); }
+
+///////////////////////////////////
+/// Substituter Implementation ///
+/////////////////////////////////
+///
+template< typename ExprT, typename... Args >
+//requires( sizeof...( Args ) == free_variables_t< ExprT >::size )
+// DT: Do we need this requires if the substituter is only used in private contexts?
+//requires( is_compatible_substitution_v< ExprT, Args... > ) //and
+//    ( not is_variable_v< ExprT > or variable_order_v< ExprT > == 1 ))
+struct Substituter {
+private:
+    typedef make_seq< sizeof...( Args )> for_arguments;
+
+    using expression_type = ExprT;
+    using substitution_type = Substitution< ExprT, Args... >;
+    using bound_variables_type = bound_variables_t< substitution_type >;
+    using bound_variable_set = bound_variables_type::variable_set;
+    using referent_tuple = bound_variables_type::referent_tuple;
+
+    template< size_t N >
+    using bound_variable_t = bound_variable_set::template element_t< N >;
+
+    template< size_t N >
+    static constexpr size_t variable_id_of = 
+        variable_id_v< bound_variable_t< N >>;
+
+    template< size_t N >
+    using referent_t = std::tuple_element_t< N, referent_tuple >;
+
+    // this is a sequence indexing the variable set and referent_tuple
+    using binding_order = bound_variables_type::binding_order_seq;
+    // we reverse the binding order since these will be nested
+    using substitution_order = reverse_integer_sequence_t< binding_order >;
+
+    template< size_t N >
+    static constexpr bound_variable_t< N >
+    bound_var( bound_variables_type const& bindings )
+    { return bindings.variables().template at< N >(); }
+
+    template< size_t N >
+    static constexpr referent_t< N >
+    referent( bound_variables_type const& bindings )
+    { return std::get< N >( bindings.referents()); }
+
+    template< typename ExprU, typename SubstitutionOrderSeq >
+    struct Helper;
+
+    // null case for substitution of no arguments into an non-expression
+    template< typename ExprU >
+    struct Helper< ExprU, seq< >>
+    {
+        using type = ExprU;
+        static constexpr type value( ExprU const& expr, 
+            bound_variables_type const& bound_vars )
+        { return expr; }
+    };
+
+    template< typename ExprU, size_t I, size_t... Is >
+    struct Helper< ExprU, seq< I, Is... >>
+    {
+        using sub_type = substitute_for_t< ExprU, 
+            bound_variable_t< I >, referent_t< I >>;
+        using type = Helper< sub_type, seq< Is... >>::type;
+
+        static constexpr type value( ExprU const& expr, 
+            bound_variables_type const& bindings )
+        { return Helper< sub_type, seq< Is... >>::value(
+            substitute_for( expr, bound_var< I >( bindings ), 
+                referent< I >( bindings )), bindings ); }
+    };
+
+public:
+    using helper_type = Helper< expression_type, binding_order >;
+    //using helper_type = Helper< expression_type, substitution_order >;
+
+    // Type Manipulator Requirements //
+    //using type = Helper< expression_type, binding_order >::type;
+    using type = helper_type::type;
+
+    static constexpr type value( expression_type const& expr, 
+        Args const&... args )
+    { 
+        substitution_type sub{ expr, args... };
+        bound_variables_type bound_vars{ sub };
+
+        return helper_type::value( expr, bound_vars ); 
+    }
+    // //
+};
+
+// specialization of Substituter for non-expressions (idempotent)
+template< typename T, typename... Args >
+requires( not expression< T > )
+struct Substituter< T, Args... >
+{
+    using type = T;
+    static constexpr type value( T const& val, Args const&... )
+    { return val; }
+};
+
+///////////////////////
+/// Free Variables ///
+/////////////////////
+///
+/// @brief trait to identify free variables in a tuple of expressions. 
+template< typename... Ts >
+struct GetFreeVariables< tuple< Ts... >>
+{ 
+    using type = merge_unique_variables_t< typename 
+        GetFreeVariables< Ts >::type... >; 
+    static constexpr type value( tuple< Ts... > const& expr )
+    { 
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return merge_unique_variables( GetFreeVariables< Ts >::value( 
+            std::get< Is >( expr ))... ); };
+
+        return helper( for_elements );
+    }
+};
+
+/// @brief trait to identify free variables in a compound expression.  We reduce
+///        to the tuple-case.
+template< template< typename... > class Op, typename... Args >
+requires( compound_expression< Op< Args... >> and 
+    not is_substitution_expression_v< Op< Args... >> )
+struct GetFreeVariables< Op< Args... >>: GetFreeVariables< tuple< Args... >> 
+{ };
+
+/// @brief variables have a single free variable
+template< size_t I, typename T >
+struct GetFreeVariables< Variable< I, T >>
+{ 
+    using type = unique_variables< Variable< I, T >>; 
+    static constexpr type value( Variable< I, T > const& var )
+    { return { var }; }
+};
+
+/// @brief trait to identify free variables in a functional (aka: variable
+///        substitution) expression such as `auto g = f(x, y);`. 
+template< size_t I, size_t J, typename ExprI, typename First, typename... Rest >
+requires( functional_expression< Substitution< Variable< I, Variable< J, ExprI >>,
+    First, Rest... >> )
+struct GetFreeVariables< Substitution< Variable< I, Variable< J, ExprI >>, 
+    First, Rest... >> 
+{
+private:
+    using expression_type = Substitution< Variable< I, Variable< J, ExprI >>, 
+        First, Rest... >;
+
+    // referent type of variable I will be a substitution of the values
+    // of First, Rest...
+    using referent_type = Substitution< Variable< I, ExprI >, 
+        variable_value_t< First >, variable_value_t< Rest >... >;
+
+public:
+    // variable J (with referent_type replacing nested variable) is 
+    // free, as are any free variables in the value_types of First, Rest...
+    using type = make_unique_variables_t< Variable< J, referent_type >,
+        variable_value_t< First >, variable_value_t< Rest >... >;
+
+    
+    static constexpr type value( expression_type const& expr )
+    { 
+        static constexpr make_seq< sizeof...( Rest ) > for_rest;
+
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return make_unique_variables(
+            Variable< I, referent_type >{ std::get< 0 >( expr ).name() },
+            variable_value_t< First >{ std::get< 1 >( expr ).name() },
+            variable_value_t< Rest...[ Is ]>{ 
+                std::get< 2 + Is >( expr ).name() }... ); };
+
+        return helper( for_rest );
+    }
+};
+
+/// Free variables in a substitution expression must be defined early
+/// TODO: we need the topological sorting logic from the Substituter here
+///       to identify which variables remain open after substitution occurs
+/// DT:  See the DESIGN decision for substitution variable numbering and ordering.
+///      We may not need topological sorting afterall, and instead just let the 
+///      user shoot themselves in the foot, in true c++ fashion.
+///
+/// TODO: Assess whether the change to elevate subs of a variable substitution must
+///       be undone here?
+/// DT: I think we just need to consider it when applying the substition...
+template< typename ExprT, typename... Subs >
+requires( not functional_expression< Substitution< ExprT, Subs... >> )
+struct GetFreeVariables< Substitution< ExprT, Subs... >> {
+
+    //static_assert( not is_same_v< ExprT, 
+    //    Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>, "TEST" );
+private:
+    using formula_type = ExprT;
+    using expression_type = Substitution< formula_type, Subs... >;
+
+    using formula_free_variable_set = GetFreeVariables< formula_type >::type;
+    // theres the problem
+    using bound_variables_type = BoundVariables< expression_type >;
+
+    template< size_t BoundSize >
+    struct UnboundIndexSeq;
+
+    template< size_t BoundSize >
+    requires( is_less( BoundSize, formula_free_variable_set::size ))
+    struct UnboundIndexSeq< BoundSize >
+    { using type = make_seq< formula_free_variable_set::size - BoundSize >; };
+
+    template< size_t BoundSize >
+    requires( not is_less( BoundSize, formula_free_variable_set::size ))
+    struct UnboundIndexSeq< BoundSize >
+    { using type = seq< >; };
+
+       
+    static constexpr size_t bound_size = bound_variables_type::size;
+    
+    typedef UnboundIndexSeq< bound_size >::type for_unbound;
+    typedef make_seq< sizeof...( Subs )> for_subs;
+
+    template< typename Seq >
+    struct MergedArgumentVars;
+
+    template< size_t... Is >
+    struct MergedArgumentVars< seq< Is... >>
+    {
+        using type = merge_unique_variables_t<
+            typename GetFreeVariables< formula_type >::type,
+            typename GetFreeVariables< Subs...[ Is ]>::type... >;
+
+        static constexpr type value( formula_type const& formula,
+            Subs const&... subs )
+        {
+            return merge_unique_variables(
+                GetFreeVariables< formula_type >::value( formula ),
+                GetFreeVariables< Subs...[ Is ]>::value( subs...[ Is ])... );
+        }
+    };
+  
+public:
+    using type = subtract_unique_variables_t< 
+        typename MergedArgumentVars< for_subs >::type,
+        typename bound_variables_type::variable_set >;
+
+
+    //static_assert( is_same_v< typename MergedArgumentVars< for_subs >::type, void > );
+    //static_assert( is_same_v< typename bound_variables_type::variable_set, void > );
+
+    static constexpr type value( expression_type const& expr )
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return subtract_unique_variables( MergedArgumentVars< for_subs >::value(
+            std::get< 0 >( expr ), std::get< 1 + Is >( expr )... ),
+                bound_variables_type{ expr }.variables()); };
+
+        return helper( for_subs{} );
+    }
+};
+
+/// @brief unique_variable list of free variables in an expression
+template< typename ExprT >
+using free_variables_t = 
+    GetFreeVariables< std::remove_cv_t< ExprT >>::type;
+
+template< typename ExprT >
+constexpr free_variables_t< ExprT > 
+get_free_variables( ExprT const& expr )
+{ return GetFreeVariables< ExprT >::value( expr ); }
+
+template< typename T >
+struct IsClosedExpression: std::integral_constant< bool, true > { };
+
+template< expression T >
+struct IsClosedExpression< T >: std::integral_constant< bool,
+    ( free_variables_t< T >::size == 0 )> { };
+
+/// @brief A static expression contains no variables
+template< typename T >
+concept closed_expression = IsClosedExpression< T >::value; 
 //////////////////////////////////////////
 /// Predicate: ForExpression< ExprT > ///
 ////////////////////////////////////////
@@ -3056,7 +3001,7 @@ struct ForExpression< Var >
     // variables match anything with the appropriate result type 
     template< typename TestT >
     struct Is: integral_constant< bool, 
-        is_same_v< typename variable_traits< Var >::result_type, result_t< TestT >>> 
+        is_same_v< result_t< Var >, result_t< TestT >>> 
     { using matches_type = tuple< match< Var, TestT >>; };
 };
 
@@ -3068,7 +3013,7 @@ requires( compound_expression< Op< Args... >> and
 struct ForExpression< Op< Args... >> {
 private:
     using expression_type = Op< Args... >;
-    using arguments_tuple = expression_traits< expression_type >::arguments_tuple;
+    using arguments_tuple = expression_type::arguments_tuple;
 
     // yields the first match from ...Matches with the variable id equal
     // to VariableId
@@ -3260,93 +3205,166 @@ public:
     { };
 };
 
+/////////////////////////////////
+/// Compatible Substitutions ///
+///////////////////////////////
+///
+/// Trait to verify whether a set of substitution arguments may bind the free
+/// variables in an expression.
+///
+namespace detail {
+template< typename ExprT, typename... Subs >
+struct IsCompatibleSubstitution;
 
-/// @brief expression manipulator that replaces any argument in an expression
-/// with the given WithT argument.
-///
-/// @tparam Predicate resolves to an integral_constant< bool, ... > like
-/// like object-type (ie: has a constexpr static bool value member) which
-/// flags the expression passed as the template parameter as substitutable
-///
-///
-/// Case: Default is idempotent
-///
-template< template< typename > class Predicate, typename ExprT, typename WithT >
-struct PredicateSubstitution
-{
-    using type = ExprT;
-    static constexpr type value( ExprT const& expr, WithT const& )
-    { return expr; }
-};
-/// 
-/// Case: Predicate matched expression.  We resolve to our replacement
-///
-template< template< typename > class Predicate, typename ExprT, typename WithT >
-requires( Predicate< ExprT >::value )
-struct PredicateSubstitution< Predicate, ExprT, WithT >
-{
-    using type = WithT;
-    static constexpr type value( ExprT const& expr, WithT const& with )
-    { return with; } 
-};
-///
-/// Case: Unmatched non-compound expression is idempotent
-///
-template< template< typename > class Predicate, typename NonCompoundExprT, 
-    typename WithT >
-requires( not Predicate< NonCompoundExprT >::value and 
-    not requires { typename NonCompoundExprT::arguments_tuple; })
-struct PredicateSubstitution< Predicate, NonCompoundExprT, WithT >
-{
-    using type = NonCompoundExprT;
-    static constexpr type value( NonCompoundExprT const& expr, WithT const& with )
-    { return expr; }
-};
-///
-/// Case: Unmatched compound expression recurses
-///
-template< template< typename > class Predicate, 
-    template< typename... > class Op, typename... Args, typename WithT >
-requires( compound_expression< Op< Args... >> and 
-    not Predicate< Op< Args... >>::value )
-struct PredicateSubstitution< Predicate, Op< Args... >, WithT > {
-private:
-    template< typename ArgT >
-    using ArgumentSub = PredicateSubstitution< Predicate, ArgT, WithT >;
+/// @brief Helper validates a single variable against a substitution argument
+template< typename Var, typename Sub >
+struct IsCompatibleVariableSubstitution;
 
-    template< typename ArgT >
-    static constexpr typename ArgumentSub< ArgT >::type sub_argument( 
-        ArgT const& arg, WithT const& with )
-    { return ArgumentSub< ArgT >::value( arg, with ); }
+/// Case: First-order compatibility
+///
+/// If the result type of the variable and substitution do not match
+/// then this is not a compatible variable substitution.  We have a separate
+/// logical path for higher-order variables.
+///
+template< size_t I, typename ExprT, typename Sub >
+requires( not is_substitution_expression_v< ExprT > )
+struct IsCompatibleVariableSubstitution< Variable< I, ExprT >, Sub >: 
+    integral_constant< bool, 
+        std::is_convertible_v< result_t< ExprT >, result_t< Sub >>> { }; 
 
-public:
-    using type = Op< typename ArgumentSub< Args >::type... >;
-
-private:
-    template< size_t... Is >
-    static constexpr type value_helper( 
-        Op< Args... > const& op, WithT const& with, seq< Is... > )
-    { return { sub_argument( get_argument< Is >( op ), with )... }; }
-public:
-
-    static constexpr type value( Op< Args... > const& op, WithT const& with )
-    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
-};
-
-/// @brief trait to substitute variable Var with expression SubU in formula
-///        ExprT
-template< typename ExprT, variable Var, typename SubU >
-struct SubstituteFor: PredicateSubstitution< 
-    ForVariable< Var::id >::template Is, ExprT, SubU >
+/// Case: Higher-order compatibility
+///
+/// This variable has been substituted into by ...SubSubs.  We must check the
+/// result, but also we must ensure that the substitution into the variable
+/// will still be valid after Sub is substituted for Variable< I, ExprT >.
+///
+/// DT: This is creating a circular reference between variable sub compatability and
+///     overall expression sub compatibility.
+/// DT: With temporary variables, the ids don't have to match
+template< size_t I, size_t J, typename ExprT, typename... SubSubs, typename Sub >
+// DT: free_variables_t sticks the Substitution expression into the value_type
+//     of the second-order variables, but they could be part of a tuple...
+//requires( is_substitution_expression_v< ExprT > ) // redundant but kept for clarity
+struct IsCompatibleVariableSubstitution< 
+    Variable< I, Substitution< Variable< J, ExprT >, SubSubs... >>, Sub >:
+        integral_constant< bool,
+            std::is_convertible_v< result_t< ExprT >, result_t< Sub >> and
+            IsCompatibleSubstitution< Sub, SubSubs... >::value >
 { };
 
-template< typename ExprT, variable Var, typename SubU >
-using substitute_for_t = SubstituteFor< ExprT, Var, SubU >::type;
+///
+/// @brief Helper decides whether substitution into tuple< Vars... > by 
+/// tuple< Subs... > is allowed
+///
+/// TODO: remove failed assertion here to allow SFINAE
+///
+template< typename UniqueFreeVariables, typename SubTuple >
+struct IsCompatibleSubstitutionHelper;
+//
+//{ 
+//    static_assert( IsCompatibleVariableSubstitution<
+//        std::tuple_element_t< 0, typename UniqueFreeVariables::variables_tuple >,
+//        std::tuple_element_t< 0, SubTuple >>::value,
+//            "NO COMPATIBLE SUBSTITUTION" ); 
+//};
 
-template< typename ExprT, variable Var, typename SubU >
-constexpr substitute_for_t< ExprT, Var, SubU > 
-substitute_for( ExprT const& expr, Var const& var, SubU const& sub )
-{ return SubstituteFor< ExprT, Var, SubU >::value( expr, sub ); }
+/// Case: The result of the first substitution argument is convertible to
+///       the result of the first variable.  Move on to the next variable and
+///       substitution pair.
+template< typename Var, typename... Vars, typename Sub, typename... Subs >
+requires( IsCompatibleVariableSubstitution< Var, Sub >::value )
+struct IsCompatibleSubstitutionHelper< 
+    unique_variables< Var, Vars... >, tuple< Sub, Subs... >>: 
+        IsCompatibleSubstitutionHelper< unique_variables< Vars... >, tuple< Subs... >> 
+{ };
+
+/// Case: The first variable's and substitution's results are not convertible
+///       so this substitution is incompatible.
+template< typename Var, typename... Vars, typename Sub, typename... Subs >
+requires( not IsCompatibleVariableSubstitution< Var, Sub >::value )
+struct IsCompatibleSubstitutionHelper< 
+    unique_variables< Var, Vars... >, tuple< Sub, Subs... >>: integral_constant< bool,
+        false > 
+{ };
+
+/// Case: We allow a partial substitution
+template< typename Var, typename... Vars >
+struct IsCompatibleSubstitutionHelper< unique_variables< Var, Vars... >, tuple<> >: 
+    integral_constant< bool, true > { };
+
+/// Case: We allow over-substitutions and empty substitutions
+template< typename... Subs >
+struct IsCompatibleSubstitutionHelper< unique_variables< >, tuple< Subs... >>:
+    integral_constant< bool, true > { };
+
+/// Finally we have the primary class to verify substitutions
+///
+/// Case: Empty substitutions are always valid 
+template< typename ExprT >
+struct IsCompatibleSubstitution< ExprT >: std::true_type { };
+
+/// Case: Substitution into a variable expression are valid if the result
+///       types are convertible, regardless of variable order
+template< variable Var, typename U >
+//requires( variable_traits< Var >::order == 1 )
+struct IsCompatibleSubstitution< Var, U >: std::is_convertible< 
+    result_t< U >, variable_value_t< Var >> 
+{ }; 
+
+// NOTE: let's do these higher-order compatibilities one by one so my head 
+//       doesn't hurt too much
+//
+/// Case: Substituting into a substitution expression's variable.
+///
+/// f(x)(n) [ it's sneakier than that 'cause it is substituting into the
+///           variable x itself, but maybe that's the same? ]
+///
+/// using  v0 = Variable< 0, float >;
+/// using vv0 = Variable< 0, v0 >;
+/// using  v1 = Variable< 1, float >;
+/// using vv1 = Variable< 1, v1 >;
+/// using  v2 = Variable< 2, float >;
+/// using vv2 = Variable< 2, v2 >;
+/// v0 f;
+/// v1 x;
+/// v2 y;
+///
+/// Substitution< vv0, v1 > fx = f(x);
+/// Substitution< Substitution< vv0, v1 >, v2 > fxy = fx(y);
+/// Substitution< vv0, v2 > fy = f(y);
+/// Substitution< Substitution< vv0, v2 >, v1 > fyx = fy(x);
+///
+//template< variable Var, typename... Subs >
+//requires( variable_traits< Var >::order == 2 )
+//struct IsCompatibleSubstitution< Var, Subs... >: std::true_type { };
+
+template< typename... Ts, typename... Subs >
+struct IsCompatibleSubstitution< tuple< Ts... >, Subs... >:
+    IsCompatibleSubstitutionHelper< free_variables_t< tuple< Ts... >>,
+        tuple< Subs... >>
+{ };
+
+template< shape ShapeT, typename... Ts, typename... Subs >
+struct IsCompatibleSubstitution< Tensor< ShapeT, Ts... >, Subs... >:
+    IsCompatibleSubstitutionHelper< free_variables_t< Tensor< ShapeT, Ts... >>,
+        tuple< Subs... >>
+{ };
+
+template< typename ExprT, typename... Subs >
+requires( compound_expression< ExprT > )
+struct IsCompatibleSubstitution< ExprT, Subs... >:
+    IsCompatibleSubstitutionHelper< 
+        free_variables_t< ExprT >, tuple< Subs... >>
+{ };
+} // namespace detail
+
+template< typename ExprT, typename... Subs >
+constexpr bool is_compatible_substitution_v = 
+    detail::IsCompatibleSubstitution< ExprT, Subs... >::value;
+
+// I'm not specializing IsCompatibleSubstitution properly.  When passed a substitution
+// It doesn't divide it into the formula and arguments properly, or something...
+//static_assert( detail::IsCompatibleSubstitution<Substitution<tuple<StaticValue<float>, Variable<1, float>>, tuple<StaticValue<float>, Variable<0, float>>>, float>::value );
 
 //////////////////
 /// Evaluator ///
@@ -3586,30 +3604,6 @@ struct Applier
 template< template< typename... > class Op, typename... Args >
 struct Arguments;
 
-// results in a static expression unless T is already an expression type
-template< typename T >
-struct MakeExpression
-{ 
-    using type = StaticValue< T >;
-    static constexpr type 
-    value( T const& value )
-    { return { value }; }
-};
-
-template< expression T >
-struct MakeExpression< T >
-{
-    using type = T;
-    static constexpr type
-    value( T const& value )
-    { return value; }
-};
-
-template< typename T >
-constexpr typename MakeExpression< T >::type
-make_expression( T const& value )
-{ return MakeExpression< T >::value( value ); }
-
 /// @brief base class that specializations of Arguments inherit from
 template< template< typename... > class Op, typename... Args >
 struct ArgumentsBase: tuple< Args... >
@@ -3640,13 +3634,24 @@ struct ArgumentsBase: tuple< Args... >
     ///       expression.
     template< typename First, typename... Rest >
     requires( is_compatible_substitution_v< expression_type, First, Rest... > and
-        is_greater( free_variables_t< Substitution< expression_type, First, 
-            Rest... >>::size, 0 ))
+        is_greater( free_variables_t< Substitution< expression_type, typename 
+            MakeExpression< First >::type, typename 
+                MakeExpression< Rest >::type... >>::size, 0 ))
     constexpr Substitution< expression_type, typename MakeExpression< First >::type, 
         typename MakeExpression< Rest >::type... >
     operator ()( First first, Rest... rest ) const
-    { return { expression(), make_expression( first ), 
-        make_expression( rest )... }; }
+    { 
+        using substituter_type = Substituter< expression_type, typename MakeExpression< First >::type, 
+            typename MakeExpression< Rest >::type... >;
+
+//        static_assert( not is_same_v< expression_type, 
+//            Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>> or
+//                is_same_v< First, float >, "TEST" );
+
+//        return substituter_type::value( expression(), make_expression( first ), 
+//            make_expression( rest )... ); 
+        return { expression(), make_expression( first ), make_expression( rest )... };
+    }
   
     /// @brief Substitution results in an expression with no free variables,
     /// Case:  no free variables remain so evaluate it and return the result
@@ -4070,102 +4075,6 @@ struct IsExpressionOperation< Sum >: std::true_type { };
 /// 
 /// @brief expression manipulator for substitution of first order variables
 ///
-template< typename ExprT, typename... Args >
-//requires( sizeof...( Args ) == free_variables_t< ExprT >::size )
-// DT: Do we need this requires if the substituter is only used in private contexts?
-//requires( is_compatible_substitution_v< ExprT, Args... > ) //and
-//    ( not is_variable_v< ExprT > or variable_order_v< ExprT > == 1 ))
-struct Substituter {
-private:
-    typedef make_seq< sizeof...( Args )> for_arguments;
-
-    using expression_type = ExprT;
-    using substitution_type = Substitution< ExprT, Args... >;
-    using bound_variables_type = bound_variables_t< substitution_type >;
-    using bound_variable_set = bound_variables_type::variable_set;
-    using referent_tuple = bound_variables_type::referent_tuple;
-
-    template< size_t N >
-    using bound_variable_t = bound_variable_set::template element_t< N >;
-
-    template< size_t N >
-    static constexpr size_t variable_id_of = 
-        variable_id_v< bound_variable_t< N >>;
-
-    template< size_t N >
-    using referent_t = std::tuple_element_t< N, referent_tuple >;
-
-    // this is a sequence indexing the variable set and referent_tuple
-    using binding_order = bound_variables_type::binding_order_seq;
-    // we reverse the binding order since these will be nested
-    using substitution_order = reverse_integer_sequence_t< binding_order >;
-
-    template< size_t N >
-    static constexpr bound_variable_t< N >
-    bound_var( bound_variables_type const& bindings )
-    { return bindings.variables().template at< N >(); }
-
-    template< size_t N >
-    static constexpr referent_t< N >
-    referent( bound_variables_type const& bindings )
-    { return std::get< N >( bindings.referents()); }
-
-    template< typename ExprU, typename SubstitutionOrderSeq >
-    struct Helper;
-
-    // null case for substitution of no arguments into an non-expression
-    template< typename ExprU >
-    struct Helper< ExprU, seq< >>
-    {
-        using type = ExprU;
-        static constexpr type value( ExprU const& expr, 
-            bound_variables_type const& bound_vars )
-        { return expr; }
-    };
-
-    template< typename ExprU, size_t I, size_t... Is >
-    struct Helper< ExprU, seq< I, Is... >>
-    {
-        using sub_type = substitute_for_t< ExprU, 
-            bound_variable_t< I >, referent_t< I >>;
-        using type = Helper< sub_type, seq< Is... >>::type;
-
-        static constexpr type value( ExprU const& expr, 
-            bound_variables_type const& bindings )
-        { return Helper< sub_type, seq< Is... >>::value(
-            substitute_for( expr, bound_var< I >( bindings ), 
-                referent< I >( bindings )), bindings ); }
-    };
-
-public:
-    //using helper_type = Helper< expression_type, binding_order >;
-    using helper_type = Helper< expression_type, substitution_order >;
-
-    // Type Manipulator Requirements //
-    //using type = Helper< expression_type, binding_order >::type;
-    using type = helper_type::type;
-
-    static constexpr type value( expression_type const& expr, 
-        Args const&... args )
-    { 
-        substitution_type sub{ expr, args... };
-        bound_variables_type bound_vars{ sub };
-
-        return helper_type::value( expr, bound_vars ); 
-    }
-    // //
-};
-
-// specialization of Substituter for non-expressions (idempotent)
-template< typename T, typename... Args >
-requires( not expression< T > )
-struct Substituter< T, Args... >
-{
-    using type = T;
-    static constexpr type value( T const& val, Args const&... )
-    { return val; }
-};
-
 // evaluation of substitutions
 // Substitution< ExprT, ...Subs > are really a recursive definition:
 //  Substitution< 
@@ -4301,6 +4210,124 @@ public:
     
 };
 
+////////////////////////
+/// Variable Traits ///
+//////////////////////
+///
+template< typename Var >
+struct variable_traits: integral_constant< bool, false > { };
+
+template< size_t I, typename T >
+struct variable_traits< Variable< I, T >>: integral_constant< bool, true > 
+{
+    using value_type = T;
+    using result_type = result_t< value_type >;
+    static constexpr size_t id = I;
+    static constexpr size_t order = variable_order_v< Variable< I, T >>; 
+    using variable_type = Variable< id, value_type >;
+    static constexpr variable_type variable() { return {}; }
+};
+
+template< variable Var, typename ExprT >
+constexpr bool depends_on_variable_v = free_variables_t< ExprT >::template 
+    contains< Var >(); 
+
+namespace detail {
+template< typename ExprT >
+struct NextVariableId;
+
+template< typename ExprT >
+requires( not requires { typename free_variables_t< ExprT >; })
+struct NextVariableId< ExprT >: integral_constant< size_t, 0 > { };
+
+template< typename ExprT >
+requires( free_variables_t< ExprT >::size == 0 )
+struct NextVariableId< ExprT >: integral_constant< size_t, 0 > { };
+
+template< typename ExprT >
+requires( free_variables_t< ExprT >::size != 0 )
+struct NextVariableId< ExprT >: integral_constant< size_t, 
+    variable_traits< typename free_variables_t< ExprT >::last_type >::
+        id + 1 > { };
+} // namespace detail
+
+template< typename ExprT >
+constexpr size_t next_variable_id_v = detail::NextVariableId< ExprT >::value;
+
+//////////////////////////
+/// Expression Traits ///
+////////////////////////
+///
+template< typename ExprT >
+struct expression_traits;
+
+template< typename ExprT >
+requires( expression< ExprT > and not compound_expression< ExprT >)
+struct expression_traits< ExprT >
+{
+    using variables = free_variables_t< ExprT >;
+    static constexpr size_t variables_size = variables::size;
+    using result_type = result_t< ExprT >;
+    using variable_values_tuple = variables::values_tuple;
+    using scope_type = variables::scope_type;
+    using arguments_tuple = tuple< >;
+
+    template< variable... Vars >
+    static constexpr bool is_valid_scope( Scope< Vars... > const& scope )
+    { return variables::is_valid_scope( scope ); }
+};
+
+template< template< typename... > class Op, typename... Args >
+requires( compound_expression< Op< Args... >>)
+struct expression_traits< Op< Args... >>
+{
+    using variables = free_variables_t< Op< Args... >>;
+    static constexpr size_t variables_size = variables::size;
+    using result_type = result_t< Op< Args... >>;
+    using variable_values_tuple = variables::values_tuple;
+    using scope_type = variables::scope_type;
+    using arguments_tuple = tuple< Args... >;
+
+    template< variable... Vars >
+    static constexpr bool is_valid_scope( Scope< Vars... > const& scope )
+    { return variables::is_valid_scope( scope ); }
+};
+
+template< typename ScopeT, expression ExprU >
+struct IsScopeFor;
+
+template< variable... Vars, expression ExprU >
+struct IsScopeFor< Scope< Vars... >, ExprU >: 
+    integral_constant< bool, expression_traits< ExprU >::
+        is_valid_scope( Scope< Vars... >{} )>
+{ };
+
+template< typename ScopeT, expression ExprU >
+constexpr bool is_scope_for_v = IsScopeFor< ScopeT, ExprU >::value;
+
+template< expression ExprT >
+using expression_scope_t = expression_traits< ExprT >::scope_type;
+
+/// @brief constructs a scope from the dependent variables of ExprT and init-
+/// ializes the values to ...ts in variable id order
+///
+template< expression ExprT, typename... Ts >
+constexpr typename expression_traits< ExprT >::scope_type
+make_scope( Ts const&... ts )
+{ 
+    using scope_type = expression_traits< ExprT >::scope_type;
+    using variables_tuple = scope_type::variables_tuple_type;
+
+    scope_type scope{ variables_tuple{} };
+
+    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+    { ( scope.template set_value< std::tuple_element_t< Is, variables_tuple >>( 
+        ts...[ Is ] ), ...); };
+
+    helper( make_seq< sizeof...( Ts )>{} );
+
+    return scope;
+}
 // specialization of substitution for non-expression arguments
 //template< typename T, typename... Ts >
 //requires( not expression< T > )
