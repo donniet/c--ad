@@ -3393,7 +3393,7 @@ struct Evaluator< void >
 
     template< typename T >
     constexpr T operator ()( StaticValue< T > const& expr ) const
-    { return expr.get_value(); }
+    { return expr.get_value(); } 
 };
 
 //////////////////////////////////////////////////////
@@ -3586,6 +3586,30 @@ struct Applier
 template< template< typename... > class Op, typename... Args >
 struct Arguments;
 
+// results in a static expression unless T is already an expression type
+template< typename T >
+struct MakeExpression
+{ 
+    using type = StaticValue< T >;
+    static constexpr type 
+    value( T const& value )
+    { return { value }; }
+};
+
+template< expression T >
+struct MakeExpression< T >
+{
+    using type = T;
+    static constexpr type
+    value( T const& value )
+    { return value; }
+};
+
+template< typename T >
+constexpr typename MakeExpression< T >::type
+make_expression( T const& value )
+{ return MakeExpression< T >::value( value ); }
+
 /// @brief base class that specializations of Arguments inherit from
 template< template< typename... > class Op, typename... Args >
 struct ArgumentsBase: tuple< Args... >
@@ -3596,14 +3620,6 @@ struct ArgumentsBase: tuple< Args... >
 
     constexpr arguments_tuple const& arguments() const
     { return *this; }
-
-    template< typename... Subs >
-    using make_expression_t = Op< Subs... >;
-
-    template< typename... Subs >
-    static constexpr make_expression_t< Subs... >
-    make_expression( Subs&&... subs )
-    { return { subs... }; }
 
     using expression_type = Op< Args... >;
 
@@ -3623,27 +3639,25 @@ struct ArgumentsBase: tuple< Args... >
     /// Case: our expression contains free variables so we return a substitution
     ///       expression.
     template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< Op< Args... >, First, Rest... > and
-        is_greater( free_variables_t< Substitution< Op< Args... >, First, 
+    requires( is_compatible_substitution_v< expression_type, First, Rest... > and
+        is_greater( free_variables_t< Substitution< expression_type, First, 
             Rest... >>::size, 0 ))
-    constexpr Substitution< Op< Args... >, First, Rest... >
+    constexpr Substitution< expression_type, typename MakeExpression< First >::type, 
+        typename MakeExpression< Rest >::type... >
     operator ()( First first, Rest... rest ) const
-    { return { expression(), first, rest... }; }
+    { return { expression(), make_expression( first ), 
+        make_expression( rest )... }; }
   
     /// @brief Substitution results in an expression with no free variables,
     /// Case:  no free variables remain so evaluate it and return the result
     template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< Op< Args... >, First, Rest... > and
-        free_variables_t< Substitution< Op< Args... >, First, Rest...>>::size == 0 )
-    constexpr typename Applier< Substitution< Op< Args... >, First, Rest... >, 
-        Evaluator< void >>::type
+    requires( is_compatible_substitution_v< expression_type, First, Rest... > and
+        free_variables_t< Substitution< expression_type, First, Rest...>>::size == 0 )
+    constexpr result_t< expression_type >
     operator ()( First first, Rest... rest ) const
-    {   
-        Evaluator< void > f;
-        return Applier< Substitution< Op< Args... >, First, Rest... >, 
-            Evaluator< void >>::value( Substitution< Op< Args... >, First, Rest... >{
-                expression(), first, rest... }, f ); 
-    }
+    { return Substituter< expression_type, typename MakeExpression< First >::type, 
+        typename MakeExpression< Rest >::type... >::value(
+        expression(), make_expression( first ), make_expression( rest )... )(); }
 
     constexpr ArgumentsBase( Args const&... args ): arguments_tuple( args... ) { }
     constexpr ArgumentsBase( ArgumentsBase const& ) = default;
@@ -3685,6 +3699,8 @@ struct Arguments< Op, Args... >: ArgumentsBase< Op, Args... >
 {
     using expression_type = ArgumentsBase< Op, Args... >::expression_type;
 
+    static constexpr make_seq< sizeof...( Args )> for_arguments;
+
     template< typename First, typename... Rest >
     constexpr auto
     operator ()( First first, Rest... rest ) const
@@ -3693,7 +3709,14 @@ struct Arguments< Op, Args... >: ArgumentsBase< Op, Args... >
     // invocation of an expression with no free variables evaluates it
     constexpr result_t< expression_type >
     operator ()() const
-    { return Evaluator< void >{}( ArgumentsBase< Op, Args... >::expression() ); }
+    { 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
+            result_t< expression_type >
+        { return expression_type::value( 
+            std::get< Is >( ArgumentsBase< Op, Args... >::arguments() )()... ); };
+
+        return helper( for_arguments );
+    }
 
 protected:
     constexpr Arguments( Args const&... args ): 
