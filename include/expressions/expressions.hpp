@@ -515,6 +515,7 @@ concept variable_of = is_variable_v< Var > and
 /// Variable< 2, int > f;
 ///
 /// auto g = f(x, y); // g is a functional expression
+///
 /// ```
 template< typename T >
 struct IsFunctionalExpression: std::false_type { };
@@ -3836,7 +3837,7 @@ protected:
 /// This is returened from the operator() of Arguments
 ///
 
-/// @brief specialization of a substitution which results in no free variables
+/// @brief specialization for full substitutions 
 template< typename ExprT, typename... Subs >
 requires( free_variables_t< typename Substituter< ExprT, Subs... >::type >::size == 0 )
 //requires( is_compatible_substitution_v< ExprT, Subs... > )
@@ -3854,7 +3855,7 @@ struct Substitution< ExprT, Subs... >: std::tuple< ExprT, Subs... >
     template< size_t I >
     constexpr Subs...[ I ]
     arg() const 
-    { return std::get< I + 1 >( *this ); }
+    { return std::get< 1 + I >( *this ); }
 
     constexpr std::tuple< Subs... >
     subs() const
@@ -3891,7 +3892,8 @@ struct Substitution< ExprT, Subs... >: std::tuple< ExprT, Subs... >
 
 /// @brief specialization for partial substitutions
 template< typename ExprT, typename... Subs >
-requires( free_variables_t< typename Substituter< ExprT, Subs... >::type >::size != 0 )
+requires( not is_functional_expression_v< ExprT > and
+    free_variables_t< typename Substituter< ExprT, Subs... >::type >::size != 0 )
 //requires( is_compatible_substitution_v< ExprT, Subs... > )
 struct Substitution< ExprT, Subs... >: std::tuple< ExprT, Subs... >
 {
@@ -3996,6 +3998,67 @@ struct Substitution< ExprT, Subs... >: std::tuple< ExprT, Subs... >
     constexpr Substitution( Substitution const& ) = default;
 };
 
+/// @brief functional expression specialization with free variables
+template< size_t I, size_t J, typename T, typename... Subs >
+requires( free_variables_t< typename 
+    Substituter< Variable< I, Variable< J, T >>, Subs... >::type >::size != 0 )
+struct Substitution< Variable< I, Variable< J, T >>, Subs... >:
+    std::tuple< Variable< I, Variable< J, T >>, Subs... >
+{
+    typedef make_seq< sizeof...( Subs )> for_subs;
+    using formula_type = Variable< I, Variable< J, T >>;
+    using result_type = result_t< formula_type >;
+    using this_type = Substitution< formula_type, Subs... >;
+
+    constexpr formula_type
+    formula() const
+    { return std::get< 0 >( *this ); }
+
+    template< size_t K >
+    constexpr Subs...[ K ]
+    arg() const
+    { return std::get< 1 + K >( *this ); }
+
+    constexpr std::tuple< Subs... >
+    subs() const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            std::tuple< Subs... >
+        { return { arg< Is >()... }; };
+
+        return helper( for_subs{} );
+    }
+
+    // evaluation of an open functional expression returns itself
+    // DT: should it? will this lead to infinite loops?
+    constexpr this_type const&
+    operator ()() const
+    { return *this; }
+
+    // substitution into an open functional expression may close it
+    template< typename... SubSubs >
+    requires( free_variables_t< typename Substituter< this_type, 
+        make_expression_t< SubSubs >... >::type >::size == 0 )
+    constexpr result_type
+    operator ()( SubSubs... subsubs ) const
+    { return Substituter< this_type, make_expression_t< SubSubs >... >::
+        value( *this, make_expression( subsubs )... )(); }
+
+    // substitution into an open functional expression that doesn't close it
+    // will wrap it
+    template< typename... SubSubs >
+    requires( free_variables_t< typename Substituter< this_type, 
+        make_expression_t< SubSubs >... >::type >::size != 0 )
+    constexpr Substitution< this_type, make_expression_t< SubSubs >... >
+    operator ()( SubSubs... subsubs ) const
+    { return { *this, make_expression( subsubs )... }; }
+
+    constexpr Substitution( formula_type const& formula, Subs const&... subs ):
+        std::tuple< formula_type, Subs... >{ formula, subs... }    
+    { }
+    constexpr Substitution() = default;
+    constexpr Substitution( Substitution const& ) = default;
+};
 
 // TODO: remove the specializations for this, and let the Applier do it
 template< typename ScopeT >

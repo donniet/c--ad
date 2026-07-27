@@ -187,16 +187,15 @@ bool test_second_order()
     auto m = l(3.f);
     using m_type = remove_cv_t< decltype( m )>;
 
-    //static_assert( is_same_v< m_type,
-    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
-    //        StaticValue< float >>> );
+    static_assert( is_same_v< m_type,
+        Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>, 
+            StaticValue< float >> > );
     static_assert( free_variables_t< m_type >::size == 1 );
     
     auto n = m( x*x );
     using n_type = remove_cv_t< decltype( n )>;
-    static_assert( is_same_v< void, n_type > );
+    //static_assert( is_same_v< void, n_type > );
 
-    using n_type = remove_cv_t< decltype( n )>;
     static_assert( free_variables_t< n_type >::size == 0 );
 
 
