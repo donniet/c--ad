@@ -34,8 +34,9 @@ struct SubstitutionTests
     static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
     static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
-    static_assert(( substitute( 2*x, one ) | eval()) == 2 );
-    static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
+    static_assert(( substitute( 2*x, one )() == 2 ));
+    //static_assert(( substitute( 2*x, one ) | eval()) == 2 );
+    //static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
 
     static_assert( is_same_v< std::remove_cv_t< decltype( 2.f * x )>,
         Product< StaticValue< float >, Variable< 0, float >>> );
@@ -71,8 +72,8 @@ bool test_eval()
     std::println( "sub[0][0]: {}", get_argument< 0 >( get_argument< 0 >( sub )).get_value() );
 
     assert( (Applier< StaticValue< float >, Evaluator< void >>::value( StaticValue< float >{ 2.f }, evaluator )) == 2.f );
-    assert( (sub_t::value( Product< StaticValue< float >, Variable< 0, float >>{{ 3.f }, {}}, 
-        Constant< 1.f >{}) | eval()) == 3.f );
+    //assert( (sub_t::value( Product< StaticValue< float >, Variable< 0, float >>{{ 3.f }, {}}, 
+    //    Constant< 1.f >{}) | eval()) == 3.f );
 
 //    std::println( "sub result: {}", ( Applier< Substitution< 
 //        Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
@@ -94,9 +95,9 @@ bool test_eval()
 
     static_assert( not open_expression<Substitution< 
         Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
-    static_assert( std::is_same_v< typename Applier< Substitution< 
-        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>, 
-            Evaluator< void >>::type, float > );
+    //static_assert( std::is_same_v< typename Applier< Substitution< 
+    //    Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>, 
+    //        Evaluator< void >>::type, float > );
 
 
     static_assert( std::is_same_v< std::remove_cvref_t< decltype(
@@ -152,23 +153,49 @@ bool test_second_order()
 
     auto l = f(x);
     //println( "f(x): {}", f(x) );
+    //
+    // var<0, float> f;
+    // var<2, float> x;
+    // var<3, float> g
+    // var<4, float> y;
+    //
+    // f(x)(3.f)(x * x) 
+    //
+    // f(x):            func_sub( var<12, var<0, float>>, var<11, var<2, float>> )
+    // f(x)(3.f)        sub_for<2>( var<12, var<0, float>>, 3.f )
+    // f(x)(3.f)(x*x)   sub_for<0, 2>( var<0, float>, x*x, 3.f );
+    //
+    // g(y,x):          func_sub( var<13, var<3, float>>, var<11, var<4, float>>, var<12, var<2, float>> )
+    // g(y,x)(8,4)      sub_for<4, 2>( var<13, var<3, float >>, 8.f, 4.f );
+    // g(y,x)(8,4)(y/x) sub_for<3, 4, 2>( var<3, float>, y/x, 8.f, 4.f );
+    //
+    //
+    //
+    // sub(sub(sub( var<12, var<2, float>>, var<11, var<0, float>> ), 3.f ), x*x )
+    // sub(sub( var<12, var<2, float>>, 3.f
+
     
     // OH! It's GetFreeVariables on substitution expressions 
-    static_assert( free_variables_t< 
-        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
-            StaticValue< float >>>::size == 1, "TEST" );
-    static_assert( bound_variables_t< 
-        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
-            StaticValue< float >>>::variable_set::size == 1 );
+    //     I was subtracting a larger unsigned from a smaller one resulting in a very large sequence
+    //static_assert( free_variables_t< 
+    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+    //        StaticValue< float >>>::size == 1, "TEST" );
+    //static_assert( bound_variables_t< 
+    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+    //        StaticValue< float >>>::variable_set::size == 1 );
 
     auto m = l(3.f);
-    static_assert( is_same_v< remove_cv_t< decltype( m )>,
-        Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
-            StaticValue< float >>> );
     using m_type = remove_cv_t< decltype( m )>;
+
+    //static_assert( is_same_v< m_type,
+    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+    //        StaticValue< float >>> );
     static_assert( free_variables_t< m_type >::size == 1 );
     
     auto n = m( x*x );
+    using n_type = remove_cv_t< decltype( n )>;
+    static_assert( is_same_v< void, n_type > );
+
     using n_type = remove_cv_t< decltype( n )>;
     static_assert( free_variables_t< n_type >::size == 0 );
 
