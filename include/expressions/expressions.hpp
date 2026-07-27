@@ -3705,15 +3705,14 @@ struct ArgumentsBase: tuple< Args... >
     ///       expression.
     template< typename First, typename... Rest >
     requires( is_compatible_substitution_v< expression_type, First, Rest... > and
-        is_greater( free_variables_t< typename Substituter< expression_type, typename 
-            MakeExpression< First >::type, typename 
-                MakeExpression< Rest >::type... >::type >::size, 0 ))
-    constexpr typename Substituter< expression_type, typename MakeExpression< First >::type, 
-        typename MakeExpression< Rest >::type... >::type
+        is_greater( free_variables_t< typename Substituter< expression_type, 
+            make_expression_t< First >, make_expression_t< Rest >... >::type >::size, 0 ))
+    constexpr typename Substituter< expression_type, make_expression_t< First >, 
+        make_expression_t< Rest >... >::type
     operator ()( First first, Rest... rest ) const
     { 
-        using substituter_type = Substituter< expression_type, typename MakeExpression< First >::type, 
-            typename MakeExpression< Rest >::type... >;
+        using substituter_type = Substituter< expression_type, make_expression_t< First >, 
+            make_expression_t< Rest >... >;
 
 //        static_assert( not is_same_v< expression_type, 
 //            Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>> or
@@ -3727,15 +3726,15 @@ struct ArgumentsBase: tuple< Args... >
     /// @brief Substitution results in an expression with no free variables,
     /// Case:  no free variables remain so evaluate it and return the result
     template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< expression_type, typename MakeExpression< First >::type, 
-        typename MakeExpression< Rest >::type... > and
-            free_variables_t< typename Substituter< expression_type, typename MakeExpression< First >::type, 
-                typename MakeExpression< Rest >::type...>::type >::size == 0 )
+    requires( is_compatible_substitution_v< expression_type, make_expression_t< First >, 
+        make_expression_t< Rest >... > and free_variables_t< typename Substituter< 
+            expression_type, make_expression_t< First >, 
+                make_expression_t< Rest >...>::type >::size == 0 )
     constexpr result_t< expression_type >
     operator ()( First first, Rest... rest ) const
-    { return Substituter< expression_type, typename MakeExpression< First >::type, 
-        typename MakeExpression< Rest >::type... >::value(
-        expression(), make_expression( first ), make_expression( rest )... )(); }
+    { return Substituter< expression_type, make_expression_t< First >, 
+        make_expression_t< Rest >... >::value(
+            expression(), make_expression( first ), make_expression( rest )... )(); }
 
     constexpr ArgumentsBase( Args const&... args ): arguments_tuple( args... ) { }
     constexpr ArgumentsBase( ArgumentsBase const& ) = default;
@@ -3962,28 +3961,30 @@ struct Substitution< ExprT, Subs... >: std::tuple< ExprT, Subs... >
     operator ()( SubSubs... subsubs ) const
     { 
         static constexpr make_seq< sizeof...( Subs ) + sizeof...( SubSubs )> for_allsubs;
-
-        std::tuple< SubSubs... > subsubs_tup{ subsubs... };
+        
+        // sanitize the parameters
+        std::tuple< make_expression_t< SubSubs >... > subsubs_tup{ make_expression( subsubs )... };
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> result_type
-        { return Substitution< ExprT, Subs..., SubSubs... >{ 
-            formula(), SubElement< Is, SubSubs... >::value( subs(), subsubs_tup )... }(); };
+        { return Substitution< ExprT, Subs..., make_expression_t< SubSubs >... >{ 
+            formula(), SubElement< Is, make_expression_t< SubSubs >... >::value( subs(), subsubs_tup )... }(); };
 
         return helper( for_allsubs );
     }
 
     template< typename... SubSubs >
     requires( free_variables_t< typename Substituter< ExprT, Subs..., SubSubs... >::type >::size != 0 )
-    constexpr Substitution< ExprT, Subs..., SubSubs... >
+    constexpr Substitution< ExprT, Subs..., make_expression_t< SubSubs >... >
     operator ()( SubSubs... subsubs ) const
     {
         static constexpr make_seq< sizeof...( Subs ) + sizeof...( SubSubs )> for_allsubs;
 
-        std::tuple< SubSubs... > subsubs_tup{ subsubs... };
+        // sanitize the parameters
+        std::tuple< make_expression_t< SubSubs >... > subsubs_tup{ make_expression( subsubs )... };
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
-            Substitution< ExprT, Subs..., SubSubs... >
-        { return { formula(), SubElement< Is, SubSubs... >::value( subs(), subsubs_tup )... }; };
+            Substitution< ExprT, Subs..., make_expression_t< SubSubs >... >
+        { return { formula(), SubElement< Is, make_expression_t< SubSubs >... >::value( subs(), subsubs_tup )... }; };
 
         return helper( for_allsubs );
     }
