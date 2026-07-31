@@ -3,46 +3,47 @@
 #include "expressions/expressions.hpp"
 
 using test::ensure;
-using namespace expressions;
 
-struct SubstitutionTests
+namespace expressions {
+
+struct SubTests
 {
-    static constexpr Variable< 16, int > n;
-    static constexpr Variable< 0, float > x;
-    static constexpr Variable< 1, float > y;
-    static constexpr Variable< 2, float > z;
+    static constexpr Var< 16, int > n;
+    static constexpr Var< 0, float > x;
+    static constexpr Var< 1, float > y;
+    static constexpr Var< 2, float > z;
     static constexpr Constant< 0.f > zero;
     static constexpr Constant< 1.f > one;
     static constexpr Constant< (int)0 > zeroi;
 
-    static_assert( is_compatible_substitution_v< Variable< 0, float >, float >);
-    static_assert( is_compatible_substitution_v< tuple< float, Variable< 0, float >>, float >);
+    static_assert( is_compatible_substitution_v< Var< 0, float >, float >);
+    static_assert( is_compatible_substitution_v< tuple< float, Var< 0, float >>, float >);
 
 // TODO: these asserts began to fail-- maybe they are malformed given the work on second-order vars?
-//    static_assert( is_compatible_substitution_v<Substitution<expressions::Product<
-//        expressions::StaticValue<int>, expressions::Variable<0, float>>, 
+//    static_assert( is_compatible_substitution_v<Sub<expressions::Product<
+//        expressions::StaticValue<int>, expressions::Var<0, float>>, 
 //            expressions::Product<expressions::StaticValue<int>, 
-//                expressions::Variable<1, float>>>, float> );
+//                expressions::Var<1, float>>>, float> );
 //    static_assert( is_compatible_substitution_v<
 //        expressions::Product<expressions::StaticValue<int>, float>, 
-//            expressions::Product<expressions::StaticValue<int>, expressions::Variable<1, float>>> );
+//            expressions::Product<expressions::StaticValue<int>, expressions::Var<1, float>>> );
 //    static_assert( is_compatible_substitution_v<
 //        expressions::Product<expressions::StaticValue<float>, float>, 
 //            expressions::Product<expressions::StaticValue<float>, 
-//                expressions::Variable<1, float>>> );
+//                expressions::Var<1, float>>> );
 
     static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
     static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
     static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
-    static_assert(( substitute( 2*x, one )() == 2 ));
+    static_assert(( substitute( 2*x, one ) == 2 ));
     //static_assert(( substitute( 2*x, one ) | eval()) == 2 );
     //static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
 
     static_assert( is_same_v< std::remove_cv_t< decltype( 2.f * x )>,
-        Product< StaticValue< float >, Variable< 0, float >>> );
+        Product< StaticValue< float >, Var< 0, float >>> );
 
-    // DT: then when the above type is |eval(), Substitution::value is called which calls
-    //         substitute( Product< StaticValue< float >, Variable< 0, float >>{{ 3.f }, {}}, 2.f )
+    // DT: then when the above type is |eval(), Sub::value is called which calls
+    //         substitute( Product< StaticValue< float >, Var< 0, float >>{{ 3.f }, {}}, 2.f )
     //      which results in the expression
     //          Product< StaticValue< float >, float >{{ 3.f }, 2.f }
     //
@@ -55,48 +56,48 @@ struct SubstitutionTests
 
 bool test_eval() 
 {
-    Variable< 0, float > x;
+    Var< 0, float > x;
     Constant< 0.f > zero;
     Constant< 1.f > one;
 
     auto evaluator = eval();
 
-    Product< StaticValue< float >, Variable< 0, float >> prod{ 2.f, {} };
+    Product< StaticValue< float >, Var< 0, float >> prod{ 2.f, {} };
 
     std::println( "prod[0]: {}", get_argument< 0 >( prod ).get_value() );
 
-    using sub_t = Substitution< Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>;
+    using sub_t = Sub< Product< StaticValue< float >, Var< 0, float >>, Constant< 1.f >>;
 
     sub_t sub{ prod, Constant< 1.f >{} };
 
     std::println( "sub[0][0]: {}", get_argument< 0 >( get_argument< 0 >( sub )).get_value() );
 
     assert( (Applier< StaticValue< float >, Evaluator< void >>::value( StaticValue< float >{ 2.f }, evaluator )) == 2.f );
-    //assert( (sub_t::value( Product< StaticValue< float >, Variable< 0, float >>{{ 3.f }, {}}, 
+    //assert( (sub_t::value( Product< StaticValue< float >, Var< 0, float >>{{ 3.f }, {}}, 
     //    Constant< 1.f >{}) | eval()) == 3.f );
 
-//    std::println( "sub result: {}", ( Applier< Substitution< 
-//        Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
+//    std::println( "sub result: {}", ( Applier< Sub< 
+//        Product< StaticValue< float >, Var< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
 //            value({ prod, Constant< 1.f >{} }, evaluator )));
 
-//    assert(( Applier< Substitution< 
-//        Product< StaticValue< float >, Variable< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
+//    assert(( Applier< Sub< 
+//        Product< StaticValue< float >, Var< 0, float >>, Constant< 1.f >>, Evaluator< void >>::
 //            value({ prod, Constant< 1.f >{} }, evaluator )) == 2.f );
 
     static_assert( std::is_same_v< std::remove_cvref_t< decltype(
-        one * x )>, Product< Constant< 1.f >, Variable< 0, float >>> );
+        one * x )>, Product< Constant< 1.f >, Var< 0, float >>> );
     
-    static_assert( free_variables_t<Substitution< 
-        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>>::size == 0 );
-    static_assert( not non_expression<Substitution< 
-        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
-    static_assert( closed_expression<Substitution< 
-        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
+    static_assert( free_variables_t<Sub< 
+        Product< Constant< 1.f >, Var< 0, float >>, Constant< 1.f >>>::size == 0 );
+    static_assert( not non_expression<Sub< 
+        Product< Constant< 1.f >, Var< 0, float >>, Constant< 1.f >>> );
+    static_assert( closed_expression<Sub< 
+        Product< Constant< 1.f >, Var< 0, float >>, Constant< 1.f >>> );
 
-    static_assert( not open_expression<Substitution< 
-        Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>> );
-    //static_assert( std::is_same_v< typename Applier< Substitution< 
-    //    Product< Constant< 1.f >, Variable< 0, float >>, Constant< 1.f >>, 
+    static_assert( not open_expression<Sub< 
+        Product< Constant< 1.f >, Var< 0, float >>, Constant< 1.f >>> );
+    //static_assert( std::is_same_v< typename Applier< Sub< 
+    //    Product< Constant< 1.f >, Var< 0, float >>, Constant< 1.f >>, 
     //        Evaluator< void >>::type, float > );
 
 
@@ -117,8 +118,8 @@ bool test_basic()
 {
     auto in_scope = simple_scope( 3.f, 4.f );
     
-    Variable< 0, float > x;
-    Variable< 1, float > y;
+    Var< 0, float > x;
+    Var< 1, float > y;
 
     auto f = x + y;
     auto g = f( 2.f, 2.f );
@@ -134,9 +135,9 @@ bool test_basic()
 
 bool test_second_order()
 {
-    Variable< 0, float > x;
-    Variable< 1, float > y;
-    Variable< 2, float > f;
+    Var< 0, float > x;
+    Var< 1, float > y;
+    Var< 2, float > f;
     
     using std::println;
     using std::remove_cv_t;
@@ -175,26 +176,78 @@ bool test_second_order()
     // sub(sub( var<12, var<2, float>>, 3.f
 
     
-    // OH! It's GetFreeVariables on substitution expressions 
+    // OH! It's GetFreeVars on substitution expressions 
     //     I was subtracting a larger unsigned from a smaller one resulting in a very large sequence
     //static_assert( free_variables_t< 
-    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+    //    Sub< Sub< Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
     //        StaticValue< float >>>::size == 1, "TEST" );
     //static_assert( bound_variables_t< 
-    //    Substitution< Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>, 
+    //    Sub< Sub< Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
     //        StaticValue< float >>>::variable_set::size == 1 );
+
+    // DT: not sure if Func should be a compound expression or not...
+    static_assert( compound_expression< Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
+    //static_assert( is_same_v< remove_cv_t< decltype( l )>, 
+    //    Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
+    static_assert( is_same_v< remove_cv_t< decltype( l )>,
+        Var< 2, Func< Var< 2, float >, Var< 0, float >>> >);
+
+    using lt = remove_cv_t< decltype( l )>;
+
+    static_assert( is_same_v< free_variables_t< lt >, 
+        unique_variables< Var< 0, float >, Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
+
+    static_assert( open_expression< Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
+    static_assert( open_expression< Sub< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>> );
+    //static_assert( std::is_same_v< substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>, void > );
+    static_assert( requires{ typename substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>; } );
+    //static_assert( is_same_v< free_variables_t< Func< Var< 2, Var< 2, float >>, Var< 0, float >>>, void > );
 
     auto m = l(3.f);
     using m_type = remove_cv_t< decltype( m )>;
 
-    static_assert( is_same_v< m_type,
-        Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>, 
-            StaticValue< float >> > );
-    static_assert( free_variables_t< m_type >::size == 1 );
+    static_assert( is_same_v< m_type, Sub< lt, StaticValue< float >>> );
+    static_assert( is_same_v< free_variables_t< m_type >, unique_variables<
+        Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
+
+    static_assert( is_same_v< substitute_t< 
+        Sub< Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
+            StaticValue< float >>, 
+        Sub< Sub< 
+            Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
+                StaticValue< float >>> );
+
+    using func_type = Func< Var< 2, Var< 2, float >>, Var< 0, float >>;
+    using sub_type = Sub< func_type,  
+            StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>;
+
+    static_assert( is_same_v< free_variables_t< func_type >, 
+        unique_variables< Var< 0, float >, Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> );
+
+    static_assert( bound_variables_t< sub_type >::template IsDependent< 1, 0 >::value );
+
+    // failing here because now that I've included the raw variables in GetFreeVars the dependency logic
+    // is off
+    static_assert( is_same_v< typename bound_variables_t< sub_type >::binding_order_seq,
+            seq< 1, 0 >> );
+
+    using subber_type = Substituter< func_type, StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>;
+
+    static_assert( subber_type::variable_id_of< 1 > == 2 );
+    static_assert( is_same_v< typename PredicateSub< ForVar< 2 >::template Is, func_type, 
+        Product< Var< 0, float >, Var< 0, float >>>::type, 
+            Func< Product< Var< 0, float >, Var< 0, float >>, Var< 0, float >> > );
+   
+    // this almost works. we should check the specialization of substitute_t for functions
+    static_assert( is_same_v< substitute_t<
+        Func< Var< 2, Var< 2, float >>, Var< 0, float >>, 
+            StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>, 
+                float >);
+        
     
     auto n = m( x*x );
     using n_type = remove_cv_t< decltype( n )>;
-    //static_assert( is_same_v< void, n_type > );
+    static_assert( is_same_v< n_type, float > );
 
     static_assert( free_variables_t< n_type >::size == 0 );
 
@@ -203,135 +256,18 @@ bool test_second_order()
     println( "f(x)(3.f)(x*x) == {}", n );
     
 
-    // this goes into an infinite compiler loop
-    // so it's something in the unmatched compound expression case of the PredicateSubstitution
-    //println( "substitute_for( l(3.f), f, x*x ) = {}", substitute_for( l(3.f), f, x*x ));
-    
-
-    //static_assert( compound_expression<Product< Variable< 1, float >, Variable< 1, float >>> );
-    //static_assert( std::is_same_v< free_variables_t< Product< Variable< 1, float >, Variable< 1, float >>>,
-    //    unique_variables< Variable< 1, float >>> ); 
-    //static_assert( expressions::detail::IsCompatibleSubstitutionHelper< unique_variables< Variable< 1, float >>, tuple< Variable< 1, float >>>::value );
-
-    //static_assert( expressions::detail::IsCompatibleSubstitution< Product< Variable< 1, float >, Variable< 1, float >>, 
-    //    Variable< 1, float >>::value ); 
-    //static_assert( expressions::detail::IsCompatibleVariableSubstitution< 
-    //    Variable< 0, Substitution< Variable<0, float>, Variable<1, float>>>, 
-    //        Product< Variable< 1, float >, Variable< 1, float >>>::value ); 
-    //static_assert( is_compatible_substitution_v< 
-    //    Substitution< Variable< 0, Variable< 0, float >>, Variable< 1, float >>, 
-    //        Product< Variable< 1, float >, Variable< 1, float >>, float >);
-
-//    static_assert( is_same_v< std::remove_cv_t< decltype( g( x * x ))>,
-//        Substitution< Substitution< Variable< 0, Variable< 0, float >>, Variable< 1, float >>,
-//            Product< Variable< 1, float >, Variable< 1, float >>>> );
-//
-//    assert(( g( x * x, 3.f ) | eval() ) == 9.f );
-//    assert(( g( 3.f, x * x ) | eval() ) == 9.f );
-
-//    static_assert( is_same_v< void, decltype( g )>, "g typename" );
-//    static_assert( is_same_v< void, decltype( g( 3.f ) )>, "typename" );
-//    std::println( "g( 3.f ) == {}", g( 3.f ) | eval() );
-//
-
-
-    // Can we distinguish between a variable sub with a single variable, and a swap of one var
-    // for another?
-    // f(x);
-    // ( x + 0 )( y );
-    //
-    static_assert( std::is_same_v< free_variables_t<
-        Substitution< 
-            Variable<12, Variable<2, float>>, 
-                Variable<11, Variable<0, float>>>>,
-        unique_variables<
-            Variable<  0, float >,
-            Variable< 12, Substitution< Variable< 2, float >, Variable< 0, float >>>>
-    > );
-
-    // DT: We are close to this.  The current problem is that the substitution order matters.
-    //     We likely need to build a topographical sort.  Or we could remove any of the variables
-    //     that were bound during this instance of Substitution...
-    static_assert( std::is_same_v< unique_variables< >, free_variables_t<
-        Substitution<
-            Substitution< Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, 
-        float, 
-        Product<Variable<0, float>, Variable<0, float>>> 
-    >> );
-
-    // this succeeeds
-    static_assert( std::is_same_v< Applier< 
-        Substitution<
-            Substitution< Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, 
-        float, 
-        Product<Variable<0, float>, Variable<0, float>>>, 
-     Evaluator< void >>::type, float >, "g(3.f)(x*x) is a float" );
-
-    Evaluator< void > ev;
-    std::println( "g(3.f)( x*x ) = {}",Applier< Substitution<
-            Substitution< Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, 
-        float, 
-        Product<Variable<0, float>, Variable<0, float>>>, 
-     Evaluator< void >>::value( {{{ "f" }, { "x" }}, 3.f, {{ "x" }, { "x" }}}, ev ));
-
-//    static_assert( 
-//        Applier< Substitution<
-//            Substitution< Variable<12, Variable<2, float>>, Variable<11, Variable<0, float>>>, 
-//        float, 
-//        Product<Variable<0, float>, Variable<0, float>>>, 
-//     Evaluator< void >>::value( {{{ "f" }, { "x" }}, 3.f, {{ "x" }, { "x" }}}, ev ) == 9.f );
-
-    
-
-    //static_assert( std::is_same_v< void, free_variables_t<
-    //    Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>> );
-
-//    static_assert( std::is_same_v< typename Evaluator< void >::Helper<
-//        Substitution< Variable< 12, Variable< 2, float >>, Variable< 11, Variable< 0, float >>>>::type,
-//        void > );
-
     auto g = f(x);
-
-    //auto h = substitute_for( f(x), f, x * x );
-
-    //static_assert( std::is_same_v< std::remove_cv_t< decltype( h )>, void > );
-//    static_assert( std::is_same_v< std::remove_cv_t< decltype( g )>, void > );
-
-    //std::println("h(3.f) = {}", h(3.f));
-    
-    // DT: this and the below goes into an infinite compiler loop.
-    //     It seems the evaluator's recursion is broken.
-//    auto h = g(3.f)( x*x );
-  
-//    std::println( "g( 3.f )( x * x ) == {}", g( 3.f )( x*x ) | eval() );
-    //static_assert( std::is_same_v< decltype( g( 3.f,  x * x )), void >, "TEST" );
-//    std::println( "g( 3.f, x * x ) == {}", g( 3.f, x * x ) | eval() );
-//    assert(( g( 3.f,  x * x ) | eval() ) == 9.f );
-//    assert(( ( 3.f * x )( 2.f ) | eval() ) == 6.f );
-//    assert(( ( 2.f * y )( ( 3.f * x )( 2.f ) ) | eval() ) == 12.f );
-//    assert(( ( 2.f * y )( 3.f * x )( 2.f ) | eval() ) == 12.f );
-//
-//    auto h = ( 3.f * x )( 2.f * y );
-//    
-//    static_assert( std::is_same_v< std::remove_cv_t< decltype( h )>,
-//        Substitution< Product< StaticValue< float >, Variable< 0, float >>,
-//            Product< StaticValue< float >, Variable< 1, float >>>> );
-//
-//    std::println( "h( 2.f ) == {}", h( 2.f ) | eval() );
-//    assert(( h( 2.f ) | eval() ) == 12.f );
-//
-//    std::println( "( 3.f*x )( 2.f*y )( 2.f ) == {}", ( 3.f*x )( 2.f*y )( 2.f ) | eval() );
-//    assert(( ( 3.f*x )( 2.f*y )( 2.f ) | eval()) == 12 );
-//    assert(( ( 3.f*x( 2.f ))( 2.f*y ) | eval()) == 12 );
 
     return true;
 }
 
+} // namespace expressions
+
 int main( int ac, char* av[] )
 {
-    ensure( test_basic, "basic substitutions" );
-    ensure( test_eval, "evaluation" );
-    ensure( test_second_order, "second_order" );
+    ensure( expressions::test_basic, "basic substitutions" );
+    ensure( expressions::test_eval, "evaluation" );
+    ensure( expressions::test_second_order, "second_order" );
 
     return EXIT_SUCCESS;
 }
