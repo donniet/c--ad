@@ -73,10 +73,6 @@ using namespace normalization;
 ///
 ///
 
-template< typename T >
-concept static_expression = expression< T > and
-    free_variables_t< T >::size == 0;
-
 /// @brief specializations of this template find values of the dependent
 /// variables of ExprT which result in a true-like value for the 
 /// expression.  Not all expressions are solvable, so we do not expect 
@@ -208,7 +204,7 @@ struct SolverParams: expression_scope_t< VarTuple >
         auto scope = make_scope< ExprT >();
         auto solve_ = Solver< ExprT >{ expr };
 
-        //static_assert( not is_same_v< ExprT, Variable< 0, bool >>, "debug" );
+        //static_assert( not is_same_v< ExprT, Var< 0, bool >>, "debug" );
 
         // helper that calls our solver with our scope and parameters
         auto helper = [&]< size_t... Is >( Solver< ExprT >& solve_func, seq< Is... > ) constexpr
@@ -339,10 +335,10 @@ private:
 /// 
 /// @brief solver for a boolean variable 
 template< size_t I >
-struct Solver< Variable< I, bool >>
+struct Solver< Var< I, bool >>
 {
-    using expression_type = Variable< I, bool >;
-    using variable_type = Variable< I, bool >;
+    using expression_type = Var< I, bool >;
+    using variable_type = Var< I, bool >;
     using result_type = bool;
     static constexpr bool is_solvable() { return true; }
 
@@ -364,11 +360,11 @@ private:
 
 
 template< size_t I, typename T, static_expression ExprT >
-struct Solver< Equals< Variable< I, T >, ExprT >> 
+struct Solver< Equals< Var< I, T >, ExprT >> 
 {
-    using expression_type = Equals< Variable< I, T >, ExprT >;
+    using expression_type = Equals< Var< I, T >, ExprT >;
     using result_type = result_t< expression_type >;
-    using variable_type = Variable< I, T >;
+    using variable_type = Var< I, T >;
     using right_expression_type = ExprT;
     static constexpr bool is_solvable() { return true; }
 
@@ -449,7 +445,6 @@ struct positive
 ///     A >  B, not A <= B, A >= B, not A <  B,
 ///
 /// Equals and Not Equals
-///
 template< size_t I, expression ExprT >
 struct ComparisonCanonicalizer
 { 
@@ -483,7 +478,7 @@ struct ComparisonCanonicalizer< I, Compliment< NotEquals< LeftT, RightT >>>:
 template< size_t I, expression LeftT, expression RightT >
 struct ComparisonCanonicalizer< I, NotEquals< LeftT, RightT >>
 {
-    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+    using positive_variable = Var< I, positive< result_t< LeftT >>>;
 
     using type = Disjunction<
         EqualsZero< Difference< Sum< LeftT, positive_variable >, RightT >>,
@@ -513,7 +508,7 @@ struct ComparisonCanonicalizer< I, Compliment< Equals< LeftT, RightT >>>:
 template< size_t I, expression LeftT, expression RightT >
 struct ComparisonCanonicalizer< I, LessThan< LeftT, RightT >>
 {
-    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+    using positive_variable = Var< I, positive< result_t< LeftT >>>;
 
     using type = EqualsZero< Difference< Sum< LeftT, positive_variable >, RightT >>;
 
@@ -537,7 +532,7 @@ struct ComparisonCanonicalizer< I, Compliment< GreaterThanOrEquals< LeftT, Right
 template< size_t I, expression LeftT, expression RightT >
 struct ComparisonCanonicalizer< I, GreaterThan< LeftT, RightT >>
 {
-    using positive_variable = Variable< I, positive< result_t< LeftT >>>;
+    using positive_variable = Var< I, positive< result_t< LeftT >>>;
 
     using type = EqualsZero< Difference< LeftT, Sum< RightT, positive_variable >>>;
 
@@ -563,7 +558,7 @@ struct ComparisonCanonicalizer< I, Compliment< LessThanOrEquals< A, B >>>:
 template< size_t I, expression A, expression B >
 struct ComparisonCanonicalizer< I, LessThanOrEquals< A, B >>
 {
-    using positive_variable = Variable< I, positive< result_t< A >>>;
+    using positive_variable = Var< I, positive< result_t< A >>>;
 
     using type = Disjunction<
         EqualsZero< Difference< Sum< A, positive_variable >, B >>,
@@ -591,7 +586,7 @@ struct ComparisonCanonicalizer< I, Compliment< GreaterThan< A, B >>>:
 template< size_t I, expression A, expression B >
 struct ComparisonCanonicalizer< I, GreaterThanOrEquals< A, B >>
 {
-    using positive_variable = Variable< I, positive< result_t< B >>>;
+    using positive_variable = Var< I, positive< result_t< B >>>;
 
     using type = Disjunction< 
         EqualsZero< Difference< A, Sum< B, positive_variable >>>,
@@ -620,7 +615,7 @@ constexpr auto canonical_comparison( ExprT const& expr )
 { 
     using dependent_vars_tuple = free_variables_t< ExprT >;
 
-    static constexpr size_t first_variable_id = next_variable_id_v< ExprT >;
+    static constexpr size_t first_variable_id = next_var_id_v< ExprT >;
 
     return ComparisonCanonicalizer< first_variable_id, ExprT >::value( expr );
 }
@@ -664,7 +659,7 @@ struct IsLinear< ExprT >: integral_constant< bool, true > { };
 
 /// Variables are linear
 template< size_t I, typename T >
-struct IsLinear< Variable< I, T >>: integral_constant< bool, true > { };
+struct IsLinear< Var< I, T >>: integral_constant< bool, true > { };
 
 /// Sums of linear expressions are also linear
 template< typename... Ts >
@@ -815,16 +810,20 @@ struct NonHomogeneousTerm
     { return Helper< variables >::value( expr ); }
 };
 
+} // namespace detail
+
 template< variable Var, typename ExprT >
-requires( IsLinear< ExprT >::value )
-constexpr typename ScalarOf< Var, ExprT >::type 
+requires( detail::IsLinear< ExprT >::value )
+constexpr typename detail::ScalarOf< Var, ExprT >::type 
 scalar_of( ExprT const& expr, Var = {} )
-{ return ScalarOf< Var, ExprT >::value( expr ); }
+{ return detail::ScalarOf< Var, ExprT >::value( expr ); }
 
 template< typename ExprT >
-constexpr typename NonHomogeneousTerm< ExprT >::type
+constexpr typename detail::NonHomogeneousTerm< ExprT >::type
 non_homogeneous_term_of( ExprT const& expr )
-{ return NonHomogeneousTerm< ExprT >::value( expr ); }
+{ return detail::NonHomogeneousTerm< ExprT >::value( expr ); }
+
+namespace detail {
 
 /// A zero or one power of a linear equation is linear
 /// NOTE: sqrt( pow< 2 >( x )) is not considered linear because 
@@ -1144,11 +1143,11 @@ struct Solver< ExprT >:
 /// @brief the simplest solvers
 //template< size_t I, typename T, static_expression ExprT >
 //requires( is_convertible_v< result_t< ExprT >, T > )
-//struct Solver< Equals< Variable< I, T >, ExprT >>:
-//    Scope< Variable< I, T >>
+//struct Solver< Equals< Var< I, T >, ExprT >>:
+//    Scope< Var< I, T >>
 //{
 //    using right_expression_type = ExprT;
-//    using variable_type = Variable< I, T >;
+//    using variable_type = Var< I, T >;
 //    using expression_type = Equals< variable_type, right_expression_type >;
 //    using scope_type = Scope< variable_type >;
 //
@@ -1166,7 +1165,7 @@ struct Solver< ExprT >:
 //
 //    // the solution is trivial here
 //    constexpr Solver( expression_type const& expr = {} ): scope_type{ }, _equal_to{ expr.right_arg() }
-//    { scope_type::template set_value< Variable< I, T >>( 
+//    { scope_type::template set_value< Var< I, T >>( 
 //        scope_type::operator ()( _equal_to )); }
 //
 //private:
@@ -1205,11 +1204,11 @@ struct Solver< Equals< Negation< Var >, ExprT >>:
 template< size_t I, typename T, static_expression... Addends, 
     static_expression ExprT >
 requires( is_greater( sizeof...( Addends ), 1 ))
-struct Solver< Equals< Sum< Variable< I, T >, Addends... >, ExprT >>:
-    Solver< Equals< Variable< I, T >, Difference< ExprT, Sum< Addends... >>>>
+struct Solver< Equals< Sum< Var< I, T >, Addends... >, ExprT >>:
+    Solver< Equals< Var< I, T >, Difference< ExprT, Sum< Addends... >>>>
 {
-    using expression_type = Equals< Sum< Variable< I, T >, Addends... >, ExprT >;
-    using solver_expression_type = Equals< Variable< I, T >, Difference< ExprT, Sum< Addends... >>>;
+    using expression_type = Equals< Sum< Var< I, T >, Addends... >, ExprT >;
+    using solver_expression_type = Equals< Var< I, T >, Difference< ExprT, Sum< Addends... >>>;
     using base_solver = Solver< solver_expression_type >;
 
     static constexpr solver_expression_type 
@@ -1229,11 +1228,11 @@ struct Solver< Equals< Sum< Variable< I, T >, Addends... >, ExprT >>:
 
 template< size_t I, typename T, static_expression AddendT, 
     static_expression ExprT >
-struct Solver< Equals< Sum< Variable< I, T >, AddendT >, ExprT >>:
-    Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>
+struct Solver< Equals< Sum< Var< I, T >, AddendT >, ExprT >>:
+    Solver< Equals< Var< I, T >, Difference< ExprT, AddendT >>>
 { 
-    using expression_type = Equals< Sum< Variable< I, T >, AddendT >, ExprT >;
-    using base_solver = Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>;
+    using expression_type = Equals< Sum< Var< I, T >, AddendT >, ExprT >;
+    using base_solver = Solver< Equals< Var< I, T >, Difference< ExprT, AddendT >>>;
 
     constexpr Solver( expression_type const& expr = {} ):
         base_solver{{ expr.left_arg().left_arg(), { expr.right_arg(), expr.left_arg().right_arg() }}}
@@ -1242,11 +1241,11 @@ struct Solver< Equals< Sum< Variable< I, T >, AddendT >, ExprT >>:
 
 template< size_t I, typename T, static_expression AddendT,
     static_expression ExprT >
-struct Solver< Equals< Sum< AddendT, Variable< I, T >>, ExprT >>:
-    Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>
+struct Solver< Equals< Sum< AddendT, Var< I, T >>, ExprT >>:
+    Solver< Equals< Var< I, T >, Difference< ExprT, AddendT >>>
 { 
-    using expression_type = Equals< Sum< AddendT, Variable< I, T >>, ExprT >;
-    using base_solver = Solver< Equals< Variable< I, T >, Difference< ExprT, AddendT >>>;
+    using expression_type = Equals< Sum< AddendT, Var< I, T >>, ExprT >;
+    using base_solver = Solver< Equals< Var< I, T >, Difference< ExprT, AddendT >>>;
 
     constexpr Solver( expression_type const& expr = {} ):
         base_solver{{ expr.left_arg().left_arg(), { expr.right_arg(), expr.left_arg().right_arg() }}}
@@ -1256,11 +1255,11 @@ struct Solver< Equals< Sum< AddendT, Variable< I, T >>, ExprT >>:
 template< size_t I, typename T, static_expression AddendT,
     static_expression... Addends, static_expression ExprT >
 requires( is_greater( sizeof...( Addends ), 0 ))
-struct Solver< Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >>:
-    Solver< Equals< Sum< Variable< I, T >, Addends... >, Difference< ExprT, AddendT >>>
+struct Solver< Equals< Sum< AddendT, Var< I, T >, Addends... >, ExprT >>:
+    Solver< Equals< Sum< Var< I, T >, Addends... >, Difference< ExprT, AddendT >>>
 { 
-    using expression_type = Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >;
-    using solver_expression_type = Equals< Sum< Variable< I, T >, Addends... >, Difference< ExprT, AddendT >>;
+    using expression_type = Equals< Sum< AddendT, Var< I, T >, Addends... >, ExprT >;
+    using solver_expression_type = Equals< Sum< Var< I, T >, Addends... >, Difference< ExprT, AddendT >>;
     using base_solver = Solver< solver_expression_type >;
 
     constexpr static solver_expression_type 
@@ -1282,11 +1281,11 @@ struct Solver< Equals< Sum< AddendT, Variable< I, T >, Addends... >, ExprT >>:
 template< size_t I, typename T, static_expression... Subends, 
     static_expression ExprT >
 requires( is_greater( sizeof...( Subends ), 1 ))
-struct Solver< Equals< Difference< Variable< I, T >, Subends... >, ExprT >>:
-    Solver< Equals< Variable< I, T >, Sum< ExprT, Difference< Subends... >>>>
+struct Solver< Equals< Difference< Var< I, T >, Subends... >, ExprT >>:
+    Solver< Equals< Var< I, T >, Sum< ExprT, Difference< Subends... >>>>
 { 
-    using expression_type = Equals< Difference< Variable< I, T >, Subends... >, ExprT >;
-    using solver_expression_type = Equals< Variable< I, T >, Sum< ExprT, Difference< Subends... >>>;
+    using expression_type = Equals< Difference< Var< I, T >, Subends... >, ExprT >;
+    using solver_expression_type = Equals< Var< I, T >, Sum< ExprT, Difference< Subends... >>>;
     using base_solver = Solver< solver_expression_type >;
 
     constexpr static solver_expression_type
@@ -1306,11 +1305,11 @@ struct Solver< Equals< Difference< Variable< I, T >, Subends... >, ExprT >>:
 
 template< size_t I, typename T, static_expression SubendT, 
     static_expression ExprT >
-struct Solver< Equals< Difference< Variable< I, T >, SubendT >, ExprT >>:
-    Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>
+struct Solver< Equals< Difference< Var< I, T >, SubendT >, ExprT >>:
+    Solver< Equals< Var< I, T >, Sum< ExprT, SubendT >>>
 { 
-    using expression_type = Equals< Difference< Variable< I, T >, SubendT >, ExprT >;
-    using base_solver = Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>;
+    using expression_type = Equals< Difference< Var< I, T >, SubendT >, ExprT >;
+    using base_solver = Solver< Equals< Var< I, T >, Sum< ExprT, SubendT >>>;
 
     constexpr Solver( expression_type const& expr = {} ):
         base_solver{{ expr.left_arg().expr.left_arg(), { expr.right_arg(), expr.left_arg().expr.right_arg() }}}
@@ -1319,11 +1318,11 @@ struct Solver< Equals< Difference< Variable< I, T >, SubendT >, ExprT >>:
 
 template< size_t I, typename T, static_expression SubendT,
     static_expression ExprT >
-struct Solver< Equals< Difference< SubendT, Variable< I, T >>, ExprT >>:
-    Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>
+struct Solver< Equals< Difference< SubendT, Var< I, T >>, ExprT >>:
+    Solver< Equals< Var< I, T >, Sum< ExprT, SubendT >>>
 { 
-    using expression_type = Equals< Difference< SubendT, Variable< I, T >>, ExprT >;
-    using base_solver = Solver< Equals< Variable< I, T >, Sum< ExprT, SubendT >>>;
+    using expression_type = Equals< Difference< SubendT, Var< I, T >>, ExprT >;
+    using base_solver = Solver< Equals< Var< I, T >, Sum< ExprT, SubendT >>>;
 
     constexpr Solver( expression_type const& expr = {} ):
         base_solver{{ expr.left_arg().expr.right_arg(), { expr.right_arg(), expr.left_arg().expr.left_arg() }}}
@@ -1333,11 +1332,11 @@ struct Solver< Equals< Difference< SubendT, Variable< I, T >>, ExprT >>:
 template< size_t I, typename T, static_expression SubendT,
     static_expression... Subends, static_expression ExprT >
 requires( is_greater( sizeof...( Subends ), 0 ))
-struct Solver< Equals< Difference< SubendT, Variable< I, T >, Subends... >, ExprT >>:
-    Solver< Equals< Difference< Variable< I, T >, Subends... >, Difference< SubendT, ExprT >>>
+struct Solver< Equals< Difference< SubendT, Var< I, T >, Subends... >, ExprT >>:
+    Solver< Equals< Difference< Var< I, T >, Subends... >, Difference< SubendT, ExprT >>>
 { 
-    using expression_type = Equals< Difference< SubendT, Variable< I, T >, Subends... >, ExprT >;
-    using solver_expression_type = Solver< Equals< Difference< Variable< I, T >, Subends... >, Difference< SubendT, ExprT >>>;
+    using expression_type = Equals< Difference< SubendT, Var< I, T >, Subends... >, ExprT >;
+    using solver_expression_type = Solver< Equals< Difference< Var< I, T >, Subends... >, Difference< SubendT, ExprT >>>;
     using base_solver = Solver< solver_expression_type >;
 
     constexpr static solver_expression_type
@@ -1458,6 +1457,10 @@ struct SequenceSolver
 template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
 struct Iteration;
 
+template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
+struct IsExpression< Iteration< UntilE, UpdatesTuple, VariablesTuple >>: 
+    std::true_type { };
+
 /// @brief Helper class to complete the building of an Iteration expression
 template< typename UpdatesTuple, typename VariablesTuple >
 struct IterationUpdater;
@@ -1482,7 +1485,7 @@ iteration( Vars... );
 template< variable... Vars >
 struct IterationInitializer
 {
-    IterationInitializer& initial_values( typename Vars::result_type... inits )
+    IterationInitializer& initial_values( result_t< Vars >... inits )
     { 
         _inits = make_tuple( inits... ); 
         return *this;
@@ -1495,7 +1498,7 @@ struct IterationInitializer
     IterationInitializer( Vars... vars ): _vars{ vars... } { }
 
     tuple< Vars... > _vars;
-    tuple< typename Vars::result_type... > _inits;
+    tuple< result_t< Vars >... > _inits;
 };
 
 template< expression... Updates, variable... Vars >
@@ -1523,8 +1526,7 @@ IterationInitializer< Vars... >::update(
 { return { *this, updates... }; }
 
 template< expression UntilE, expression... Updates, variable... Vars >
-struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>: 
-    detail::ExpressionTag 
+struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> 
 {
     using argument_types = tuple< UntilE, Updates..., Vars... >;
     using result_type = tuple< result_t< Vars >... >;
@@ -1541,7 +1543,7 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>:
     constexpr variables_tuple vars() const { return _vars; }
 
     template< size_t Is >
-    constexpr typename Vars...[ Is ]::result_type const&
+    constexpr result_t< Vars...[ Is ]> const&
     initial_value() const
     { return std::get< Is >( _inits ); }
 
@@ -1602,14 +1604,14 @@ struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >>:
 
     constexpr Iteration() = default;
     constexpr Iteration( UntilE until_expr, tuple< Updates... > updates, 
-        tuple< Vars... > vars, tuple< typename Vars::result_type... > inits ): 
+        tuple< Vars... > vars, tuple< result_t< Vars >... > inits ): 
             _until_expr{ until_expr }, _updates{ updates }, 
             _vars{ vars }, _inits{ inits } { }
 
     UntilE _until_expr;
     tuple< Updates... > _updates;
     tuple< Vars... > _vars;
-    tuple< typename Vars::result_type... > _inits;
+    tuple< result_t< Vars >... > _inits;
 };
 
 template< expression... Updates, variable... Vars >

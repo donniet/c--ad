@@ -52,6 +52,47 @@ struct SubTests
     static_assert(( ( 2.f * one + zero ) | eval()) == 2.f );
     static_assert(( ( 2.f * one + 3.f ) | eval()) == 5.f );
     static_assert(( ( 3.f * one + one ) | eval()) == 4.f );
+
+    static_assert( compound_expression< Sum< Var< 0, int >, Var< 1, int >>> );
+    static_assert( is_same_v< free_variables_t< Sum< Var< 0, int >, Var< 1, int >>>,
+        unique_variables< Var< 0, int >, Var< 1, int >>> ); 
+    static_assert( free_variables_t< Sum< Var< 0, int >, Var< 1, int >>>::size == 2 );
+    static_assert( requires { typename ForExpression< Sum< Var< 0, int >, Var< 1, int >>>; } );
+    static_assert( is_compatible_substitution_v< Product< StaticValue< int >, Var< 0, float >>, float >,
+       "FAILURE: substitution into product" );
+    
+    static_assert( ForExpression< Var< 0, int >>::template 
+        Is< Constant< 5 >>::value );
+    //static_assert( not ForExpression< Var< 0, int >>::template 
+    //    Is< Constant< units::Length{ 5 }>>::value );
+    
+    static_assert( ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::
+        template Is< Sum< Constant< 5 >, Constant< 6 >>>::value, 
+            "FAILED: <int> + <int> =matches=> 5 + 6" );
+    
+    //static_assert( not ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::template Is<
+    //    Sum< Constant< units::Length{ 5 } >, Constant< units::Length{ 6 } >>>::value, 
+    //        "FAILED: <int> + <int> =not-matches=> 5m + 6m" );
+    
+    static_assert( not ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::template Is<
+        Difference< Constant< 5 >, Constant< 6 >>>::value,
+            "FAILED: <int> + <int> =not-matches=> 5 - 6" );
+    
+    static_assert( ForExpression< Sum< Var< 0, int >, Var< 0, int >>>::template Is<
+        Sum< Constant< 5 >, Constant< 5 >>>::value, 
+            "FAILED: <int[0]> + <int[0]> =matches=> 5 + 5" );
+    
+    static_assert( not ForExpression< Sum< Var< 0, int >, Var< 0, int >>>::template Is<
+        Sum< Constant< 5 >, Constant< 7 >>>::value, 
+            "FAILED: <int[0]> + <int[0]> =not-matches=> 5 + 7" );
+    
+    static_assert( is_same_v< tuple_element_t< 0, typename ForExpression< 
+        Sum< Var< 0, int >, Var< 0, int >>>::template Is<
+            Sum< Constant< 5 >, Constant< 5 >>>::matches_type >, 
+                match< Var< 0, int >, Constant< 5 >>> );
+    
+
+    
 };
 
 bool test_eval() 
@@ -198,6 +239,9 @@ bool test_second_order()
         unique_variables< Var< 0, float >, Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
 
     static_assert( open_expression< Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
+    static_assert( is_same_v< free_variables_t< 
+        Sub< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>>,
+            unique_variables< Var< 2, Func< Var< 2, float >, Var< 0, float >>>> > );
     static_assert( open_expression< Sub< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>> );
     //static_assert( std::is_same_v< substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>, void > );
     static_assert( requires{ typename substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>; } );
@@ -209,13 +253,6 @@ bool test_second_order()
     static_assert( is_same_v< m_type, Sub< lt, StaticValue< float >>> );
     static_assert( is_same_v< free_variables_t< m_type >, unique_variables<
         Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
-
-    static_assert( is_same_v< substitute_t< 
-        Sub< Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
-            StaticValue< float >>, 
-        Sub< Sub< 
-            Var< 12, Var< 2, float >>, Var< 11, Var< 0, float >>>, 
-                StaticValue< float >>> );
 
     using func_type = Func< Var< 2, Var< 2, float >>, Var< 0, float >>;
     using sub_type = Sub< func_type,  

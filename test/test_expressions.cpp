@@ -13,35 +13,37 @@
 #include <stdexcept>
 #include <stdlib.h>
 
+using namespace expressions;
+
 namespace test {
 
-static_assert( is_same_v< unique_variables< Variable< 0, int >>, 
-    free_variables_t< Variable< 0, int >>> );
-static_assert( is_same_v< unique_variables< Variable< 0, int >, Variable< 1, int >>, 
-    free_variables_t< tuple< Variable< 0, int >, Variable< 1, int >>>> );
-static_assert( is_same_v< unique_variables< Variable< 0, int >, Variable< 1, int >>, 
-    free_variables_t< tuple< Variable< 1, int >, Variable< 0, int >>>> );
-static_assert( is_same_v< unique_variables< Variable< 0, int >>, 
-    free_variables_t< tuple< Variable< 0, int >, Variable< 0, int >>>> );
-static_assert( is_same_v< unique_variables< Variable< 1, int >>, 
-    free_variables_t< tuple< Variable< 1, int >, Variable< 1, int >>>> );
+static_assert( is_same_v< unique_variables< Var< 0, int >>, 
+    free_variables_t< Var< 0, int >>> );
+static_assert( is_same_v< unique_variables< Var< 0, int >, Var< 1, int >>, 
+    free_variables_t< tuple< Var< 0, int >, Var< 1, int >>>> );
+static_assert( is_same_v< unique_variables< Var< 0, int >, Var< 1, int >>, 
+    free_variables_t< tuple< Var< 1, int >, Var< 0, int >>>> );
+static_assert( is_same_v< unique_variables< Var< 0, int >>, 
+    free_variables_t< tuple< Var< 0, int >, Var< 0, int >>>> );
+static_assert( is_same_v< unique_variables< Var< 1, int >>, 
+    free_variables_t< tuple< Var< 1, int >, Var< 1, int >>>> );
 
 // tests for higher-order variables
 //
 // 1 free second order variable of type int
-//static_assert( is_same_v< unique_variables< Variable< 0, Variable< 0, int >>>,
-//    free_variables_t< Variable< 0, Variable< 0, int >>>> );
+//static_assert( is_same_v< unique_variables< Var< 0, Var< 0, int >>>,
+//    free_variables_t< Var< 0, Var< 0, int >>>> );
 ////
 //// 1 free second order variable from a tuple of variables
-//static_assert( is_same_v< unique_variables< Variable< 0, Variable< 0, int >>>,
-//    free_variables_t< tuple< Variable< 0, Variable< 0, int >>>>> );
+//static_assert( is_same_v< unique_variables< Var< 0, Var< 0, int >>>,
+//    free_variables_t< tuple< Var< 0, Var< 0, int >>>>> );
 //
 // A constant will be substituted into an expression substituted into variable 0
-static_assert( next_variable_id_v< Variable< 0, int >> == 1 );
-static_assert( next_variable_id_v< Variable< 1, int >> == 2 );
-static_assert( next_variable_id_v< Variable< 2, Variable< 2, int >>> == 3 );
+static_assert( next_var_id_v< Var< 0, int >> == 1 );
+static_assert( next_var_id_v< Var< 1, int >> == 2 );
+static_assert( next_var_id_v< Var< 2, Var< 2, int >>> == 3 );
 
-static_assert( next_variable_id_v< tuple< Variable< 0, int >, Variable< 1, int >>> == 2 );
+static_assert( next_var_id_v< tuple< Var< 0, int >, Var< 1, int >>> == 2 );
 
 } // namespace test
 
@@ -191,9 +193,9 @@ bool test_simple_expressions()
 
 constexpr bool test_dependent_vars()
 {
-    Variable< 0, int > x;
-    Variable< 1, int > y;
-    Variable< 2, int > z;
+    Var< 0, int > x;
+    Var< 1, int > y;
+    Var< 2, int > z;
 
     return true; 
 }
@@ -252,13 +254,13 @@ bool test_minimization()
     auto [ n, x, w, z ] = vars.variables();
 
     // parabola
-    auto para = ( pow< 2 >( x - 2 ) + 3 );
+    auto para = ( ( x - 2 ) * ( x - 2 ) + 3 );
 
     auto x0 = argmin( para, x );
 
 
     // paraboloid
-    auto para2 = ( pow< 2 >( w - 2_ft ) + pow< 2 >( z - 3_ft ) + 3_ft * 1_ft );
+    auto para2 = ( ( w - 2_ft ) * ( w - 2_ft ) + ( z - 3_ft ) * ( z - 3_ft ) + 3_ft * 1_ft );
 
     //assert( para2( 2_ft, 3_ft ) == 3_ft * 1_ft );
 
@@ -309,9 +311,9 @@ constexpr auto count_expressions( ExprT const& expr )
 
 struct PreOrderVisitTests 
 {
-    static constexpr Variable< 0, int > v0;
-    static constexpr Variable< 1, int > v1;
-    static constexpr Variable< 2, int > v2;
+    static constexpr Var< 0, int > v0;
+    static constexpr Var< 1, int > v1;
+    static constexpr Var< 2, int > v2;
     static constexpr Constant< (int)0 > zero;
 
     static_assert(( count_expressions( v0 + zero ) | eval( )) == 3ul );
@@ -353,9 +355,9 @@ std::pair< bool, std::string > test_boolean_satisfaction()
 
 constexpr bool test_is_linear()
 {
-    static constexpr Variable< 0, float > x;
-    static constexpr Variable< 1, float > y;
-    static constexpr Variable< 2, float > z;
+    static constexpr Var< 0, float > x;
+    static constexpr Var< 1, float > y;
+    static constexpr Var< 2, float > z;
     static constexpr Constant< 0.f > zero;
     static constexpr Constant< 1.f > one;
     static constexpr Constant< 2.f > two;
@@ -387,17 +389,17 @@ constexpr bool test_is_linear()
 
     static constexpr auto fx = ( 5 * x );
     using deps_fx  = free_variables_t< std::remove_cv_t< decltype( fx )>>;
-    using deps_fx2 = free_variables_t< tuple< StaticValue< int >, Variable< 0, float >>>;
+    using deps_fx2 = free_variables_t< tuple< StaticValue< int >, Var< 0, float >>>;
     
     static_assert( std::is_same_v< deps_fx, deps_fx2 >);
-    static_assert( std::is_same_v< Product< StaticValue<int>, Variable< 0, float >>,
+    static_assert( std::is_same_v< Product< StaticValue<int>, Var< 0, float >>,
         std::remove_cv_t< decltype( fx )>> );
     static_assert( std::tuple_size_v< deps_fx > == 1 );
 
     static constexpr auto fxy = ( 5*x + 4*y );
     using deps_fxy  = free_variables_t< std::remove_cv_t< decltype( fxy )>>;
-    using deps_fxy2 = free_variables_t< tuple< tuple< StaticValue<int>, Variable<0, float>>,
-        tuple< StaticValue<int>, Variable<1, float>>>>;
+    using deps_fxy2 = free_variables_t< tuple< tuple< StaticValue<int>, Var<0, float>>,
+        tuple< StaticValue<int>, Var<1, float>>>>;
 
     static_assert( std::is_same_v< deps_fxy, deps_fxy2 >);
     static_assert( std::tuple_size_v< deps_fxy > == 2 );
@@ -409,13 +411,13 @@ constexpr bool test_is_linear()
     using sys_type = Conjunction< 
         Equals< 
             Difference< 
-                Variable<0,float>, 
-                Product< StaticValue<int>,Variable<1,float>>>, 
+                Var<0,float>, 
+                Product< StaticValue<int>,Var<1,float>>>, 
             StaticValue<int>>,
         Equals< 
             Sum< 
-                Product< StaticValue<int>, Variable<0,float>>, 
-                Product< StaticValue<int>,Variable<1,float>>>, 
+                Product< StaticValue<int>, Var<0,float>>, 
+                Product< StaticValue<int>,Var<1,float>>>, 
             StaticValue<int>>>;
 
     static_assert( std::is_same_v< sys_type, std::remove_cv_t< decltype( sys )>> );
@@ -459,7 +461,7 @@ template< auto Value >
 consteval bool basic_solvers()
 {
     using value_type = std::remove_cv_t< decltype( Value )>;
-    static constexpr Variable< 0, value_type > x;
+    static constexpr Var< 0, value_type > x;
     Constant< Value > value;
     Constant< static_cast< value_type >( 1 )> one;
     Constant< static_cast< value_type >( 2 )> two;
@@ -475,10 +477,10 @@ consteval bool basic_solvers()
 
 static_assert( basic_solvers< 7 >() );
 
-//static_assert( Solver< Equals< Variable< 0, int >, Constant< 7 >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Constant< 7 >, Variable< 0, int >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
-//static_assert( Solver< Equals< Sum< Variable< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Variable< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Var< 0, int >, Constant< 7 >>>{}( Var< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Constant< 7 >, Var< 0, int >>>{}( Var< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Var< 0, int >, Constant< 7 >>, Constant< 14 >>>{}( Var< 0, int >{} ) == 7 );
+//static_assert( Solver< Equals< Sum< Var< 0, int >, Constant< 5 >, Constant< 2 >>, Constant< 14 >>>{}( Var< 0, int >{} ) == 7 );
 
 constexpr bool test_constraints( )
 {

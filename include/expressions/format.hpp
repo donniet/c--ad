@@ -33,13 +33,13 @@ struct formatter< expressions::Constant< Value >, char >:
 };
 
 template< size_t I, typename T >
-struct formatter< expressions::Variable< I, T >, char >:
+struct formatter< expressions::Var< I, T >, char >:
     formatter< std::string >
 {
     string format_string;
 
     template< typename FormatContext >
-    FormatContext::iterator format( expressions::Variable< I, T > expr, 
+    FormatContext::iterator format( expressions::Var< I, T > expr, 
         FormatContext& ctx ) const
     { return formatter< std::string >::format( expr.name(), ctx ); }
 };
