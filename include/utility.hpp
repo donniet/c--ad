@@ -934,10 +934,11 @@ struct IsNonRepeating< seq< >>: std::true_type { };
 
 template< size_t I, size_t... Is >
 requires((( I != Is ) and ... and true ))
-struct IsNonRepeating< seq< I, Is... >>: std::true_type { };
+struct IsNonRepeating< seq< I, Is... >>: 
+    IsNonRepeating< seq< Is... >> { };
 
 template< size_t I, size_t... Is >
-requires((( Is == Is ) or ... or false ))
+requires((( I == Is ) or ... or false ))
 struct IsNonRepeating< seq< I, Is... >>: std::false_type { };
 
 template< typename Seq >
