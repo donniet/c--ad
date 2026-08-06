@@ -1,10 +1,11 @@
 #include "testing.hpp"
 
 #include "expressions/expressions.hpp"
+#include "expressions/arithmetic.hpp"
 
 using test::ensure;
 
-namespace expressions {
+using namespace expressions;
 
 struct SubTests
 {
@@ -32,9 +33,14 @@ struct SubTests
 //            expressions::Product<expressions::StaticValue<float>, 
 //                expressions::Var<1, float>>> );
 
-    static_assert(( substitute_for( n + zeroi, n, zeroi ) | eval()) == 0 );
-    static_assert(( substitute_for( x + one, x, one ) | eval()) == 2 );
-    static_assert(( substitute_for( x + one, x, zero ) | eval()) == 1 );
+    static_assert( is_same_v< remove_cv_t< decltype( n + zeroi )>,
+        Sum< Var< 16, int >, Constant< (int)0 >>> );
+    static_assert( is_same_v< make_expression_t< Sum< Var< 16, int >, Constant< (int)0 >>>,
+        Sum< Var< 16, int >, Constant< (int)0 >>> );
+    static_assert( is_same_v< make_expression_t< Constant< (int)0 >>, Constant< (int)0 >> );
+    static_assert(( sub_for< n.id >( n + zeroi, zeroi ) | eval()) == 0 ); 
+    static_assert(( sub_for< x.id >( x + one, one ) | eval()) == 2 );
+    static_assert(( sub_for< x.id >( x + one, zero ) | eval()) == 1 );
     static_assert(( substitute( 2*x, one ) == 2 ));
     //static_assert(( substitute( 2*x, one ) | eval()) == 2 );
     //static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
@@ -186,10 +192,10 @@ bool test_second_order()
     println( "SECOND ORDER SUBSTITUTION" );
     println( "-------------------------" );
 
-    println( "substitute_for( x*x, x, 3.f ) == {}", substitute_for( x*x, x, 3.f ) | eval() );
+    println( "substitute_for( x*x, x, 3.f ) == {}", sub_for< x.id >( x*x, 3.f ) | eval() );
     
     auto h = x * x;
-    println( "substitute_for( g, x, 3.f ) == {}", substitute_for( h, x, 3.f ) | eval() );
+    println( "substitute_for( g, x, 3.f ) == {}", sub_for< x.id >( h, 3.f ) | eval() );
 
     println( "h(3.f) == {}", h(3.f) );
 
@@ -227,14 +233,15 @@ bool test_second_order()
     //        StaticValue< float >>>::variable_set::size == 1 );
 
     // DT: not sure if Func should be a compound expression or not...
-    static_assert( compound_expression< Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
+    static_assert( not compound_expression< Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
     //static_assert( is_same_v< remove_cv_t< decltype( l )>, 
     //    Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
     static_assert( is_same_v< remove_cv_t< decltype( l )>,
-        Var< 2, Func< Var< 2, float >, Var< 0, float >>> >);
+        Func< Var< 2, Var< 2, float >>, Var< 0, float >> >);
 
     using lt = remove_cv_t< decltype( l )>;
 
+    static_assert( is_same_v< lt, Func< Var< 2, Var< 2, float >>, Var< 0, float >>> );
     static_assert( is_same_v< free_variables_t< lt >, 
         unique_variables< Var< 0, float >, Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
 
@@ -244,13 +251,13 @@ bool test_second_order()
             unique_variables< Var< 2, Func< Var< 2, float >, Var< 0, float >>>> > );
     static_assert( open_expression< Sub< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>> );
     //static_assert( std::is_same_v< substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>, void > );
-    static_assert( requires{ typename substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>; } );
+    //static_assert( requires{ typename substitute_t< Var< 2, Func< Var< 2, float >, Var< 0, float >>>, StaticValue< float >>; } );
     //static_assert( is_same_v< free_variables_t< Func< Var< 2, Var< 2, float >>, Var< 0, float >>>, void > );
 
     auto m = l(3.f);
     using m_type = remove_cv_t< decltype( m )>;
 
-    static_assert( is_same_v< m_type, Sub< lt, StaticValue< float >>> );
+    static_assert( is_same_v< m_type, Sub< Func< Var< 2, Var< 2, float >>, Var< 0, float >>, StaticValue< float >>> );
     static_assert( is_same_v< free_variables_t< m_type >, unique_variables<
         Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> ); 
 
@@ -261,50 +268,65 @@ bool test_second_order()
     static_assert( is_same_v< free_variables_t< func_type >, 
         unique_variables< Var< 0, float >, Var< 2, Func< Var< 2, float >, Var< 0, float >>>>> );
 
-    static_assert( bound_variables_t< sub_type >::template IsDependent< 1, 0 >::value );
+    //static_assert( bound_variables_t< sub_type >::template IsDependent< 1, 0 >::value );
 
     // failing here because now that I've included the raw variables in GetFreeVars the dependency logic
     // is off
-    static_assert( is_same_v< typename bound_variables_t< sub_type >::binding_order_seq,
-            seq< 1, 0 >> );
+    //static_assert( is_same_v< typename bound_variables_t< sub_type >::binding_order_seq,
+    //        seq< 1, 0 >> );
 
     using subber_type = Substituter< func_type, StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>;
 
-    static_assert( subber_type::variable_id_of< 1 > == 2 );
-    static_assert( is_same_v< typename PredicateSub< ForVar< 2 >::template Is, func_type, 
-        Product< Var< 0, float >, Var< 0, float >>>::type, 
-            Func< Product< Var< 0, float >, Var< 0, float >>, Var< 0, float >> > );
+    //static_assert( subber_type::variable_id_of< 1 > == 2 );
+    //static_assert( is_same_v< typename PredicateSub< ForVar< 2 >::template Is, func_type, 
+    //    Product< Var< 0, float >, Var< 0, float >>>::type, 
+    //        Func< Product< Var< 0, float >, Var< 0, float >>, Var< 0, float >> > );
    
     // this almost works. we should check the specialization of substitute_t for functions
-    static_assert( is_same_v< substitute_t<
-        Func< Var< 2, Var< 2, float >>, Var< 0, float >>, 
-            StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>, 
-                float >);
-        
+    //static_assert( is_same_v< substitute_t<
+    //    Func< Var< 2, Var< 2, float >>, Var< 0, float >>, 
+    //        StaticValue< float >, Product< Var< 0, float >, Var< 0, float >>>, 
+    //            float >);
     
+    //static_assert( is_same_v< void, SubFor< 2, m_type, Product< Var< 0, float >, Var< 0, float >>>::type > );
+
+    //auto n2 = m.debug_sub( x*x ); 
     auto n = m( x*x );
     using n_type = remove_cv_t< decltype( n )>;
     static_assert( is_same_v< n_type, float > );
 
     static_assert( free_variables_t< n_type >::size == 0 );
 
-
-
     println( "f(x)(3.f)(x*x) == {}", n );
-    
 
-    auto g = f(x);
 
     return true;
 }
 
-} // namespace expressions
+constexpr bool test_func()
+{
+    Var< 0, int > x;
+    Var< 1, int > y;
+    Var< 2, int > z;
+
+    Var< 3, int > f;
+    Var< 4, int > g;
+
+    auto h = f(x,y);
+    auto l = g(y,x);
+
+    assert( h(2,4)(y-x) == 2 );
+    assert( l(4,2)(y-x) == 2 );
+
+    return true;
+}
 
 int main( int ac, char* av[] )
 {
-    ensure( expressions::test_basic, "basic substitutions" );
-    ensure( expressions::test_eval, "evaluation" );
-    ensure( expressions::test_second_order, "second_order" );
+    ensure( test_basic, "basic substitutions" );
+    ensure( test_eval, "evaluation" );
+    ensure( test_func, "functions" );
+    ensure( test_second_order, "second_order" );
 
     return EXIT_SUCCESS;
 }

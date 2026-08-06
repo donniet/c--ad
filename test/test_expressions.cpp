@@ -56,6 +56,7 @@ bool test_minimization();
 bool test_canonicalization();
 bool test_simple_expressions();
 constexpr bool test_constraints(); 
+constexpr bool test_is_linear();
 
 constexpr bool test_dependent_vars();
 std::pair< bool, std::string > test_boolean_satisfaction();
@@ -69,6 +70,7 @@ int main( int ac, char* av[] )
     ensure( test_iteration, "Iteration" );
     ensure( test_minimization, "Minimization" );
     ensure( test_constraints, "Constraints" );
+    ensure( test_is_linear, "Linear Expressions" );
 
     return EXIT_SUCCESS;
 }
@@ -381,12 +383,7 @@ constexpr bool test_is_linear()
     static_assert( not is_linear_of( 2*x + y*y + zero, y ));
 
     static_assert(( substitute( 2*x, one ) | eval()) == 2 );
-    static_assert( scalar_of( 2*x, x ) == 2 );
-    static_assert( scalar_of( 2*x + 3*y + 4, x ) == 2 );
-    static_assert( scalar_of( 2*x + 3*y + 4, y ) == 3 );
-
-    static_assert( non_homogeneous_term_of( 2*x + 3*y + 4 ) == 4 ); 
-
+    
     static constexpr auto fx = ( 5 * x );
     using deps_fx  = free_variables_t< std::remove_cv_t< decltype( fx )>>;
     using deps_fx2 = free_variables_t< tuple< StaticValue< int >, Var< 0, float >>>;
@@ -400,9 +397,26 @@ constexpr bool test_is_linear()
     using deps_fxy  = free_variables_t< std::remove_cv_t< decltype( fxy )>>;
     using deps_fxy2 = free_variables_t< tuple< tuple< StaticValue<int>, Var<0, float>>,
         tuple< StaticValue<int>, Var<1, float>>>>;
+    using deps_fxy3 = unique_variables< Var< 0, float >, Var< 1, float >>;
 
     static_assert( std::is_same_v< deps_fxy, deps_fxy2 >);
-    static_assert( std::tuple_size_v< deps_fxy > == 2 );
+    static_assert( std::is_same_v< deps_fxy, deps_fxy3 >);
+    
+    static_assert( scalar_of( 2*x, x ) == 2 );
+
+    auto hxy = 2*x + 3*y + 4;
+    using hxy_type = std::remove_cv_t< decltype( hxy )>;
+
+    static_assert( is_same_v< hxy_type,
+        Sum< Sum<  
+                Product< StaticValue< int >, Var< 0, float >>,
+                Product< StaticValue< int >, Var< 1, float >>>,
+            StaticValue< int >>> );
+    static_assert( expressions::detail::IsLinearOf< Var< 1, float >, hxy_type >::value );
+
+    static_assert( scalar_of( 2*x + 3*y + 4, x ) == 2 );
+    static_assert( scalar_of( 2*x + 3*y + 4, y ) == 3 );
+    static_assert( non_homogeneous_term_of( 2*x + 3*y + 4 ) == 4 ); 
 
     static constexpr auto sys = 
         (   x - 7*y == -11 ) and

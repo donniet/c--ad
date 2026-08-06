@@ -1,33 +1,12 @@
+Re-wrote substituter using a new parser in SubFor.  
+Next step: re-examine GetFreeVars... DONE
+Next step: re-examine is_compatible_sub
+
+SubFor<16UL, make_expression_t<Sum<Var<16, int>, Constant<0>>>, 
+    make_expression_t<Constant<0>>>::type' (aka 'Sum<Constant<0>, int>'
+
+
 g( x * x, 3.f )
-
-
-Substitutions repeat on processing:
-
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3453:26: error: implicit instantiation of undefined template 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Variable<0, float>, expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>'
- 3453 |                 typename Processor< Args...[ Is ], Op< Args... >, History... >::type{}... )) >;
-      |                          ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3461:22: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>::Helper<std::integer_sequence<unsigned long, 0, 1>>' requested here
- 3461 |         using type = Helper< for_arguments >::type;
-      |                      ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3453:26: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
- 3453 |                 typename Processor< Args...[ Is ], Op< Args... >, History... >::type{}... )) >;
-      |                          ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3461:22: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>::Helper<std::integer_sequence<unsigned long, 0, 1>>' requested here
- 3461 |         using type = Helper< for_arguments >::type;
-      |                      ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3487:32: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Processor<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
- 3487 |         using processed_type = Processor< Current, History... >::type;
-      |                                ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3495:18: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>::Repeater<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>>' requested here
- 3495 |     using type = Repeater< expression_type >::type;
-      |                  ^
-/home/donniet/src/c++ad/test/test_substitution.cpp:97:45: note: in instantiation of template class 'expressions::Applier<expressions::Substitution<expressions::Product<expressions::Constant<1.000000e+00>, expressions::Variable<0, float>>, expressions::Constant<1.000000e+00>>, expressions::Evaluator<void>>' requested here
-   97 |     static_assert( std::is_same_v< typename Applier< Substitution< 
-      |                                             ^
-/home/donniet/src/c++ad/include/expressions/expressions.hpp:3405:12: note: template is declared here
- 3405 |     struct Processor;
-      |            ^
-
 
 sub( f(x), x*x, 3.f )
 
