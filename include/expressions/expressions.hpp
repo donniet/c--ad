@@ -52,12 +52,11 @@
 /// # Expression Type Requirements
 ///   (i) Expressions MUST be literal types.
 ///  (ii) Compound expressions MUST be a tuple-like object of their arguments
-/// (iii) Compound expressions MUST be constructible from a parameter pack of it's
-///       arguments.
-///  (iv) ...
-///   (v) Expressions MUST implement a static, generically typed, constexpr value
-///       method that calculates the result of the expression given the arguments
-///  (vi) IsExpression< E< Ts... >> or IsExpressionOperation< E > must evaluate
+/// (iii) Compound expressions MUST be constructible from a parameter pack of 
+///       it's arguments.
+///  (iv) Expressions MUST implement a static constexpr value method that 
+///       calculates the result of the expression from it's arguments
+///   (v) IsExpression< E< Ts... >> or IsExpressionOperation< E > must evaluate
 ///       to a true_type without the expression class being defined.
 ///   
 /// # Example of an Expression Class
@@ -67,28 +66,27 @@
 ///
 /// template< >
 /// struct IsExpressionOperation< Sum >: 
-///     std::true_type { };                         // requirement (vi)
+///     std::true_type { };                 // requirement (v)
 ///
 /// template< typename... Args >
-/// requires( sizeof...( Args ) >= 2 )
-/// class Sum: Arguments< Sum, Args... > {          // requirement (ii) 
-/// public:
-///     static constexpr auto value( auto... args ) 
-///     { return ( args + ... ); }                  // requirement (v) 
+/// struct Sum: Arguments< Sum, Args... >   // requirement (ii) 
+/// {
+///     static constexpr auto 
+///     value( Args... args ) 
+///     { return ( args + ... + 0 ); }      // requirement (iv) 
 ///
-///     constexpr Sum() = default;                  // requirement (i)
-///     constexpr Sum( Sum const& ) = default;      // requirement (i)
-///     constexpr Sum( Args&&... args ):            
-///         Arguments< Sum, Args... >{ args } { }   // requirement (iii)
+///     using Arguments< Sum, Args... >::
+///         Arguments;                      // requirements (i),(iii)
 /// };
 /// ```
 /// - The Arguments base template is tuple-like object of the ...Args
 /// - Arguments imbues parent class ExprT with:
-///     ExprT::operator()( subs&&... );  // substitution
-///     ExprT::operator();               // evaluation
+///     ExprT::operator()( subs&&... );  // substitution with evaluation
+///     ExprT::operator();               // evaluation (for closed or static
+///                                      // expressions)
 ///   
 ///
-/// # Expression Evaluation
+/// # Expression Evaluation [IN PROGRESS]
 ///
 /// Expressions are evaluated using operator|, referred to as the application
 /// operator.  
@@ -159,6 +157,144 @@
 
 
 namespace expressions {
+
+//////////////////////////////////////////////////////
+/// Arguments Base Class for Compound Expressions ///
+////////////////////////////////////////////////////
+///
+/// Provides storage for expression arguments and the implementation of the
+/// evaluation and substitution operator().
+///
+/// @brief default case is a tuple that calls the parent's value method upon
+///        evaluation
+///
+/// @pre   Op< Args... > implementation MUST define a static value method
+///        taking the ...Args as parameters
+///
+template< template< typename... > class Op, typename... Args >
+struct Arguments: tuple< Args... > 
+{
+    using expression_type = Op< Args... >;
+    using arguments_tuple = tuple< Args... >;
+
+    static constexpr size_t arguments_size = sizeof...( Args );
+    static constexpr make_seq< arguments_size > for_args;
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    // calls Op< Args... >::value static method to calculate the result of the
+    // operation
+    constexpr auto
+    operator ()() const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return expression_type::value( get< Is >( args() )... ); };
+
+        return helper( for_args );
+    }
+
+    constexpr Arguments( Args const&... args ): tuple< Args... >{ args... } { }
+    constexpr Arguments( Arguments const& ) = default;
+    constexpr Arguments() = default;
+};
+
+/// @brief specialization of Arguments when there is at least one expression
+///        argument. We allow substitutions via operator() with at least one
+///        parameter.  We calculate our result type from the nullary
+///        operator() of the default implementation (which in turn calls the
+///        Op< Args... >::value( Args... ) static method)
+template< template< typename... > class Op, typename... Args >
+requires(( expression< Args > or ... or false ))
+struct Arguments< Op, Args... >: tuple< Args... > 
+{
+    using expression_type = Op< Args... >;
+    using arguments_tuple = tuple< Args... >;
+    using result_type = std::remove_cvref_t< decltype(
+//        Op< result_t< Args >... >::value( result_t< Args >{}... )) >;
+        Arguments< Op, result_t< Args >... >{}() )>;
+
+    static constexpr size_t arguments_size = sizeof...( Args );
+    typedef make_seq< arguments_size > for_args;
+
+    constexpr arguments_tuple const& 
+    args() const
+    { return *this; }
+
+private:
+    // DT: is it ok to static_cast this to a derived class pointer?
+    // DT: seems so: https://en.cppreference.com/cpp/language/static_cast
+    constexpr expression_type const& 
+    expr() const
+    { return *static_cast< expression_type const* >( this ); }
+
+private:
+    template< size_t I >
+    struct ArgEvaluator
+    { 
+        using type = Args...[ I ];
+        static constexpr type
+        value( arguments_tuple const& tup )
+        { return std::get< I >( tup ); }
+    };
+
+    // NOTE: this does not guard against open expression idempotency on 
+    //       Args...[I]::operator()** because Arguments< Op, Args... >::
+    //       operator()*** guards itself so there be no circular logic.
+    template< size_t I >
+    requires( expression< Args...[ I ]> )
+    struct ArgEvaluator< I >
+    {
+        using type = result_t< Args...[ I ]>;
+        static constexpr type
+        value( arguments_tuple const& tup )
+        { return std::get< I >( tup )(); } // ** the invocation operator()
+    }; 
+
+public:
+    constexpr result_type 
+    operator ()() const 
+    requires(( closed_expression< Args > and ... and true ))
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
+            result_type
+        { return Op< typename ArgEvaluator< Is >::type... >{ 
+            ArgEvaluator< Is >::value( args() )... }(); };
+
+        return helper( for_args{} );
+    }
+
+    constexpr expression_type const&
+    operator ()() const
+    requires(( open_expression< Args > or ...  or false ))
+    { return expr(); }
+
+    /// @brief Sub via invocation operator
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< expression_type, First, Rest... > )
+    constexpr substitute_t< expression_type, make_expression_t< First >, 
+        make_expression_t< Rest >... >
+    operator ()( First first, Rest... rest ) const
+    { return substitute( expr(), make_expression( first ), 
+        make_expression( rest )... ); }
+
+    // DEBUG:
+//    template< typename First, typename... Rest >
+//    constexpr int debug_sub( First const& first, Rest const&... rest )
+//    //{ static_assert( is_same_v< void, free_variables_t< expression_type >> ); }
+//    { static_assert( is_same_v< void, std::tuple< 
+//        substitute_t< expression_type, First, Rest... >,
+//        Sub< expression_type, First, Rest... >>> ); }
+//    //{ static_assert( is_same_v< void, Sub< expression_type, First, Rest... >> ); }
+
+    constexpr Arguments( Args const&... args ): tuple< Args... >{ args... } { }
+    constexpr Arguments( Arguments const& ) = default;
+    constexpr Arguments() = default; 
+};
+
+
+
 /////////////////////////////////////////////////
 /// Scope Contains Free Expression Variables ///
 ///////////////////////////////////////////////
