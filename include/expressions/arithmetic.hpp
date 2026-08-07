@@ -3,6 +3,8 @@
 
 #include "expressions.hpp"
 
+using std::true_type;
+
 namespace expressions {
 
 /////////////////
@@ -13,24 +15,19 @@ namespace expressions {
 /// @tparam T the negated type
 ///
 template< typename T >
+struct Negation;
+
+template< >
+struct IsExpressionOperation< Negation >: true_type { };
+
+template< typename T >
 struct Negation: Arguments< Negation, T >
 { 
-    using result_type = decltype( -result_t< T >{} );
-    
-    template< typename U >
-    static constexpr auto value( U const& arg )
+    static constexpr auto 
+    value( T const& arg )
     { return -arg; }
 
-    constexpr T arg() const 
-    { return get_argument< 0 >( *this ); }
-
-    // derivative of a negation is the negation of the derivative
-    //    template< derivation D >
-    //    constexpr auto operator |( D const& d ) const
-    //    { return -( arg() | d ); }
-
-    constexpr Negation( T arg ): Arguments< Negation, T >{ arg } { } 
-    constexpr Negation() = default;
+    using Arguments< Negation, T >::Arguments;
 };
 
 //static_assert(( Negation< Var< 0, int >>{} | simple_scope( 5 )) == -5 );
@@ -65,59 +62,20 @@ struct Difference;
 template< >
 struct IsExpressionOperation< Difference >: std::true_type { };
 
-/// @brief difference expression
-/// @tparam T 
-/// @tparam U 
-template< typename T, typename U >
-struct Difference< T, U >: Arguments< Difference, T, U >
-{ 
-    using result_type = decltype( result_t< T >{} - result_t< U >{} );
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
-
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return left - right; }
-
-    // derivative of a sum is the sum of the derivative
-    //    template< derivation D >
-    //    constexpr auto operator |( D const& d ) const
-    //    { return ( left_arg() | d ) - ( right_arg() | d ); } 
-
-    constexpr Difference( T left, U right ): 
-        Arguments< Difference, T, U >{ left, right } { } 
-    constexpr Difference() = default;
-};
-
 template< typename... Ts >
-requires( is_greater( sizeof...( Ts ), 2 ))
-struct Difference< Ts... >: Arguments< Difference, Ts... >
+struct Difference: Arguments< Difference, Ts... >
 {
-    using result_type = decltype(( result_t< Ts >{} - ... ));
+    static constexpr auto
+    value( Ts const&... ts )
+    { return ( ts - ... - 0 ); }
 
-    template< size_t I >
-    constexpr Ts...[ I ] arg() const { return get_argument< I >( *this ); }
-
-    template< typename... Us >
-    static constexpr auto value( Us const&... us )
-    { return ( us - ... ); }
-
-    // derivative of a difference is the difference of the derivative
-    //    template< derivation D >
-    //    constexpr auto operator |( D const& d ) const
-    //    {
-    //    auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-    //    { return (( arg< Is >() | d ) - ... ); };
-    //
-    //    return helper( make_seq< sizeof...( Ts )>{} );
-    //}
-
-    constexpr Difference( Ts const&... ts ): 
-        Arguments< Difference, Ts... >{ ts... } { }
-    constexpr Difference() = default;
+    using Arguments< Difference, Ts... >::Arguments;
 };
 
+////////////////
+/// Product ///
+//////////////
+///
 template< typename... >
 struct Product;
 

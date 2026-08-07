@@ -204,6 +204,67 @@ constexpr bool is_compatible_substitution_v =
     BoundVars< Sub< make_expression_t< ExprT >, make_expression_t< Ss >... >>::
         is_compatible;
 
+////////////
+/// Sub ///
+//////////
+/// 
+/// bootstrapped Sub expression is a compound expression
+template< typename ExprT, typename... Ss >
+//requires( is_compatible_substitution_v< ExprT, Ss... >)
+struct Sub: tuple< ExprT, Ss... >
+{
+    using formula_type = ExprT;
+    using expression_type = Sub< ExprT, Ss... >;
+    using arguments_tuple = tuple< ExprT, Ss... >;
+
+    static constexpr size_t arguments_size = 1 + sizeof...( Ss );
+    static constexpr make_seq< arguments_size > for_args;
+
+private:
+    static constexpr size_t subs_size = sizeof...( Ss );
+    static constexpr make_seq< subs_size > for_subs;
+
+public:
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    // we manually call substitute here since there would be a circular ref
+    // if we used the default implementation of Arguments<... >
+    constexpr substitute_t< ExprT, Ss... >
+    operator ()() const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            substitute_t< ExprT, Ss... >
+        { return substitute( formula(), arg< Is >()... ); };
+
+        return helper( for_subs );
+    }
+
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< expression_type, First, Rest... > )
+    constexpr substitute_t< expression_type, make_expression_t< First >, 
+        make_expression_t< Rest >... >
+    operator ()( First first, Rest... rest ) const
+    { return substitute( *this, make_expression( first ), 
+        make_expression( rest )... ); }
+
+    constexpr formula_type
+    formula() const
+    { return std::get< 0 >( *this ); }
+
+    template< size_t I >
+    constexpr Ss...[ I ]
+    arg() const
+    { return std::get< 1 + I >( *this ); }
+
+    constexpr Sub( ExprT const& formula, Ss const&... subs ):
+        tuple< ExprT, Ss... >{ formula, subs... }
+    { }
+    constexpr Sub( Sub const& ) = default;
+    constexpr Sub() = default;
+};
+
 /////////////
 /// Func ///
 ///////////
@@ -755,6 +816,8 @@ constexpr bool is_complete_substitution_v =
 ///
 /// @brief Expression representing the substitution of variable I in ExprT with
 ///        SubU
+///
+/// @pre:  Id is free in ExprT
 template< size_t Id, typename ExprT, typename SubU >
 struct SubFor {
 private:
@@ -822,23 +885,50 @@ private:
 //            value( var.get_value(), sub ); }
 //    };
 
-    /// Case: functions: we only sub into the formula
-    template< expression U, variable... Args >
-    struct Parser< Func< U, Args... >>
+    template< typename FuncExpr >
+    struct FuncParser;
+
+    template< expression U, variable... Vars >
+    requires( not static_expression< typename Parser< U >::type > )
+    struct FuncParser< Func< U, Vars... >> 
     {
-        using type = Parser< U >::type;
+        using type = Func< typename Parser< U >::type, Vars... >;
         static constexpr type
-        value( Func< U, Args... > const& func, referent_type const& sub )
+        value( Func< U, Vars... > const& func, referent_type const& sub )
+        {
+            static constexpr make_seq< sizeof...( Vars )> for_vars;
+
+            auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+            { return { Parser< U >::value( func.formula(), sub ), 
+                func.template var< Is >()... }; };
+
+            return helper( for_vars );
+        }
+    };
+
+    template< expression U, variable... Vars >
+    requires( static_expression< typename Parser< U >::type > )
+    struct FuncParser< Func< U, Vars... >>
+    {
+        using type = typename Parser< U >::type;
+        static constexpr type
+        value( Func< U, Vars... > const& func, referent_type const& sub )
         { return Parser< U >::value( func.formula(), sub ); }
     };
 
-    // do we need a case for Sub<...> expressions?
+    /// Case: functions: we only sub into the formula
+    template< expression U, variable... Args >
+    struct Parser< Func< U, Args... >>: FuncParser< Func< U, Args... >>
+    { };
+
+    template< typename CompoundExpr >
+    struct CompoundParser;
+
     template< template< typename... > class Op, typename... Args >
-    requires( compound_expression< Op< Args... >> )
-    struct Parser< Op< Args... >>
+    requires( not is_substitution_expression_v< Op< Args... >> )
+    struct CompoundParser< Op< Args... >>
     {
-        static constexpr size_t size = sizeof...( Args );
-        typedef make_seq< size > for_args;
+        typedef make_seq< sizeof...( Args )> for_args;
 
         template< typename Seq >
         struct Helper;
@@ -849,8 +939,8 @@ private:
             using type = Op< typename Parser< Args...[ Is ]>::type... >;
             static constexpr type
             value( Op< Args... > const& expr, referent_type const& sub )
-            { return { Parser< Args...[ Is ]>::value( 
-                get_argument< Is >( expr ), sub )... }; }
+            { return { Parser< Args...[ Is ]>::value(
+                get_argument< Is >( expr ), sub )... }; };
         };
 
         using type = Helper< for_args >::type;
@@ -859,6 +949,64 @@ private:
         { return Helper< for_args >::value( expr, sub ); }
     };
 
+    template< typename SubExpr >
+    struct SubstitutionParser;
+
+    // default case of a substitution parser duplicates the logic of a compound
+    // parser to avoid circular references
+    template< template< typename... > class Op, typename... Args >
+    struct SubstitutionParser< Op< Args... >>
+    {
+        typedef make_seq< sizeof...( Args )> for_args;
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            using type = Op< typename Parser< Args...[ Is ]>::type... >;
+            static constexpr type
+            value( Op< Args... > const& expr, referent_type const& sub )
+            { return { Parser< Args...[ Is ]>::value(
+                get_argument< Is >( expr ), sub )... }; };
+        };
+
+        using type = Helper< for_args >::type;
+        static constexpr type
+        value( Op< Args... > const& expr, referent_type const& sub )
+        { return Helper< for_args >::value( expr, sub ); }
+    };
+
+    template< typename ExprU, typename... Ss >
+    requires( closed_expression< Sub< ExprU, Ss... >> )
+    struct SubstitutionParser< Sub< ExprU, Ss... >>
+    {
+        using type = Parser< substitute_t< ExprU, Ss... >>::type;
+
+        static constexpr type
+        value( Sub< ExprU, Ss... > const& expr, referent_type const& sub )
+        { 
+            static constexpr make_seq< sizeof...( Ss )> for_subs;
+
+            auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+            { return Parser< substitute_t< ExprU, Ss... >>::value( 
+                substitute( expr.formula(), expr.template arg< Is >()... ), 
+                    sub ); };
+
+            return helper( for_subs );
+        }
+    };
+ 
+    template< typename ExprU, typename... Ss >
+    struct CompoundParser< Sub< ExprU, Ss... >>: 
+        SubstitutionParser< Sub< ExprU, Ss... >>
+    { };
+
+    template< compound_expression CompoundExpr >
+    struct Parser< CompoundExpr >: CompoundParser< CompoundExpr > { };
+   
+       
 public:
     using type = Parser< expression_type >::type;
     static constexpr type
@@ -880,10 +1028,47 @@ sub_for( ExprT const& expr, SubU const& sub )
 template< typename ExprT, typename IdSeq, typename... Subs >
 struct SubstituteForIdSeq;
 
-/// @brief terminal case for non-expressions and open expressions is idempotent
+/// @brief substitution into a non-expression is idempotent
+template< typename ExprT, typename IdSeq, typename... Subs >
+requires( not expression< ExprT >)
+struct SubstituteForIdSeq< ExprT, IdSeq, Subs... >
+{
+    using type = ExprT;
+    static constexpr type
+    value( ExprT const& expr, Subs const&... )
+    { return expr; }
+};
+
+/// @brief we evaluate substitution expressions breadth-first.
+///
+/// NOTE: this can create circular logic since and infinite builds
+template< typename ExprT, typename... Ss, size_t... Ids, typename... Subs >
+requires( closed_expression< Sub< ExprT, Ss... >> )
+struct SubstituteForIdSeq< Sub< ExprT, Ss... >, seq< Ids... >, Subs... >
+{
+    // process subs in breadth first order
+    using type = SubstituteForIdSeq< substitute_t< ExprT, Ss... >, 
+        seq< Ids... >, Subs... >::type;
+
+    static constexpr type
+    value( Sub< ExprT, Ss... > const& expr, Subs const&... subs )
+    { 
+        static constexpr make_seq< sizeof...( Ss )> for_subsubs;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return SubstituteForIdSeq< substitute_t< ExprT, Ss... >, 
+            seq< Ids... >, Subs... >::value( substitute( expr.formula(),
+                expr.template arg< Is >()... ), subs... ); };
+
+        return helper( for_subsubs );
+    }
+};
+
+/// @brief if our expression has none of the ...Ids as free then
+///        substitution is idempotent
 template< typename ExprT, size_t... Ids, typename... Subs >
-requires( not expression< ExprT > or ( open_expression< ExprT > and 
-    not ( free_variables_t< ExprT >::contains_id( Ids ) or ... or false )))
+requires( open_expression< ExprT > and 
+    not ( free_variables_t< ExprT >::contains_id( Ids ) or ... or false ))
 struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
 {
     using type = ExprT;
@@ -892,9 +1077,12 @@ struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
     { return expr; }
 };
 
-/// @brief terminal case for closed expressions returns the result
+/// @brief terminal case for closed expressions that is not a substitution
+///        expression itself returns the result_type
 template< typename ExprT, size_t... Ids, typename... Subs >
-requires( closed_expression< ExprT > )
+requires( not is_substitution_expression_v< ExprT > and
+    not is_function_v< ExprT > and
+        closed_expression< ExprT > )
 struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
 {
     using type = result_t< ExprT >;
@@ -903,12 +1091,26 @@ struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
     { return expr(); }
 };
 
+template< typename ExprT, variable... Vars, size_t... Ids, typename... Subs >
+requires( closed_expression< Func< ExprT, Vars... >> )
+struct SubstituteForIdSeq< Func< ExprT, Vars... >, seq< Ids... >, Subs... >
+{
+    using type = Func< ExprT, Vars... >;
+    static constexpr type
+    value( Func< ExprT, Vars... > const& expr, Subs const&... )
+    { return expr; }
+};
+
 /// @brief recursive case for open expressions that contain the first Id as 
 ///        a free variable
+///
+/// NOTE: if ExprT is substitution it will report free and bound variables
+///       properly.
+/// NOTE: there is a chance of a circular dependency:
+///       FreeVars< Sub<...>> -> BoundVars< Sub<...>> ->
 template< typename ExprT, size_t FirstId, size_t... RestIds, 
     typename FirstSub, typename... RestSubs >
-requires( open_expression< ExprT > and 
-    free_variables_t< ExprT >::contains_id( FirstId ))
+requires( free_variables_t< ExprT >::contains_id( FirstId )) 
 struct SubstituteForIdSeq< ExprT, seq< FirstId, RestIds... >, 
     FirstSub, RestSubs... >
 {
@@ -983,7 +1185,12 @@ struct DirectSubOrder< Func< ExprT, Vars... >>
 template< typename ExprT, typename... Subs >
 //requires( not is_function_v< ExprT > )
 struct BoundVars< Sub< ExprT, Subs... >> {
-private:
+public:
+    // we are friends with any Id seq substituter for bootstrapping
+    template< typename ExprU, typename Seq, typename... SubSubs >
+    friend struct SubstituteForIdSeq;
+
+// private:
     using expression_type = Sub< ExprT, Subs... >;
     using formula_expression = ExprT;
 
@@ -1004,8 +1211,6 @@ public:
         formula_variables_size, sizeof...( Subs ));
     static constexpr bool is_complete = 
         formula_variables_size == size;
-
-
 
 private:
     // TODO: we need to extract a binding order from the expression here
@@ -1091,6 +1296,9 @@ private:
     // handles all cases except the last exception (**)
     template< size_t I, size_t J >
     struct BindsBefore: std::integral_constant< bool,
+        // ** case
+        //not ( I >= J and not IsDependent< I, J >::value and not IsDependent< J, I >::value ) or
+        // remaining cases
         IsDependent< I, J >::value or not IsDependent< J, I >::value > 
     { 
         static constexpr bool is_circular = IsDependent< I, J >::value and
@@ -1382,24 +1590,14 @@ struct GetFreeVars< Func< Var< I, Var< I, T >>,
 
 /// @brief trait to identify free variables in a bound function
 template< typename ExprT, variable... Vars >
+requires( var_order_v< ExprT > == 1 )
 struct GetFreeVars< Func< ExprT, Vars... >>
 {
-    using type = merge_unique_variables_t<
-        typename GetFreeVars< ExprT >::type,
-        make_unique_variables_t< Vars... >>;
+    using type = GetFreeVars< ExprT >::type;
     
     static constexpr type
     value( Func< ExprT, Vars... > const& func )
-    { 
-        static constexpr make_seq< sizeof...( Vars )> for_vars;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return merge_unique_variables( 
-            GetFreeVars< ExprT >::value( func.formula() ),
-            make_unique_variables( func.template var< Is >()... )); };
-
-        return helper( for_vars );
-    }
+    { return GetFreeVars< ExprT >::value( func.formula() ); };
 };
 
 /// @brief free variables in a substitution expression are the free variables 
@@ -1900,7 +2098,7 @@ struct Arguments< Op, Args... >: tuple< Args... >
         Arguments< Op, result_t< Args >... >{}() )>;
 
     static constexpr size_t arguments_size = sizeof...( Args );
-    static constexpr make_seq< arguments_size > for_args;
+    typedef make_seq< arguments_size > for_args;
 
     constexpr arguments_tuple const& 
     args() const
@@ -1937,33 +2135,21 @@ private:
     }; 
 
 public:
-
-    // non-substitutions evalaute depth first
     constexpr result_type 
     operator ()() const 
-    //requires(( closed_expression< Args > and ... and true ))
-    requires( closed_expression< expression_type > and
-        not is_substitution_expression_v< expression_type > )
+    requires(( closed_expression< Args > and ... and true ))
     {
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
             result_type
         { return Op< typename ArgEvaluator< Is >::type... >{ 
             ArgEvaluator< Is >::value( args() )... }(); };
 
-        return helper( for_args );
+        return helper( for_args{} );
     }
-
-    // substitutions evaluate breadth first
-    constexpr result_type
-    operator ()() const
-    requires( closed_expression< expression_type > and
-        is_substitution_expression_v< expression_type > )
-    { return expr()(); }
 
     constexpr expression_type const&
     operator ()() const
-    //requires(( open_expression< Args > or ...  or false ))
-    requires( open_expression< expression_type > )
+    requires(( open_expression< Args > or ...  or false ))
     { return expr(); }
 
     /// @brief Sub via invocation operator
@@ -1987,32 +2173,6 @@ public:
     constexpr Arguments( Args const&... args ): tuple< Args... >{ args... } { }
     constexpr Arguments( Arguments const& ) = default;
     constexpr Arguments() = default; 
-};
-
-////////////
-/// Sub ///
-//////////
-/// 
-template< typename ExprT, typename... Ss >
-//requires( is_compatible_substitution_v< ExprT, Ss... >)
-struct Sub: Arguments< Sub, ExprT, Ss... >
-{
-    static constexpr substitute_t< ExprT, Ss... >
-    value( ExprT const& formula, Ss const&... subs )
-    { return substitute( formula, subs... ); }
-
-    using formula_type = ExprT;
-
-    constexpr formula_type
-    formula() const
-    { return std::get< 0 >( *this ); }
-
-    template< size_t I >
-    constexpr Ss...[ I ]
-    arg() const
-    { return std::get< 1 + I >( *this ); }
-
-    using Arguments< Sub, ExprT, Ss... >::Arguments;
 };
 
 /////////////
