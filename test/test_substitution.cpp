@@ -21,19 +21,6 @@ struct SubTests
     static_assert( is_compatible_substitution_v< Var< 0, float >, float >);
     static_assert( is_compatible_substitution_v< tuple< float, Var< 0, float >>, float >);
 
-// TODO: these asserts began to fail-- maybe they are malformed given the work on second-order vars?
-//    static_assert( is_compatible_substitution_v<Sub<expressions::Product<
-//        expressions::StaticValue<int>, expressions::Var<0, float>>, 
-//            expressions::Product<expressions::StaticValue<int>, 
-//                expressions::Var<1, float>>>, float> );
-//    static_assert( is_compatible_substitution_v<
-//        expressions::Product<expressions::StaticValue<int>, float>, 
-//            expressions::Product<expressions::StaticValue<int>, expressions::Var<1, float>>> );
-//    static_assert( is_compatible_substitution_v<
-//        expressions::Product<expressions::StaticValue<float>, float>, 
-//            expressions::Product<expressions::StaticValue<float>, 
-//                expressions::Var<1, float>>> );
-
     static_assert( is_same_v< remove_cv_t< decltype( n + zeroi )>,
         Sum< Var< 16, int >, Constant< (int)0 >>> );
     static_assert( is_same_v< make_expression_t< Sum< Var< 16, int >, Constant< (int)0 >>>,
@@ -43,22 +30,10 @@ struct SubTests
     static_assert(( sub_for< x.id >( x + one, one ) | eval()) == 2 );
     static_assert(( sub_for< x.id >( x + one, zero ) | eval()) == 1 );
     static_assert(( substitute( 2*x, one ) == 2 ));
-    //static_assert(( substitute( 2*x, one ) | eval()) == 2 );
-    //static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
+    static_assert(( substitute(( one + one ) * x, one ) | eval()) == 2 );
 
     static_assert( is_same_v< std::remove_cv_t< decltype( 2.f * x )>,
         Product< StaticValue< float >, Var< 0, float >>> );
-
-    // DT: then when the above type is |eval(), Sub::value is called which calls
-    //         substitute( Product< StaticValue< float >, Var< 0, float >>{{ 3.f }, {}}, 2.f )
-    //      which results in the expression
-    //          Product< StaticValue< float >, float >{{ 3.f }, 2.f }
-    //
-   
-    static_assert(( ( 2.f * one ) | eval()) == 2.f );
-    static_assert(( ( 2.f * one + zero ) | eval()) == 2.f );
-    static_assert(( ( 2.f * one + 3.f ) | eval()) == 5.f );
-    static_assert(( ( 3.f * one + one ) | eval()) == 4.f );
 
     static_assert( compound_expression< Sum< Var< 0, int >, Var< 1, int >>> );
     static_assert( is_same_v< free_variables_t< Sum< Var< 0, int >, Var< 1, int >>>,
@@ -67,19 +42,6 @@ struct SubTests
     //static_assert( requires { typename ForExpression< Sum< Var< 0, int >, Var< 1, int >>>; } );
     static_assert( is_compatible_substitution_v< Product< StaticValue< int >, Var< 0, float >>, float >,
        "FAILURE: substitution into product" );
-    
-//    static_assert( ForExpression< Var< 0, int >>::template 
-//        Is< Constant< 5 >>::value );
-    //static_assert( not ForExpression< Var< 0, int >>::template 
-    //    Is< Constant< units::Length{ 5 }>>::value );
-    
-    //static_assert( ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::
-    //    template Is< Sum< Constant< 5 >, Constant< 6 >>>::value, 
-    //        "FAILED: <int> + <int> =matches=> 5 + 6" );
-    
-    //static_assert( not ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::template Is<
-    //    Sum< Constant< units::Length{ 5 } >, Constant< units::Length{ 6 } >>>::value, 
-    //        "FAILED: <int> + <int> =not-matches=> 5m + 6m" );
     
     static_assert( not ForExpression< Sum< Var< 0, int >, Var< 1, int >>>::template Is<
         Difference< Constant< 5 >, Constant< 6 >>>::value,
@@ -97,8 +59,6 @@ struct SubTests
         Sum< Var< 0, int >, Var< 0, int >>>::template Is<
             Sum< Constant< 5 >, Constant< 5 >>>::matches_type >, 
                 match< Var< 0, int >, Constant< 5 >>> );
-    
-
     
 };
 

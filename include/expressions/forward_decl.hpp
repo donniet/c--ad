@@ -202,17 +202,12 @@ struct IsExpression< Var< I, T >>: std::true_type { };
 /// @brief result of a variable is the result of it's value_type
 template< size_t I, typename T >
 struct Result< Var< I, T >>
-{ 
-    using type = Result< T >::type;
+{ using type = Result< T >::type; };
 
-    // DT: maybe we do store a value in a variable?  We have to for higher
-    //     order ones anyway
-    static constexpr type
-    value( Var< I, T > const& var )
-    { static_assert( false, 
-        "direct evaluation of a variable is forbidden" ); }
-};
-
+//////////////
+/// VarId ///
+////////////
+///
 /// a trait to extract the variable ID during bootstrapping
 template< typename Var >
 struct VarId;

@@ -223,6 +223,8 @@
 #include "expressions/constant.hpp"
 #include "expressions/static_value.hpp"
 
+using std::true_type, std::false_type;
+
 namespace expressions {
 
 ////////////////////
@@ -480,6 +482,30 @@ private:
     //value_type _value;
 };
 
+///////////////////
+/// Element Of ///
+/////////////////
+///
+/// @brief Element Of operation
+template< size_t I, typename ArrayT >
+struct Element;
+
+template< size_t I, typename ArrayT >
+struct IsExpression< Element< I, ArrayT >>: true_type { };
+
+template< typename T >
+struct IsElementExpression: false_type { };
+
+template< size_t I, typename ArrayT >
+struct IsElementExpression< Element< I, ArrayT >>: true_type { };
+
+template< typename T >
+constexpr bool is_element_expression_v = IsElementExpression< T >::value;
+
+template< size_t I, typename ArrayT >
+struct Result< Element< I, ArrayT >>
+{ using type = tuple_element_t< I, typename Result< ArrayT >::type >; }; 
+
 //////////////////
 /// Free Vars ///
 ////////////////
@@ -693,6 +719,15 @@ private:
         static constexpr type
         value( Var const&, referent_type const& sub )
         { return sub; }
+    };
+
+    template< size_t I, typename ExprU >
+    struct Parser< Element< I, ExprU >>
+    {
+        using type = Parser< ExprU >::type;
+        static constexpr type
+        value( Element< I, ExprU > const& expr, referent_type const& sub )
+        { return Parser< ExprU >::value( get< 0 >( expr )); }
     };
 
     template< typename FuncExpr >
@@ -1372,32 +1407,6 @@ struct GetFreeVars< Func< Var< I, Var< I, T >>,
     }
 };
 
-/// @brief trait to identify free variables in a substituted, unbound
-///        function expression
-//template< size_t I, typename T, variable... Vars, typename... Args >
-//struct GetFreeVars< 
-//    Sub< Func< Var< I, Var< I, T >>, Vars... >, Args... >>
-//{
-//    using formula_variable_type = Var< I, Func< Var< I, T >, Vars... >>;
-//
-//    using type = merge_unique_variables_t<
-//        unique_variables< formula_variable_type >,
-//        typename GetFreeVars< Args >::type... >;
-//    static constexpr type
-//    value( Sub< Func< 
-//        Var< I, Var< I, T >>, Vars... >, Args... > const& expr )
-//    { 
-//        static constexpr make_seq< sizeof...( Args )> for_args;
-//
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-//        { return merge_unique_variables(
-//            unique_variables< formula_variable_type >{ std::get< 0 >( std::get< 0 >( expr )) },
-//            GetFreeVars< Args >::value( std::get< 1 + Is >( expr ))... ); };
-//
-//        return helper( for_args );
-//    }
-//};
-
 /// @brief trait to identify free variables in a bound function
 template< typename ExprT, variable... Vars >
 requires( var_order_v< ExprT > == 1 )
@@ -1528,6 +1537,115 @@ private:
     // substitutions, 
     value_type _expr;
 };
+
+template< size_t I, typename T >
+struct GetFreeVars< Element< I, T >>
+{
+    using type = GetFreeVars< T >::type;
+    static constexpr type
+    value( Element< I, T > const& expr )
+    { return GetFreeVars< T >::value( expr ); }
+};
+
+namespace detail {
+
+template< size_t Id, size_t I, typename ExprT, typename Sub >
+struct IsCompatibleVarSub< Id, Element< I, ExprT >, Sub >:
+    IsCompatibleVarSub< Id, ExprT, Sub > { };
+
+} // namespace detail
+
+///////////////////////////////
+/// Element Implementation ///
+/////////////////////////////
+///
+template< size_t I, typename ArrayT >
+struct Element: tuple< ArrayT >
+{
+    static constexpr size_t index = I;
+    using arguments_tuple = tuple< ArrayT >;
+    using array_type = ArrayT;
+    static constexpr size_t arguments_size = 1;
+
+    static constexpr tuple_element_t< I, array_type >
+    value( ArrayT const& arg )
+    { return get< I >( arg ); }
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    constexpr ArrayT const&
+    arr() const
+    { return std::get< 0 >( *this ); }
+
+    constexpr tuple_element_t< I, array_type >
+    operator ()() const 
+    { return get< I >( arr() ); }
+
+    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
+    constexpr Element( Element const& ) = default;
+    constexpr Element() = default;
+};
+
+template< size_t I, expression ArrayT >
+struct Element< I, ArrayT >: tuple< ArrayT >
+{
+    static constexpr size_t index = I;
+    using result_type = result_t< Element< I, ArrayT >>;
+    using array_type = ArrayT;
+    using arguments_tuple = tuple< ArrayT >;
+    static constexpr size_t arguments_size = 1;
+
+    static constexpr tuple_element_t< I, ArrayT >
+    value( ArrayT const& arg )
+    { return std::get< I >( arg ); }
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    constexpr ArrayT const&
+    arr() const
+    { return std::get< 0 >( *this ); }
+
+    // cascade evaluation to array
+    constexpr result_type
+    operator ()() const 
+    { return std::get< index >( arr()() ); }
+
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< array_type, First, Rest... > and
+        closed_expression< substitute_t< array_type, First, Rest... >> )
+    constexpr tuple_element_t< I, substitute_t< array_type, First, Rest... >>
+    operator ()( First const& first, Rest const&... rest ) const
+    { return get< I >( substitute( arr(), first, rest... )); }
+
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< array_type, First, Rest... > and
+        open_expression< substitute_t< array_type, First, Rest... >> )
+    constexpr Element< I, substitute_t< array_type, First, Rest... >>
+    operator ()( First const& first, Rest const&... rest ) const
+    { return { substitute( arr(), first, rest... )}; }
+
+    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
+    constexpr Element( Element const& ) = default;
+    constexpr Element() = default;
+};
+
+
+///////////////////////
+/// element method ///
+/////////////////////
+///
+/// @brief lazy version of std::get for tuples, arrays and tensors
+template< size_t I, typename T >
+using element_t = Element< I, T >;
+
+template< size_t I, typename T >
+constexpr Element< I, T >
+element( T const& arr )
+{ return { arr }; }
 
 } // namespace expressions 
 

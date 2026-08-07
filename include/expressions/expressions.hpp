@@ -301,6 +301,13 @@ public:
 ///
 namespace detail {
 
+template< size_t Id, typename ScopeT >
+struct ScopeContainsVar: false_type { };
+
+template< size_t Id, typename... Vars >
+struct ScopeContainsVar< Id, Scope< Vars... >>: std::integral_constant< bool,
+    (( var_id_v< Vars > == Id ) or ... or false )> { };
+
 template< expression ExprT, typename ScopeT >
 requires( is_scope_v< ScopeT >)
 struct ScopeContainsFreeVars {
@@ -429,307 +436,6 @@ struct Applier< Op< Args... >, ManipulatorT >
     value( Op< Args... > const& expr, ManipulatorT& f )
     { return Helper< for_args >::value( expr, f ); }
 };
-
-//template< typename ExprT, typename ManipulatorT >
-//struct Applier
-//{
-//    using expression_type = ExprT;
-//    using manipulator_type = ManipulatorT;
-//
-//    static constexpr size_t max_processing_depth = 100;
-//    static constexpr size_t max_processing_steps = 10;
-//
-//    template< typename Current, typename... History > 
-//    struct Processor;
-//
-//    template< typename Current, typename... History >
-//    requires( sizeof...( History ) >= max_processing_depth )
-//    struct Processor< Current, History... >
-//    { static_assert( sizeof...( History ) < max_processing_depth,
-//        "maximum processing depth" ); };
-//
-//    template< int Steps, typename Current, typename... History >
-//    struct Repeater;
-//
-//    template< int Steps, typename Current, typename... History >
-//    requires( Steps >= max_processing_steps )
-//    struct Repeater< Steps, Current, History... >
-//    { static_assert( Steps < max_processing_steps, 
-//        "maximum processing steps" ); };
-//
-//    template< auto Value, typename... History >
-//    requires( sizeof...( History ) < max_processing_depth )
-//    struct Processor< Constant< Value >, History... >
-//    {
-//        using type = std::remove_cvref_t< decltype( Value )>;
-//        static constexpr type value( Constant< Value > const&, manipulator_type& )
-//        { return Value; }
-//    };
-//
-//    template< typename T, typename... History >
-//    requires( sizeof...( History ) < max_processing_depth )
-//    struct Processor< StaticValue< T >, History... >
-//    {
-//        using type = T;
-//        static constexpr type value( StaticValue< T > const& expr, manipulator_type& )
-//        { return expr.get_value(); }
-//    };
-//
-//    template< non_expression T, typename... History >
-//    requires( sizeof...( History ) < max_processing_depth )
-//    struct Processor< T, History... >
-//    {
-//        using type = T;
-//        static constexpr type value( T const& open_expr, manipulator_type& )
-//        { return open_expr; }
-//    };
-//
-//    // Case: This is a compound expression
-//    template< template< typename... > class Op, typename... Args, 
-//        typename... History >
-//    requires( compound_expression< Op< Args... >> and 
-//    //    not is_substitution_expression_v< Op< Args... >> and
-//        sizeof...( History ) < max_processing_depth )
-//    struct Processor< Op< Args... >, History... >
-//    { 
-//        typedef make_seq< sizeof...( Args )> for_arguments;
-//    
-//        template< typename Seq >
-//        struct Helper;
-//    
-//        // (1) applies the manipulator on the arguments of the compound expression and
-//        //     calls the Op< Args... >::value method on the result.
-//        template< size_t... Is >
-//        struct Helper< seq< Is... >>
-//        {
-//            using type = std::remove_cvref_t< decltype( Op< Args... >::value( 
-//                typename Processor< Args...[ Is ], Op< Args... >, History... >::type{}... )) >;
-//    
-//            // apply the manipulator to the arguments and recombind them with the value method
-//            static constexpr type value( Op< Args... > const& expr, manipulator_type& f )
-//            { return Op< Args... >::value( Processor< Args...[ Is ], Op< Args... >, History... >::
-//                value( std::get< Is >( expr ), f )... ); }
-//        };
-//
-//        using type = Helper< for_arguments >::type;
-//   
-//        static constexpr type
-//        value( Op< Args... > const& expr, manipulator_type& f )
-//        { return Helper< for_arguments >::value( expr, f ); }
-//    };
-//
-//    // Case: This is a substitution expression. Subs are processed top down (maybe...)
-//    //template< typename FormulaT, typename... Subs, typename... History >
-//    //requires( sizeof...( History ) < max_processing_depth )
-//    //struct Processor< Sub< FormulaT, Subs... >, History... >
-//    //{
-//    //    using substituter = Substituter< FormulaT, Subs... >;
-//    //    using substituted_type = substituter::type;
-//    //    using type = Processor< substituted_type, 
-//    //       Sub< FormulaT, Subs... >, History... >;
-//
-//    //    static constexpr type value( Sub< FormulaT, Subs... > const& sub, 
-//    //        manipulator_type& f )
-//    //    { 
-//    //        static constexpr make_seq< sizeof...( Subs )> for_subs;
-//
-//    //        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-//    //        { return Processor< substituted_type, 
-//    //            Sub< FormulaT, Subs... >, History... >::value( 
-//    //                substituter::value( std::get< 0 >( sub ), 
-//    //                    std::get< 1 + Is >( sub )... ), f ); };
-//
-//    //        return helper( for_subs );
-//    //    }
-//    //};
-//
-//    // our manipulator accepts this result
-//    template< size_t Steps, typename ExprU, typename... History >
-//    requires( std::is_invocable_v< manipulator_type, ExprU > and Steps < max_processing_steps )
-//    struct Repeater< Steps, ExprU, History... >
-//    {
-//        using type = std::invoke_result_t< manipulator_type, ExprU >;
-//
-//        static constexpr type 
-//        value( ExprU const& expr, manipulator_type& f )
-//        { return std::invoke( f, expr ); }
-//    };
-//
-//    // as long as the processor accepts it and the manipulator doesn't, keep processing
-//    template< size_t Steps, typename Current, typename... History >
-//    requires( not std::is_invocable_v< manipulator_type, Current > and requires { 
-//        typename Processor< Current, History... >::type; } and
-//            Steps < max_processing_steps )
-//    struct Repeater< Steps, Current, History... >
-//    {
-//        using processed_type = Processor< Current, History... >::type;
-//        using type = Repeater< Steps + 1, processed_type, Current, History... >::type;
-//
-//        static constexpr type value( Current const& expr, manipulator_type& f )
-//        { return Repeater< Steps + 1, processed_type, Current, History... >::value(
-//            Processor< Current, History... >::value( expr, f ), f ); }
-//    };
-//            
-//    // if the processor does not accept it, return it
-//    template< size_t Steps, typename Current, typename... History >
-//    requires( not std::is_invocable_v< manipulator_type, Current > and not requires { 
-//        typename Processor< Current, History... >::type; } and
-//            Steps < max_processing_steps )
-//    struct Repeater< Steps, Current, History... >
-//    {
-//        using type = Current;
-//        static constexpr size_t execution_steps = Steps;
-//        using processing_history = std::tuple< History... >;
-//
-//        static constexpr type value( Current const& expr, manipulator_type& )
-//        { return expr; }
-//    };
-//
-//    using type = Repeater< 0, expression_type >::type;
-////    static constexpr type value( expression_type const& expr, ManipulatorT& f )
-////    { return Repeater< 0, expression_type >::value( expr, f ); }
-//
-//    static constexpr type value( expression_type expr, ManipulatorT& f )
-//    { return Repeater< 0, expression_type >::value( expr, f ); }
-//};
-/// @brief substitution for higher-order variables results in an expression 
-///
-/// LAWS:
-///   (i) Associative:
-///       sub( sub( expr, a, b ), c, d ) <=> sub( expr, a, b, c, d )
-///
-///   
-/// Subs are complex compound expressions. 
-///  (1) COLLECT FREE VARIABLES:
-///      Free variables are found in ExprT (see GetFreeVars)
-///  (2) BIND VARIABLES:
-///      Each free variable is matched with a substitution expression from 
-///      ...Subs in var::id order (see BoundVars)
-///  (3) DEPENDENCY SORTING:
-///      Bindings are sorted topologically by dependencies between the
-///      substitution arguments (...Subs) and the free variables from
-///      ExprT.
-///  (4) SUBSTITUTION EVALUATOIN:
-///      A `Sub< ExprT, Subs... >` is evaluated by evaluating
-///      a recursive list of SubFor pseudo-expressions:
-///
-///      Var< 0, int > x;
-///      Var< 1, int > y;
-///      
-///      assert( 
-///         substitute( x + y, 3, 4 ) ==
-///         substitute_for( substitute_for( x + y, x, 3 ), y, 4 ));
-/// 
-/// This is returened from the operator() of Arguments
-///
-//
-///// @brief specialization for full substitutions 
-//template< typename ExprT, typename... Ss >
-////requires( free_variables_t< substitute_t< ExprT, Subs... >>::size == 0 )
-////requires( is_compatible_substitution_v< ExprT, Subs... > )
-//struct Sub: std::tuple< ExprT, Ss... >
-//{
-//    using formula_type = ExprT;
-//    static constexpr make_seq< sizeof...( Ss )> for_subs;
-//    using arguments_tuple = std::tuple< ExprT, Ss... >;
-//    using result_type = result_t< formula_type >;
-//
-//    constexpr formula_type
-//    formula() const
-//    { return std::get< 0 >( *this ); }
-//
-//    template< size_t I >
-//    constexpr Ss...[ I ]
-//    arg() const 
-//    { return std::get< 1 + I >( *this ); }
-//
-//    constexpr std::tuple< Ss... >
-//    subs() const
-//    { 
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
-//            std::tuple< Ss... >
-//        { return { arg< Is >()... }; };
-//
-//        return helper( for_subs );
-//    };
-//
-//    // evaluation of a closed substitution
-//    constexpr substitute_t< ExprT, Ss... >
-//    operator ()() const
-//    { 
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
-//            substitute_t< ExprT, Ss... >
-//        { return substitute( formula(), arg< Is >()... ); };
-//
-//        return helper( for_subs );
-//    }
-//
-//    // substitution into a closed substitution
-//    template< typename... SSubs >
-//    constexpr substitute_t< ExprT, Ss..., SSubs... >
-//    operator ()( SSubs const&... subsubs ) const
-//    {
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
-//            substitute_t< ExprT, Ss..., SSubs... >
-//        { return substitute( formula(), arg< Is >()..., subsubs... ); };
-//
-//        return helper( for_subs );
-//    }
-//
-//    constexpr Sub( formula_type const& formula, Ss const&... subs ):
-//        std::tuple< formula_type, Ss... >{ formula, subs... }    
-//    { }
-//    constexpr Sub() = default;
-//    constexpr Sub( Sub const& ) = default;
-//};
-//
-///// @brief specialization for functional expressions
-//template< size_t I, typename T, variable... Vars >
-//struct Var< I, Func< Var< I, T >, Vars... >>
-//{
-//    using value_type = Func< Var< I, T >, Vars... >;
-//    static constexpr size_t id = I;
-//    static constexpr size_t vars_size = sizeof...( Vars );
-//    typedef make_seq< vars_size > for_vars;
-//
-//    using this_type = Var< I, Func< Var< I, T >, Vars... >>;
-//
-//    constexpr string const& name() const 
-//    { return _name; }
-//
-//    constexpr void set_name( string const& new_name )
-//    { _name = new_name; }
-//
-//    /// @brief substitution operator for closed expressions
-//    template< typename... Ss >
-//    requires( sizeof...( Ss ) == sizeof...( Vars ) and
-//        not open_expression< Sub< this_type, make_expression_t< Ss >... >> )
-//    constexpr result_t< T >
-//    operator ()( Ss const&... subs )
-//    { return Sub< this_type, make_expression_t< Ss >... >{ 
-//        *this, make_expression( subs )... }(); }
-//
-//    /// @brief substitution operator for open expressions
-//    template< typename... Ss >
-//    requires( sizeof...( Ss ) == sizeof...( Vars ) and
-//        open_expression< Sub< this_type, make_expression_t< Ss >... >> )
-//    constexpr Sub< this_type, make_expression_t< Ss >... >
-//    operator ()( Ss const&... subs )
-//    { return { *this, make_expression( subs )... }; }
-//
-//    // variables evaluate to themselves
-//    constexpr Var const& 
-//    operator ()() const
-//    { return *this; }
-//
-//    constexpr Var( string const& name = "var" ): _name{ name } { };
-//    constexpr Var( Var const& ) = default; 
-//
-//private:
-//    string _name;
-//    std::tuple< Vars... > _vars;
-//};
-//
 
 // TODO: remove the specializations for this, and let the Applier do it
 template< typename ScopeT >
@@ -869,33 +575,7 @@ constexpr typename Applier< Var, ManipulatorT >::type
 operator |( Var const& var, ManipulatorT&& f )
 { return Applier< Var, ManipulatorT >::value( var, f ); }
 
-
-/// @brief application of a value or expression against a const manipulator
-/// reference that has an overloaded invocation operator yields the invocation of
-/// the manipulator on the value or expression
-/// 
-/// NOTE: I'm not sure we want to handle const manipulators. I'm going to comment 
-///       this out for now
-//template< typename T, typename ManipulatorT >
-//requires std::invocable< const ManipulatorT, T >
-//constexpr auto operator |( T const& value_or_expression, ManipulatorT const& manipulator )
-//{ return manipulator( value_or_expression ); }
-
-/// @brief application of a compound expression against a const manipulator
-/// reference that does not have an overloaded inovcation operator starts a dual
-/// recursion between the compound expression's apply method and the application
-/// operator|
-///
-/// This is where the rubber meets the road: (3*x | eval()) fails because product 
-/// doesn't know evaluator yet, so neither can determine the return type
-///
-/// NOTE: I don't know if we want to handle const Manipulators...  Going to comment
-///       this out for now.
-//template< compound_expression ExprT, typename ManipulatorT >
-//requires( not std::invocable< const ManipulatorT, ExprT >)
-//constexpr auto operator |( ExprT const& expr, ManipulatorT const& manipulator )
-//{ return expr.apply( manipulator ); }
-
+/// @brief bespoke applier for tuples
 template< typename TupleT, typename ManipulatorT >
 struct TupleApplier;
 
@@ -925,6 +605,7 @@ public:
     { return Helper< for_tuple_elements >::value( tup, f ); }
 };
 
+/// @brief bespoke applier for tensors
 template< typename TensorT, typename ManipulatorT >
 struct TensorApplier;
 
@@ -939,10 +620,11 @@ private:
     template< size_t... Is >
     struct Helper< seq< Is... >>
     {
-        using type = Tensor< S, typename Applier< Ts...[ Is ], ManipulatorT >::type
-            ... >;
+        using type = Tensor< S, typename 
+            Applier< Ts...[ Is ], ManipulatorT >::type... >;
 
-        static constexpr type value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
+        static constexpr type 
+        value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
         { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
             tensor_get< Is >( ten ), f )... }; }
     };
@@ -950,7 +632,8 @@ private:
 public:
     using type = Helper< for_tensor_elements >::type;
 
-    static constexpr type value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
+    static constexpr type 
+    value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
     { return Helper< for_tensor_elements >::value( ten, f ); }
 };
 
@@ -965,41 +648,16 @@ operator |( tuple< Ts... > const& expr_tup, ManipulatorT& f )
 { return TupleApplier< tuple< Ts... >, ManipulatorT >::value( expr_tup, f ); }
 
 /// @brief application of a tensor of at least one expression and a manipulator
-/// that is not invocable on the tensor yields a tensor of the result of applying
-/// the manipulator against each element of the tensor.
+/// that is not invocable on the tensor yields a tensor of the result of 
+/// applying the manipulator against each element of the tensor.
 template< typename ShapeT, typename... Exprs, typename ManipulatorT >
 requires( expression< Tensor< ShapeT, Exprs... >> and
     not std::invocable< ManipulatorT, Tensor< ShapeT, Exprs... >> )
-constexpr typename TensorApplier< Tensor< ShapeT, Exprs... >, ManipulatorT >::type
+constexpr typename TensorApplier< Tensor< ShapeT, Exprs... >, ManipulatorT >::
+    type
 operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT& f )
 { return TensorApplier< Tensor< ShapeT, Exprs... >, ManipulatorT >::value(
     expr_ten, f ); }
-
-// expression value type: trait for the return type of calling the value method
-// on an expression, and can handle expression leaves and non-expressions as well
-template< typename T >
-struct ExpressionValue
-{ using type = T; };
-
-template< auto Value >
-struct ExpressionValue< Constant< Value >>
-{ using type = std::remove_cv_t< decltype( Value )>; };
-
-template< typename T >
-struct ExpressionValue< StaticValue< T >>
-{ using type = T; };
-
-template< size_t I, typename T >
-struct ExpressionValue< Var< I, T >>
-{ using type = T; };
-
-template< template< typename... > class Op, typename... Args >
-requires compound_expression< Op< Args... >>
-struct ExpressionValue< Op< Args... >>
-{ using type = std::remove_cv_t< decltype( Op< Args... >::value( Args{}... ))>; };
-
-template< typename T >
-using expression_value_t = ExpressionValue< T >::type;
 
 ///////////////////
 /// Var Traits ///
@@ -1119,24 +777,6 @@ make_scope( Ts const&... ts )
 
     return scope;
 }
-
-//////////////////////////
-/// substitute method ///
-////////////////////////
-///
-/// @brief substitutes arguments for the dependent variables of an expression
-///
-/// @tparam ExprT type of the expression to be substituted into
-/// @tparam Args... types of the args being substituted
-/// @param expr is the instance of the original expression
-/// @param args... are the 
-//template< typename ExprT, typename... Args >
-//constexpr typename Substituter< make_expression_t< ExprT >, 
-//    make_expression_t< Args >... >::type 
-//substitute( ExprT expr, Args... args )
-//{ return Substituter< make_expression_t< ExprT >, 
-//    make_expression_t< Args >... >::value( make_expression( expr ), 
-//        make_expression( args )... ); }
 
 /////////////////
 /// Visitors ///
@@ -1272,79 +912,6 @@ constexpr typename Route< Visitor, ExprT, Start >::type
 visit( ExprT const& expr )
 { return Route< Visitor, ExprT, Start >::value( expr ); }
 
-////////////////////////////////
-/// Bootstrapping Completed ///
-//////////////////////////////
-/// 
-/// Our bootstrapping is complete.  From now on variables and expressions
-/// should be tested for by their concepts, and inspected via their _traits
-///
-
-
-///////////////////
-/// Element Of ///
-/////////////////
-///
-/// @brief Element Of operation
-template< size_t I >
-struct Element
-{
-    template< typename ArrayT >
-    struct Of;
-};
-
-template< size_t I >
-template< typename ArrayT >
-requires( not tensor< result_t< ArrayT >> )
-struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
-{
-    using result_type = tuple_element_t< I, result_t< ArrayT >>;
-
-    template< typename ArrayU >
-    static constexpr auto value( ArrayU const& arr )
-    { return std::get< I >( arr ); }
-    
-    constexpr ArrayT arg() const { return get_argument< 0 >( *this ); }
-
-    constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
-    constexpr Of() = default;
-};
-
-template< size_t I >
-template< typename ArrayT >
-requires( tensor< result_t< ArrayT >> )
-struct Element< I >::Of< ArrayT >: Arguments< Of, ArrayT >
-{
-    using result_type = tensor_element_t< I, result_t< ArrayT >>;
-
-    template< typename ArrayU >
-    static constexpr auto value( ArrayU const& arr )
-    { return std::get< I >( arr ); } 
-
-    constexpr ArrayT arg() const { return std::get< 0 >( *this ); }
-    
-    constexpr Of( ArrayT const& arr ): Arguments< Of, ArrayT >{ arr } { };
-    constexpr Of() = default;
-};
-
-template< size_t I, typename T >
-using element_of = Element< I >::template Of< T >;
-
-template< size_t I, typename T >
-constexpr element_of< I, T > element( T const& arr )
-{ return { arr }; }
-
-/// @brief extract the element from a tuple-like array
-/// @tparam ArrayT 
-/// @tparam I 
-// template< size_t I, typename ArrayT >
-// struct Element: tuple_element_t< I, ArrayT >
-// {  
-//     constexpr Element( ArrayT arr ): 
-//         tuple_element_t< I, ArrayT >{ std::get< I >( arr ) }
-//     { }
-// };
-//
 } // namespace expressions
 
 
