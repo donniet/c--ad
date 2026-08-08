@@ -645,12 +645,60 @@ requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator +( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() + right.get_value() }; }
 
+template< Scalar U, arithmetic T >
+constexpr Scalar operator +( Scalar const& left, T const& right )
+{ return { left.get_value() + right }; }
+
+template< arithmetic T, Scalar U >
+constexpr Scalar operator +( T const& left, Scalar const& right )
+{ return { left + right.get_value() }; }
+
+template< unit U, arithmetic T >
+requires( U::unit_id != scalar_unit_id )
+constexpr U operator +( U const& left, T const& right )
+{
+    assert( right == 0 ); // zero is unitless
+    return left;
+}
+
+template< arithmetic U, unit T >
+requires( T::unit_id != scalar_unit_id )
+constexpr U operator +( U const& left, T const& right )
+{
+    assert( left == 0 ); // zero is unitless
+    return right;
+}
+
 /// subtraction
 ///
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 constexpr LeftU operator -( LeftU const& left, RightU const& right )
 { return LeftU{ left.get_value() - right.get_value() }; }
+
+template< Scalar U, arithmetic T >
+constexpr Scalar operator -( Scalar const& left, T const& right )
+{ return { left.get_value() - right }; }
+
+template< arithmetic T, Scalar U >
+constexpr Scalar operator -( T const& left, Scalar const& right )
+{ return { left - right.get_value() }; }
+
+template< unit U, arithmetic T >
+requires( U::unit_id != scalar_unit_id )
+constexpr U operator -( U const& left, T const& right )
+{
+    assert( right == 0 ); // zero is unitless
+    return left;
+}
+
+template< arithmetic U, unit T >
+requires( T::unit_id != scalar_unit_id )
+constexpr U operator -( U const& left, T const& right )
+{
+    assert( left == 0 ); // zero is unitless
+    return -right;
+}
 
 /// negation
 ///
