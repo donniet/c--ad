@@ -370,6 +370,19 @@ struct base_unit< scalar_unit_id, T >
     scalar_type value;
 };
 
+//////////////////
+/// ExactZero ///
+////////////////
+/// 
+/// Represents a unitless numerical zero value
+///
+struct exact_zero 
+{
+    template< arithmetic T >
+    consteval exact_zero( T n ) 
+    { if( n != 0 ) throw "only zero may be added to a value with units"; }
+};
+
 ////////////////////
 /// Unit Traits ///
 //////////////////
@@ -653,21 +666,15 @@ template< arithmetic T, Scalar U >
 constexpr Scalar operator +( T const& left, Scalar const& right )
 { return { left + right.get_value() }; }
 
-template< unit U, arithmetic T >
+template< unit U >
 requires( U::unit_id != scalar_unit_id )
-constexpr U operator +( U const& left, T const& right )
-{
-    assert( right == 0 ); // zero is unitless
-    return left;
-}
+constexpr U operator +( U const& left, exact_zero )
+{ return left; }
 
-template< arithmetic U, unit T >
+template< unit T >
 requires( T::unit_id != scalar_unit_id )
-constexpr U operator +( U const& left, T const& right )
-{
-    assert( left == 0 ); // zero is unitless
-    return right;
-}
+constexpr T operator +( exact_zero, T const& right )
+{ return right; }
 
 /// subtraction
 ///
@@ -684,21 +691,15 @@ template< arithmetic T, Scalar U >
 constexpr Scalar operator -( T const& left, Scalar const& right )
 { return { left - right.get_value() }; }
 
-template< unit U, arithmetic T >
+template< unit U >
 requires( U::unit_id != scalar_unit_id )
-constexpr U operator -( U const& left, T const& right )
-{
-    assert( right == 0 ); // zero is unitless
-    return left;
-}
+constexpr U operator -( U const& left, exact_zero )
+{ return left; }
 
-template< arithmetic U, unit T >
+template< unit T >
 requires( T::unit_id != scalar_unit_id )
-constexpr U operator -( U const& left, T const& right )
-{
-    assert( left == 0 ); // zero is unitless
-    return -right;
-}
+constexpr T operator -( exact_zero, T const& right )
+{ return -right; }
 
 /// negation
 ///
