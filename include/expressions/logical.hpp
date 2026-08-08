@@ -9,6 +9,7 @@ namespace expressions {
 /// Conditional Expression ///
 /////////////////////////////
 /// 
+/// **WORK IN PROGRESS**
 template< typename T >
 constexpr T if_( bool cond, T true_value, T false_value = {} )
 { return cond ? true_value : false_value; }
@@ -75,19 +76,11 @@ struct IsExpressionOperation< Conjunction >: std::true_type { };
 template< typename... Ts >
 struct Conjunction: Arguments< Conjunction, Ts... >
 {
-    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
-    using result_type = bool;
+    static constexpr auto
+    value( Ts const&... ts )
+    { return ( ts and ... and true ); }
 
-    template< size_t I >
-    constexpr Ts...[ I ] arg() const
-    { return get_argument< I >( *this ); }
-
-    template< typename... Us >
-    static constexpr auto value( Us const&... us )
-    { return ( us and ... ); }
-
-    constexpr Conjunction( Ts... ts ): Arguments< Conjunction, Ts... >{ ts... } { } 
-    constexpr Conjunction() = default;
+    using Arguments< Conjunction, Ts... >::Arguments;
 };
 
 ////////////////////
@@ -105,19 +98,11 @@ struct IsExpressionOperation< Disjunction >: std::true_type { };
 template< typename... Ts >
 struct Disjunction: Arguments< Disjunction, Ts... >
 {
-    static constexpr size_t arguments_size() { return sizeof...( Ts ); }
-    using result_type = bool;
+    static constexpr auto
+    value( Ts const&... ts )
+    { return ( ts or ... or false ); }
 
-    template< size_t I >
-    constexpr Ts...[ I ] arg() const
-    { return get_argument< I >( *this ); }
-
-    template< typename... Us >
-    static constexpr auto value( Us const&... us )
-    { return ( us or ... ); }
-
-    constexpr Disjunction( Ts... ts ): Arguments< Disjunction, Ts... >{ ts... } { } 
-    constexpr Disjunction() = default;
+    using Arguments< Disjunction, Ts... >::Arguments;
 };
 
 ///////////////////
@@ -136,16 +121,11 @@ struct IsExpressionOperation< Compliment >: std::true_type { };
 template< typename T >
 struct Compliment: Arguments< Compliment, T >
 {
-    using result_type = bool;
-
-    constexpr T arg() const { return get_argument< 0 >( *this ); }
-
-    template< typename U >
-    static constexpr auto value( U const& arg )
+    static constexpr auto 
+    value( T const& arg )
     { return not arg; }
 
-    constexpr Compliment( T arg ): Arguments< Compliment, T >{ arg } { } 
-    constexpr Compliment() = default;
+    using Arguments< Compliment, T >::Arguments;
 };
 
 //////////////////////////////////

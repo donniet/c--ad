@@ -2,6 +2,9 @@
 #define __EXPRESSIONS_FORMAT_HPP__
 
 #include "expressions/expressions.hpp"
+#include "expressions/arithmetic.hpp"
+#include "expressions/comparison.hpp"
+#include "expressions/logical.hpp"
 
 #include <format>
 

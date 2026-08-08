@@ -22,16 +22,11 @@ struct IsExpressionOperation< EqualsZero >: std::true_type { };
 template< typename T >
 struct EqualsZero: Arguments< EqualsZero, T >
 {
-    using result_type = bool;
+    static constexpr auto 
+    value( T const& arg )
+    { return arg == 0; }
 
-    constexpr T arg() const { return get_argument< 0 >( *this ); }
-
-    template< typename U >
-    static constexpr auto value( U const& val )
-    { return val == 0; }
-
-    constexpr EqualsZero( T arg ): Arguments< EqualsZero, T >{ arg } { }
-    constexpr EqualsZero() = default;
+    using Arguments< EqualsZero, T >::Arguments;
 };
 
 ///////////////
@@ -50,18 +45,11 @@ struct IsExpressionOperation< Equals >: std::true_type { };
 template< typename T, typename U >
 struct Equals: Arguments< Equals, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left == right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left == right ); } 
-
-    constexpr Equals( T left, U right ): 
-        Arguments< Equals, T, U >{ left, right } { }
-    constexpr Equals() = default;
+    using Arguments< Equals, T, U >::Arguments;
 };
 
 //////////////////
@@ -80,18 +68,11 @@ struct IsExpressionOperation< NotEquals >: std::true_type { };
 template< typename T, typename U >
 struct NotEquals: Arguments< NotEquals, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left != right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left != right ); } 
-
-    constexpr NotEquals( T left, U right ): 
-        Arguments< NotEquals, T, U >{ left, right } { }
-    constexpr NotEquals() = default;
+    using Arguments< NotEquals, T, U >::Arguments;
 };
 
 ////////////////////
@@ -110,18 +91,11 @@ struct IsExpressionOperation< GreaterThan >: std::true_type { };
 template< typename T, typename U >
 struct GreaterThan: Arguments< GreaterThan, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left > right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left > right ); } 
-
-    constexpr GreaterThan( T left, U right ): 
-        Arguments< GreaterThan, T, U >{ left, right } { }
-    constexpr GreaterThan() = default;
+    using Arguments< GreaterThan, T, U >::Arguments;
 };
 
 /////////////////
@@ -140,18 +114,11 @@ struct IsExpressionOperation< LessThan >: std::true_type { };
 template< typename T, typename U >
 struct LessThan: Arguments< LessThan, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left < right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left < right ); } 
-
-    constexpr LessThan( T left, U right ): 
-        Arguments< LessThan, T, U >{ left, right } { }
-    constexpr LessThan() = default;
+    using Arguments< LessThan, T, U >::Arguments;
 };
 
 ////////////////////////////
@@ -170,18 +137,11 @@ struct IsExpressionOperation< GreaterThanOrEquals >: std::true_type { };
 template< typename T, typename U >
 struct GreaterThanOrEquals: Arguments< GreaterThanOrEquals, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left >= right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left >= right ); } 
-
-    constexpr GreaterThanOrEquals( T left, U right ): 
-        Arguments< GreaterThanOrEquals, T, U >{ left, right } { }
-    constexpr GreaterThanOrEquals() = default;
+    using Arguments< GreaterThanOrEquals, T, U >::Arguments;
 };
 
 /////////////////////////
@@ -200,18 +160,11 @@ struct IsExpressionOperation< LessThanOrEquals >: std::true_type { };
 template< typename T, typename U >
 struct LessThanOrEquals: Arguments< LessThanOrEquals, T, U >
 { 
-    using result_type = bool;
-
-    constexpr T left_arg() const { return get_argument< 0 >( *this ); }
-    constexpr U right_arg() const { return get_argument< 1 >( *this ); }
+    static constexpr auto
+    value( T const& left, U const& right )
+    { return left <= right; }
     
-    template< typename V, typename W >
-    static constexpr auto value( V const& left, W const& right )
-    { return ( left <= right ); } 
-
-    constexpr LessThanOrEquals( T left, U right ): 
-        Arguments< LessThanOrEquals, T, U >{ left, right } { }
-    constexpr LessThanOrEquals() = default;
+    using Arguments< LessThanOrEquals, T, U >::Arguments;
 };
 
 /////////////////////////
@@ -230,8 +183,6 @@ struct IsEquals< Equals< A, B >>: integral_constant< bool, true > { };
 
 template< typename ExprT >
 constexpr bool is_equals_v = detail::IsEquals< ExprT >::value;
-
-
 
 //////////////////
 /// Operators ///

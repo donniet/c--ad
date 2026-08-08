@@ -93,13 +93,13 @@ bool test_simple_expressions()
 
     auto [ x, y, l, v, a, z, w ] = vars.variables();
 
-    auto d_x = differential( x );
-    auto d_y = differential( y );
-    auto d_l = differential( l );
-    auto d_v = differential( v );
-    auto d_a = differential( a );
-    auto d_z = differential( z );
-    auto d_w = differential( w );
+//    auto d_x = differential( x );
+//    auto d_y = differential( y );
+//    auto d_l = differential( l );
+//    auto d_v = differential( v );
+//    auto d_a = differential( a );
+//    auto d_z = differential( z );
+//    auto d_w = differential( w );
 
     println( "{}", zero );
 
@@ -120,17 +120,17 @@ bool test_simple_expressions()
     println( "{}", g | vars );
     println( std::runtime_format( "g == {}" ), g );
 
-    auto dg = d_x( g );
-    println( "{}", dg );
-    println( "g() == {}", dg | vars );
+//    auto dg = d_x( g );
+//    println( "{}", dg );
+//    println( "g() == {}", dg | vars );
 
     auto h = ( 1_sqft - l * l ) / 254_mm;
     println( std::runtime_format( "h({}) == {}" ), l, h );
     println( std::runtime_format( "h({}) == {:ft}" ), 12_in, h | vars );
 
-    auto dh = d_l( h );
-    println( "{}", dh );
-    println( "dh({}) == {}", 12_in, dh | vars );
+//    auto dh = d_l( h );
+//    println( "{}", dh );
+//    println( "dh({}) == {}", 12_in, dh | vars );
 
     auto t1 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, 2_mm / 1_s );
     auto t2 = make_tuple( 3_mm / 1_s, 5_mm / 1_s, v );
@@ -258,7 +258,7 @@ bool test_minimization()
     // parabola
     auto para = ( ( x - 2 ) * ( x - 2 ) + 3 );
 
-    auto x0 = argmin( para, x );
+    //auto x0 = argmin( para, x );
 
 
     // paraboloid
