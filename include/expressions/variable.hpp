@@ -2,16 +2,100 @@
 /// Variables and Substitutions ///
 //////////////////////////////////
 ///
+/// Expressions are nested templated classes, optionally with placeholders 
+/// called "variables" which can be parsed by the template pattern matching 
+/// system in c++. This allows for compile-time analysis of arithmetic, 
+/// geometric, and logical formulae and the re-use of common analysis and 
+/// solution methods across problem spaces. The central tool to evaluating, 
+/// solving, and construction of complex expressions are variables and 
+/// substitutions, the definition of which are defined in this header file.
+///
+/// Variables are `Var< id, T >` types where `id` is a `size_t` integer that
+/// uniquely identifies this variable, and `T` is a type that determines the
+/// structure of valid substitutions and the ultimate result-type of the 
+/// variable.  Substitutions into `Var< id, T >` are "compatible" if the 
+/// expression type S being substituted, called the "referent type":
+///
+///     Compatiblity Rules:
+///     (a) have the same result type as T
+///     (b) could be substituted for the variable identified by id into T if
+///         T itself is an expression type (see: higher-order variables)
+///     
 /// Substitutions happen one variable at a time. The order is calculated in 
 /// BoundVars by looking through the dependencies of the variables and the
-/// expressions they will be substituted for (referents). This class executes
-/// the substitution of a single variable with id Id into ExprT replacing
-/// it with the referent expression SubU.
+/// expressions they will be substituted for (referents). The `SubFor<...>` 
+/// class template executes the substitution of a single variable with id Id 
+/// into ExprT replacing it with the referent expression SubU.
 ///
-/// Substitutions automatically evaluate static expressions, but the 
-/// evaluation is implemented by the intermediate class SubstituteForIdSeq.
+/// Substitutions automatically evaluate static and closed expressions. See the 
+/// evaluation logic in the intermediate class detail::SubstituteForIdSeq.
 ///
-/// The classes involved in substitution are: 
+////////////////////
+/// Definitions ///
+//////////////////
+///
+/// - A "formula" is an expression containing placeholder variables and the
+///   first parameter in a call to `substitute(...)`
+/// - "Referents" are expressions that will replace variables in a 
+///   substitution. They are often represented as `...Subs` or `...Ss` in the 
+///   code.
+/// - "Partial" or "incomplete" substitutions are calls to 
+///   `substitute( expr, ...subs )` which do not pair all free variables in the 
+///   formula expression `expr`. 
+/// - "Free" variables are `Var< I, T >` types that are unbound to a referent
+/// - "Bound" variables are `Var< I, T>` types that are paired with a referent
+///   during a substitution.
+/// - A "closed" expression is one with no free variables and
+/// - An "open" expression is one with free variables.
+/// - A "static" expression is one that contains no variables at all, free nor
+///   bound.  Note that all static expressions are also closed.
+/// - The "order" or "variable order" of an expression is the minimum number of
+///   substitution operations that must be done before the expression becomes
+///   static and therefore evaluatable.
+/// - a "function" in the context of this expression library is a pseudo-
+///   expression which defines the substitution order into a second-order
+///   variable, called the formula variable. Functions are higher-order than 
+///   their arguments, and require at least one additional substitution to 
+///   become static.
+/// - "Direct" substitutions are calls to `substitute(...)`, including calls
+///   to `operator()` with at least one argument on compound expressions (see
+///   the `Arguments<...>` template in `expressions.hpp` for details).
+/// - "Indirect" substitutions are the resulting "sub_for<id>(...)" calls which
+///   are made while processing direct substitutions. 
+/// - A referent is "dependent" upon a variable with identifier I if it itself 
+///   contains a variable with the same identifier I.
+///
+/// Using these terms we can define the substitution operation itself:
+///
+/////////////////////////////////////
+/// Definition of a Substitution ///
+///////////////////////////////////
+///
+/// Calling `substitute( formula, ...subs )` will bind and replace 
+/// `sizeof...(subs)` free variables in `formula` with the `...subs` referents. 
+/// The binding order is either the order prescribed by formula using functions 
+/// or defaulting to the numerical order of the free variables ids.  Once bound 
+/// substitution takes place one variable at a time. These indirect 
+/// substitutions are prioritized by dependencies between the `...subs` 
+/// referents and the free variables themselves.
+///
+////////////////////////////////
+/// Substitution Expression ///
+//////////////////////////////
+///
+/// Since we allow for partial substitutions, a substitution itself is an 
+/// expression, represented by `Sub< FormulaT, ...Subs >`. `Sub<...>` is a 
+/// pseudo-compound expression bootstrapped in the code below to act the 
+/// same as any other compound expression, but much of the compound expression
+/// logic must be duplicated to enable this behaviour without circular
+/// references. The use of the term "bootstrap" in this header file indicates
+/// logic enabling the compound-expression logic for partial and incomplete
+/// substitutions.
+///
+////////////////////////
+/// Class Templates ///
+//////////////////////
+/// 
 /// - `Var< Id, Expr >` expression class representing a placeholder
 /// - `Sub< Expr, ...Subs >` compound expression class representing partial 
 ///   substitutions
@@ -40,6 +124,10 @@
 /// - `Substituter< Expr, ...Subs >` utility method class that executes the
 ///   specified substitution using the classes above
 ///
+/////////////////////////
+/// Method Templates ///
+///////////////////////
+///
 /// The classes above are the bodies of the following methods and traits which 
 /// should be used instead of the classes themselves outside of this header:
 /// - `get_free_variables( expr )` returns a unique_variables set of free
@@ -52,17 +140,27 @@
 ///   identified by Id in expr with sub via `SubFor<Id,Expr,Sub>`
 /// - `substitute( expr, ...subs )` executes a substitution of ...subs into the
 ///   free variables of expr.
-/// 
-/// NOTES:
-/// substitute( expr, subs... ) ->
-///     (1) identify free variables in expr -> free_vars
-///     (2) pair each free variable with the appropriate ...subs -> binding
-///     (3) sort the bindings by dependencies -> sorted_bindings
-///     sub_for( expr sorted_bindings )... ->
-///         
-///          (i) if first order variable: predicate replace
-///         (ii) if second order variable: 
 ///
+/// The `substitute( expr, ...subs )` method is the intended entry point for
+/// all substitutions outside of this header file.
+///   
+///////////////////////////////////////
+/// Substitution Algorithm Details ///
+/////////////////////////////////////
+///
+/// The `substitute(expr, ...subs)` method is the entry point for repacing 
+/// free variables in the formula expression `expr` with compatible substitute
+/// expressions `...subs`.  It's implementation is the bulk of the code in this
+/// header file. It operates in stages:
+///
+///   (i) Identify free variables in formula expression
+///  (ii) Sort the free variables into a binding order and pair with the
+///       referent arguments
+/// (iii) Sort the paired free variables by dependencies between the referents
+///       and substitute each free variable one-by-one
+///
+
+/// NOTES:
 /// second and higher order variables:
 ///
 /// auto g = f(x,y);  // f,x,y free; no bound
@@ -227,17 +325,23 @@ using std::true_type, std::false_type;
 
 namespace expressions {
 
-////////////////////
-/// Substituter ///
-//////////////////
+/////////////////////////////
+/// Forward Declarations ///
+///////////////////////////
 /// 
-/// helper class to evaluate a substitution 
+/// @brief forward declaration the expression transformer which evaluates a 
+///        substitution 
 template< typename ExprT, typename... Subs >
 struct Substituter;
 
+/// @brief trait to determine the return type of a substitution
 template< typename ExprT, typename... Args >
 using substitute_t = Substituter< ExprT, Args... >::type;
 
+///////////////////////////////////////////////////
+/// substitute( formula, ...referents ) method ///
+/////////////////////////////////////////////////
+///
 /// @brief substitute method invokes the Substituter expression transformer
 template< typename ExprT, typename... Args >
 constexpr substitute_t< make_expression_t< ExprT >, 
@@ -247,10 +351,12 @@ substitute( ExprT expr, Args... args )
     make_expression_t< Args >... >::value( make_expression( expr ), 
         make_expression( args )... ); }
 
+/// @brief forward declaration of a helper trait class that determines the
+///        variables that will be bound by a substitution
 template< typename ExprT >
 struct BoundVars;
 
-/// try just using bound_vars
+/// @brief trait to determine if a given substitution is compatible 
 template< typename ExprT, typename... Ss >
 constexpr bool is_compatible_substitution_v = 
     BoundVars< Sub< make_expression_t< ExprT >, make_expression_t< Ss >... >>::
@@ -259,8 +365,11 @@ constexpr bool is_compatible_substitution_v =
 ////////////
 /// Sub ///
 //////////
-/// 
-/// bootstrapped Sub expression is a compound expression
+///
+/// A partial or incomplete substitution is itself an expression given by this
+/// template class.
+///
+/// @brief bootstrapped Sub expression is a compound expression
 template< typename ExprT, typename... Ss >
 //requires( is_compatible_substitution_v< ExprT, Ss... >)
 struct Sub: tuple< ExprT, Ss... >
@@ -293,6 +402,7 @@ public:
         return helper( for_subs );
     }
 
+    // this logic is duplicated from Arguments<...> to avoid circular logic
     template< typename First, typename... Rest >
     requires( is_compatible_substitution_v< expression_type, First, Rest... > )
     constexpr substitute_t< expression_type, make_expression_t< First >, 
@@ -404,7 +514,7 @@ public:
 ///
 /// Two variables with the same identifier I are considered equal and MUST
 /// have the same value_type T. The identifier I is also used to sort a
-/// list of free variables when substituting.
+/// list of free variables when substituting (ie: binding order).
 ///
 /// The value_type T must a literal type and may be an expression type, in 
 /// which case the result_type of the variable will be the result_t< T >. 
@@ -462,7 +572,7 @@ public:
     //set_value( value_type const& val )
     //{ _value = val; }
 
-    /// @brief substitution into a variable creates a function 
+    /// @brief direct substitution into a variable creates a function 
     template< variable First, variable... Rest > 
     requires( is_non_repeating_v< seq< var_id_v< First >,
         var_id_v< Rest >... >> ) 
@@ -481,30 +591,6 @@ private:
     string _name;
     //value_type _value;
 };
-
-///////////////////
-/// Element Of ///
-/////////////////
-///
-/// @brief Element Of operation
-template< size_t I, typename ArrayT >
-struct Element;
-
-template< size_t I, typename ArrayT >
-struct IsExpression< Element< I, ArrayT >>: true_type { };
-
-template< typename T >
-struct IsElementExpression: false_type { };
-
-template< size_t I, typename ArrayT >
-struct IsElementExpression< Element< I, ArrayT >>: true_type { };
-
-template< typename T >
-constexpr bool is_element_expression_v = IsElementExpression< T >::value;
-
-template< size_t I, typename ArrayT >
-struct Result< Element< I, ArrayT >>
-{ using type = tuple_element_t< I, typename Result< ArrayT >::type >; }; 
 
 //////////////////
 /// Free Vars ///
@@ -535,6 +621,10 @@ get_free_variables( ExprT const& expr )
 /// Bound Vars ///
 /////////////////
 ///
+/// Represents the variables bound by a substitution operation, and is returned
+/// by `bound_variables( expr )`. Non-substitution expressions cannot have any
+/// bound variables, and so the default specialization is empty and also shows
+/// the necessary fields and type definitions that will be calculated.
 ///
 /// @brief container of bound variables and the substitution arguments
 ///        that will replace them (referents)
@@ -576,9 +666,16 @@ struct BoundVars
     { return {}; }
 };
 
+/// @brief trait to determine the return type of `bound_variables(...)`
 template< typename T >
 using bound_variables_t = BoundVars< T >;
 
+///////////////////////////////////////
+/// bound_variables( expr ) method ///
+/////////////////////////////////////
+/// 
+/// @brief method to cacluate the variables bound by a substitution and pair
+///        them with the referents they will be replaced by.
 template< typename ExprT >
 constexpr bound_variables_t< ExprT >
 bound_variables( ExprT const& expr )
@@ -674,16 +771,24 @@ struct IsCompatibleVarSub< Id, Tensor< Shp, Ts... >, S >:
     IsCompatibleVarSub< Id, std::tuple< Ts... >, S >
 { };
 
+/// @brief substitution into an element expression is compatible if the same
+///        substitution is compatible into the array argument
+template< size_t Id, size_t I, typename ArrayT, typename Sub >
+struct IsCompatibleVarSub< Id, Element< I, ArrayT >, Sub >:
+    IsCompatibleVarSub< Id, ArrayT, Sub > { };
+
 } // namespace detail
 
 //////////////////////
 /// SubstituteFor ///
 ////////////////////
 ///
+/// Parses, replaces, and reconstructs expressions that are the results of a
+/// single variable substitution
+///
 /// @brief Expression representing the substitution of variable I in ExprT with
 ///        SubU
-///
-/// @pre:  Id is free in ExprT
+/// @pre:  Id is free in ExprT (guarded by Substituter<...>)
 template< size_t Id, typename ExprT, typename SubU >
 struct SubFor {
 private:
@@ -691,7 +796,8 @@ private:
     using expression_type = ExprT;
     using referent_type = SubU;
     static constexpr size_t id = Id;
-
+    
+    // default case is idempotent
     template< typename T >
     struct Parser
     { 
@@ -701,6 +807,7 @@ private:
         { return expr; }
     };
 
+    // if our variables don't match, return the variable as is
     template< variable Var >
     requires( var_id_v< Var > != id )
     struct Parser< Var >
@@ -711,6 +818,7 @@ private:
         { return var; }
     };
 
+    // if our variables match, return the substitute
     template< variable Var >
     requires( var_id_v< Var > == id ) // and var_order_v< Var > == 1 )
     struct Parser< Var >
@@ -721,6 +829,7 @@ private:
         { return sub; }
     };
 
+    // element requires a case here since it is a pseudo-expression
     template< size_t I, typename ExprU >
     struct Parser< Element< I, ExprU >>
     {
@@ -730,9 +839,13 @@ private:
         { return Parser< ExprU >::value( get< 0 >( expr )); }
     };
 
+    // parser for func expressions
     template< typename FuncExpr >
     struct FuncParser;
 
+    // if our formula for this function will not be static after the
+    // substitution then recreate the function expression around the 
+    // substituted formula
     template< expression U, variable... Vars >
     requires( not static_expression< typename Parser< U >::type > )
     struct FuncParser< Func< U, Vars... >> 
@@ -751,6 +864,8 @@ private:
         }
     };
 
+    // if our formula will be static we unwrap the function from it and just
+    // return the static formula.
     template< expression U, variable... Vars >
     requires( static_expression< typename Parser< U >::type > )
     struct FuncParser< Func< U, Vars... >>
@@ -761,14 +876,17 @@ private:
         { return Parser< U >::value( func.formula(), sub ); }
     };
 
-    /// Case: functions: we only sub into the formula
+    // we inherit from our specialized funcparser in the case of functions
     template< expression U, variable... Args >
     struct Parser< Func< U, Args... >>: FuncParser< Func< U, Args... >>
     { };
 
+    // parser or compound expressions
     template< typename CompoundExpr >
     struct CompoundParser;
 
+    // if a compound expression is not a substitution expression then recurse
+    // the parser into the args and reconstruct the expression
     template< template< typename... > class Op, typename... Args >
     requires( not is_substitution_expression_v< Op< Args... >> )
     struct CompoundParser< Op< Args... >>
@@ -794,6 +912,7 @@ private:
         { return Helper< for_args >::value( expr, sub ); }
     };
 
+    // parser for substitution expressions
     template< typename SubExpr >
     struct SubstitutionParser;
 
@@ -823,6 +942,8 @@ private:
         { return Helper< for_args >::value( expr, sub ); }
     };
 
+    // if the nested substitution expression is closed we evaluate the 
+    // substitution, then pass the result back into the parser
     template< typename ExprU, typename... Ss >
     requires( closed_expression< Sub< ExprU, Ss... >> )
     struct SubstitutionParser< Sub< ExprU, Ss... >>
@@ -842,24 +963,34 @@ private:
             return helper( for_subs );
         }
     };
- 
+
+    // Our substitution parser is a special case of our compound expression
+    // parser.
     template< typename ExprU, typename... Ss >
     struct CompoundParser< Sub< ExprU, Ss... >>: 
         SubstitutionParser< Sub< ExprU, Ss... >>
     { };
 
+    // and our compount expression parser is a special case of our parser.
     template< compound_expression CompoundExpr >
     struct Parser< CompoundExpr >: CompoundParser< CompoundExpr > { };
    
        
 public:
     using type = Parser< expression_type >::type;
+
     static constexpr type
     value( expression_type const& expr, referent_type const& sub )
     { return Parser< expression_type >::value( expr, sub ); }
 };
 
-// helper function
+//////////////////////////////////////////////////
+/// sub_for< id >( formula, referent ) method ///
+////////////////////////////////////////////////
+///
+/// @brief method to evaluate the substitution of a variable identified by Id
+///        with SubU into expression ExprT. Calls the expression transformer
+///        SubFor<...> and guards against non-expression arguments.
 template< size_t Id, typename ExprT, typename SubU >
 constexpr typename SubFor< Id, make_expression_t< ExprT >, 
     make_expression_t< SubU >>::type
@@ -868,8 +999,21 @@ sub_for( ExprT const& expr, SubU const& sub )
     make_expression_t< SubU >>::value( make_expression( expr ), 
         make_expression( sub )); }
 
+namespace detail {
+
+///////////////////////////
+/// SubstituteForIdSeq ///
+/////////////////////////
+/// 
+/// Intermediate expression transformer which enumerates the individual 
+/// variable replacements performed by SubFor<...>. This template class also
+/// defines the depth-first logic of the SubFor<...> operation (indirect 
+/// substitutions) and the breadth-first logic of direct substitutions
+///
 /// @brief expression transformer that replaces a list of variable ids with 
-///        ...Subs in order
+///        ...Subs in order.  This is an intermediate step of substitute(...) 
+///        and not intended to be invoked directly. See Substituter<...> for
+///        invocation details.
 template< typename ExprT, typename IdSeq, typename... Subs >
 struct SubstituteForIdSeq;
 
@@ -885,8 +1029,6 @@ struct SubstituteForIdSeq< ExprT, IdSeq, Subs... >
 };
 
 /// @brief we evaluate substitution expressions breadth-first.
-///
-/// NOTE: this can create circular logic since and infinite builds
 template< typename ExprT, typename... Ss, size_t... Ids, typename... Subs >
 requires( closed_expression< Sub< ExprT, Ss... >> )
 struct SubstituteForIdSeq< Sub< ExprT, Ss... >, seq< Ids... >, Subs... >
@@ -990,12 +1132,17 @@ struct SubstituteForIdSeq< ExprT, seq< FirstId, RestIds... >,
         seq< RestIds... >, RestSubs... >::value( expr, rest... ); }
 };
 
-//////////////////////////////////////
-/// Referent to Variable Matching ///
-////////////////////////////////////
+///////////////////////////////////////////////
+/// Binding Order for Direct Substitutions /// 
+/////////////////////////////////////////////
 /// 
-/// In the default case we match referents to variables in increasing variable
-/// id order, which is how they are indexed in unique_variables
+/// Helper class to distiguish between the default variable binding order
+/// defined by the numeric sorting of the free variable's id, and the binding 
+/// order defined by substituting directly into a function with prescribed
+/// variable parameters.
+///
+/// @brief In the default case we match referents to variables in increasing 
+///        variable id order, which is how they are indexed in unique_variables
 template< typename ExprT >
 struct DirectSubOrder
 {
@@ -1026,6 +1173,16 @@ struct DirectSubOrder< Func< ExprT, Vars... >>
     }
 };
 
+} // namespace detail
+
+//////////////////////////////////////////
+/// Bound Variables of a Substitution ///
+////////////////////////////////////////
+///
+/// Critical specialization of BoundVars for Substitutions. This class template
+/// calculates the free variables in the formula expression and binds them
+/// to the referents.
+///
 /// @brief container for bound variables in a substitution expression
 template< typename ExprT, typename... Subs >
 //requires( not is_function_v< ExprT > )
@@ -1033,37 +1190,36 @@ struct BoundVars< Sub< ExprT, Subs... >> {
 public:
     // we are friends with any Id seq substituter for bootstrapping
     template< typename ExprU, typename Seq, typename... SubSubs >
-    friend struct SubstituteForIdSeq;
+    friend struct detail::SubstituteForIdSeq;
 
 // private:
     using expression_type = Sub< ExprT, Subs... >;
     using formula_expression = ExprT;
 
     // determine the order we should match variables to substituted expressions
-    using formula_variable_tuple = DirectSubOrder< formula_expression >::type;
+    using formula_variable_tuple = 
+        detail::DirectSubOrder< formula_expression >::type;
     static constexpr size_t formula_variables_size = 
         std::tuple_size_v< formula_variable_tuple >; 
 
+    // returns a tuple of the unique free variables in the formula expression
+    // in the appropriate binding order
     static constexpr formula_variable_tuple
     formula_variables( expression_type const& expr )
-    { return DirectSubOrder< formula_expression >::value( 
+    { return detail::DirectSubOrder< formula_expression >::value( 
         std::get< 0 >( expr )); }
 
-    using variable_sub_order = DirectSubOrder< ExprT >;
+    using variable_sub_order = detail::DirectSubOrder< ExprT >;
 
 public:
+    // the number of variables that will be bound is the minimum of the number
+    // of free variables, and the number of referents
     static constexpr size_t size = std::min( 
         formula_variables_size, sizeof...( Subs ));
     static constexpr bool is_complete = 
         formula_variables_size == size;
 
 private:
-    // TODO: we need to extract a binding order from the expression here
-    //       If it's a function then it gives a different binding order than
-    //       the simple trimmer will yield.
-    //
-    // Maybe we need another trait: binding_order_seq< ExprT >?
-    //
     // (1) identify variables and substitution expressions that are bound
     typedef make_seq< size > for_bindings;
 
@@ -1095,7 +1251,7 @@ private:
 
     // (2) sort dependencies of bound expressions
     // 
-    // Vars and Subs are paired.
+    // PRE: Vars and Subs are paired.
     // 
     // logic: given two variable/expression pairs A and B 
     // - if expression(B) depends on variable(A) but expression(A) does not 
@@ -1117,13 +1273,16 @@ private:
     //  
     // Note: Evaluation order should be the reverse of substitution order
 
+    // trait for the variable type of the Ith variable matched with a referent
     template< size_t I >
     using bound_variable_t = std::tuple_element_t< I, trimmed_variable_tuple >;
 
+    // trait for the free variables in the Ith referent
     template< size_t I >
     using referent_free_variables_t = GetFreeVars< 
         std::tuple_element_t< I, trimmed_referent_tuple >>::type;
 
+    // trait to determine whether the Ith match is dependent on the Jth
     template< size_t I, size_t J >
     struct IsDependent;
 
@@ -1141,11 +1300,9 @@ private:
     // handles all cases except the last exception (**)
     template< size_t I, size_t J >
     struct BindsBefore: std::integral_constant< bool,
-        // ** case
-        //not ( I >= J and not IsDependent< I, J >::value and not IsDependent< J, I >::value ) or
-        // remaining cases
         IsDependent< I, J >::value or not IsDependent< J, I >::value > 
-    { 
+    {
+        // flag to identify circular dependencies in this substitution
         static constexpr bool is_circular = IsDependent< I, J >::value and
             IsDependent< J, I >::value; 
 
@@ -1160,6 +1317,8 @@ private:
         not BindsBefore< J, I >::value > 
     { };
 
+    // how many bindings should precede the current Ith one when executing this
+    // substitution?
     template< size_t I >
     struct PreceedingCount
     {
@@ -1174,9 +1333,11 @@ private:
         static constexpr size_t value = Helper< for_bindings >::value;
     };
 
+    // trait to sort the current bindings by their dependencies
     template< typename Seq >
     struct SortedIndexSeq;
 
+    // sort the bound variables by the count of bindings which should preceed it
     template< size_t... Is >
     struct SortedIndexSeq< seq< Is... >>
     { 
@@ -1198,13 +1359,20 @@ public:
     // variable and referent tuples to ensure they stay parallel.
     using variable_set_type = Trimmer< for_bindings >::variable_set_type;
 
+    // resort the bound variables by the order in which they will be
+    // substituted
     using variable_tuple = Trimmer< for_binding_order >::variable_tuple;
+
+    // resort the referents to keep the two tuples parallel
     using referent_tuple = Trimmer< for_binding_order >::referent_tuple;
 
 private:
+    // helper to determine compatibility of this substitution
     template< typename Seq >
     struct CompatibleHelper;
 
+    // an substitution is compatible if each variable is compatible with it's 
+    // bound referent.
     template< size_t... Is >
     struct CompatibleHelper< seq< Is... >>: 
         std::integral_constant< bool, ( detail::IsCompatibleVarSub< 
@@ -1215,13 +1383,16 @@ private:
     { };
 
 public:
+    // flag to determine compatibliity of this substitution
     static constexpr bool is_compatible = 
         CompatibleHelper< for_bindings >::value;
 
+    // method to return a unique_variable set of the bound variables
     static constexpr variable_set_type
     variable_set( expression_type const& expr )
     { return Trimmer< for_bindings >::variable_set( expr ); }
 
+    // method to return a tuple of bound variables in substitution order
     static constexpr variable_tuple
     variables( expression_type const& expr ) 
     {
@@ -1234,6 +1405,7 @@ public:
         return helper( for_binding_order{} );
     }
 
+    // method to return the parallel tuple of referents for the bound variables
     static constexpr referent_tuple
     referents( expression_type const& expr ) 
     {
@@ -1262,21 +1434,26 @@ struct Substituter {
     using bound_variable_tuple = bound_variables_type::variable_tuple;
     using referent_tuple = bound_variables_type::referent_tuple;
 
+    // trait for the Nth variable which will be substituted
     template< size_t N >
     using bound_variable_t = std::tuple_element_t< N, bound_variable_tuple >;
 
+    // trait for the Nth substituted variable's identifier
     template< size_t N >
     static constexpr size_t var_id_of = var_id_v< bound_variable_t< N >>;
 
+    // trait for the Nth substituted variables referent
     template< size_t N >
     using referent_t = std::tuple_element_t< N, referent_tuple >;
 
+    // method to return the value of the Nth substituted variable
     template< size_t N >
     static constexpr bound_variable_t< N >
     bound_var( formula_type const& expr, Subs const&... subs ) 
     { return std::get< N >( bound_variables_type::variables(
         substitution_type{ expr, subs... })); }
 
+    // method to return the value of the Nth substituted variable's referent
     template< size_t N >
     static constexpr referent_t< N >
     referent( formula_type const& expr, Subs const&... subs )
@@ -1285,13 +1462,16 @@ struct Substituter {
 
     typedef make_seq< bound_variables_type::size > for_bindings;
 
+    // helper to implement the substitution operation via SubstituteForIdSeq
     template< typename Seq >
     struct Helper;
 
+    // we enumerate the bound variable ids and their referents in substitution
+    // order for the intermediate helper class, SubstituteForIdSeq
     template< size_t... Is >
     struct Helper< seq< Is... >>
     {
-        using subber = SubstituteForIdSeq< formula_type, 
+        using subber = detail::SubstituteForIdSeq< formula_type, 
             seq< var_id_of< Is >... >, referent_t< Is >... >;
 
         using type = subber::type;
@@ -1314,7 +1494,7 @@ public:
 /// @brief substituting into a non-expresssion, a closed expression is, or an
 ///        open expression with no substitution arguments is idempotent
 template< typename T, typename... Ss >
-requires( not expression< T > or 
+requires( not expression< T > or /* closed_expression< T > or */ // circular logic? 
     ( open_expression< T > and sizeof...( Ss ) == 0 ))
 struct Substituter< T, Ss... >
 {
@@ -1346,8 +1526,8 @@ struct GetFreeVars< tuple< Ts... >>
     }
 };
 
-/// @brief trait to identify free variables in a compound expression.  We reduce
-///        to the tuple-case.
+/// @brief trait to identify free variables in a compound expression.  We 
+///        reduce to the tuple-case.
 template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> and 
     not is_substitution_expression_v< Op< Args... >> )
@@ -1440,6 +1620,17 @@ public:
     { return subtract_unique_variables(
         GetFreeVars< ExprT >::value( expr.formula() ),
         bound_variables_type::variable_set( expr )); }
+};
+
+// @brief free variables in an element expression are those free in it's array
+//        argument
+template< size_t I, typename T >
+struct GetFreeVars< Element< I, T >>
+{
+    using type = GetFreeVars< T >::type;
+    static constexpr type
+    value( Element< I, T > const& expr )
+    { return GetFreeVars< T >::value( std::get< 0 >( expr )); }
 };
 
 //////////////////////////////
@@ -1537,116 +1728,6 @@ private:
     // substitutions, 
     value_type _expr;
 };
-
-template< size_t I, typename T >
-struct GetFreeVars< Element< I, T >>
-{
-    using type = GetFreeVars< T >::type;
-    static constexpr type
-    value( Element< I, T > const& expr )
-    { return GetFreeVars< T >::value( expr ); }
-};
-
-namespace detail {
-
-template< size_t Id, size_t I, typename ExprT, typename Sub >
-struct IsCompatibleVarSub< Id, Element< I, ExprT >, Sub >:
-    IsCompatibleVarSub< Id, ExprT, Sub > { };
-
-} // namespace detail
-
-///////////////////////////////
-/// Element Implementation ///
-/////////////////////////////
-///
-template< size_t I, typename ArrayT >
-struct Element: tuple< ArrayT >
-{
-    static constexpr size_t index = I;
-    using arguments_tuple = tuple< ArrayT >;
-    using array_type = ArrayT;
-    static constexpr size_t arguments_size = 1;
-
-    static constexpr tuple_element_t< I, array_type >
-    value( ArrayT const& arg )
-    { return get< I >( arg ); }
-
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
-
-    constexpr ArrayT const&
-    arr() const
-    { return std::get< 0 >( *this ); }
-
-    constexpr tuple_element_t< I, array_type >
-    operator ()() const 
-    { return get< I >( arr() ); }
-
-    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
-    constexpr Element( Element const& ) = default;
-    constexpr Element() = default;
-};
-
-template< size_t I, expression ArrayT >
-struct Element< I, ArrayT >: tuple< ArrayT >
-{
-    static constexpr size_t index = I;
-    using result_type = result_t< Element< I, ArrayT >>;
-    using array_type = ArrayT;
-    using arguments_tuple = tuple< ArrayT >;
-    static constexpr size_t arguments_size = 1;
-
-    static constexpr tuple_element_t< I, ArrayT >
-    value( ArrayT const& arg )
-    { return std::get< I >( arg ); }
-
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
-
-    constexpr ArrayT const&
-    arr() const
-    { return std::get< 0 >( *this ); }
-
-    // cascade evaluation to array
-    constexpr result_type
-    operator ()() const 
-    { return std::get< index >( arr()() ); }
-
-    template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< array_type, First, Rest... > and
-        closed_expression< substitute_t< array_type, First, Rest... >> )
-    constexpr tuple_element_t< I, substitute_t< array_type, First, Rest... >>
-    operator ()( First const& first, Rest const&... rest ) const
-    { return get< I >( substitute( arr(), first, rest... )); }
-
-    template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< array_type, First, Rest... > and
-        open_expression< substitute_t< array_type, First, Rest... >> )
-    constexpr Element< I, substitute_t< array_type, First, Rest... >>
-    operator ()( First const& first, Rest const&... rest ) const
-    { return { substitute( arr(), first, rest... )}; }
-
-    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
-    constexpr Element( Element const& ) = default;
-    constexpr Element() = default;
-};
-
-
-///////////////////////
-/// element method ///
-/////////////////////
-///
-/// @brief lazy version of std::get for tuples, arrays and tensors
-template< size_t I, typename T >
-using element_t = Element< I, T >;
-
-template< size_t I, typename T >
-constexpr Element< I, T >
-element( T const& arr )
-{ return { arr }; }
-
 } // namespace expressions 
 
 #endif

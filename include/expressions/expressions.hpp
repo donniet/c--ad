@@ -158,6 +158,99 @@
 
 namespace expressions {
 
+///////////////////////////////
+/// Element Implementation ///
+/////////////////////////////
+///
+template< size_t I, typename ArrayT >
+struct Element: tuple< ArrayT >
+{
+    static constexpr size_t index = I;
+    using arguments_tuple = tuple< ArrayT >;
+    using array_type = ArrayT;
+    static constexpr size_t arguments_size = 1;
+
+    static constexpr tuple_element_t< I, array_type >
+    value( ArrayT const& arg )
+    { return get< I >( arg ); }
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    constexpr ArrayT const&
+    arr() const
+    { return std::get< 0 >( *this ); }
+
+    constexpr tuple_element_t< I, array_type >
+    operator ()() const 
+    { return get< I >( arr() ); }
+
+    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
+    constexpr Element( Element const& ) = default;
+    constexpr Element() = default;
+};
+
+template< size_t I, expression ArrayT >
+struct Element< I, ArrayT >: tuple< ArrayT >
+{
+    static constexpr size_t index = I;
+    using result_type = result_t< Element< I, ArrayT >>;
+    using array_type = ArrayT;
+    using arguments_tuple = tuple< ArrayT >;
+    static constexpr size_t arguments_size = 1;
+
+    static constexpr tuple_element_t< I, ArrayT >
+    value( ArrayT const& arg )
+    { return std::get< I >( arg ); }
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    constexpr ArrayT const&
+    arr() const
+    { return std::get< 0 >( *this ); }
+
+    // cascade evaluation to array
+    constexpr result_type
+    operator ()() const 
+    { return std::get< index >( arr()() ); }
+
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< array_type, First, Rest... > and
+        closed_expression< substitute_t< array_type, First, Rest... >> )
+    constexpr tuple_element_t< I, substitute_t< array_type, First, Rest... >>
+    operator ()( First const& first, Rest const&... rest ) const
+    { return get< I >( substitute( arr(), first, rest... )); }
+
+    template< typename First, typename... Rest >
+    requires( is_compatible_substitution_v< array_type, First, Rest... > and
+        open_expression< substitute_t< array_type, First, Rest... >> )
+    constexpr Element< I, substitute_t< array_type, First, Rest... >>
+    operator ()( First const& first, Rest const&... rest ) const
+    { return { substitute( arr(), first, rest... )}; }
+
+    constexpr Element( ArrayT const& expr ): tuple< ArrayT >{ expr } { }
+    constexpr Element( Element const& ) = default;
+    constexpr Element() = default;
+};
+
+
+///////////////////////
+/// element method ///
+/////////////////////
+///
+/// @brief lazy version of std::get for tuples, arrays and tensors
+template< size_t I, typename T >
+using element_t = Element< I, T >;
+
+template< size_t I, typename T >
+constexpr Element< I, T >
+element( T const& arr )
+{ return { arr }; }
+
+
 //////////////////////////////////////////////////////
 /// Arguments Base Class for Compound Expressions ///
 ////////////////////////////////////////////////////
@@ -292,8 +385,6 @@ public:
     constexpr Arguments( Arguments const& ) = default;
     constexpr Arguments() = default; 
 };
-
-
 
 /////////////////////////////////////////////////
 /// Scope Contains Free Expression Variables ///

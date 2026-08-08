@@ -285,7 +285,6 @@ template< typename T >
 constexpr bool is_substitution_expression_v = 
     IsSubExpression< T >::value;
 
-
 //////////////////
 /// Var Order ///
 ////////////////
@@ -449,6 +448,29 @@ struct IsExpression< Func< FormulaT, Vars... >>: std::true_type { };
 template< typename T, typename... Vars >
 struct Result< Func< T, Vars... >>: Result< T > { };
 
+///////////////////
+/// Element Of ///
+/////////////////
+///
+/// @brief Element Of operation
+template< size_t I, typename ArrayT >
+struct Element;
+
+template< size_t I, typename ArrayT >
+struct IsExpression< Element< I, ArrayT >>: std::true_type { };
+
+template< typename T >
+struct IsElementExpression: std::false_type { };
+
+template< size_t I, typename ArrayT >
+struct IsElementExpression< Element< I, ArrayT >>: std::true_type { };
+
+template< typename T >
+constexpr bool is_element_expression_v = IsElementExpression< T >::value;
+
+template< size_t I, typename ArrayT >
+struct Result< Element< I, ArrayT >>
+{ using type = tuple_element_t< I, typename Result< ArrayT >::type >; }; 
 
 //////////////
 /// Scope ///
