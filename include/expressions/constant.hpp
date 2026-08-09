@@ -179,7 +179,8 @@ consteval double parse_as_double()
 template <char... c>
 consteval auto operator""_c() 
 {
-    // We evaluate the string structure at compile-time to decide which path to take.
+    // We evaluate the string structure at compile-time to decide which path to
+    // take.
     if constexpr( detail::is_float_literal<c...>() ) 
         return Constant< detail::parse_as_double<c...>() >{};
     else 
