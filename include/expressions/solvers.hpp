@@ -374,7 +374,7 @@ struct Solver< Equals< Var< I, T >, ExprT >>
     template< typename ScopeT >
     constexpr result_type operator ()( ScopeT& scope ) const
     {
-        auto value = _expr.right_arg() | scope;
+        auto value = get_argument< 1 >( _expr ) | scope;
         scope.template set_value< variable_type >( value );
         return _expr | scope;
     }
@@ -752,26 +752,25 @@ requires( not is_boolean_expression_v< ExprT > and
     IsLinearOf< Var, ExprT >::value )
 struct ScalarOf< Var, ExprT >
 {
-    // First we substitute zero for any subexpression that doesn't depend on Var
-    using zero_type = Constant< result_t< ExprT >{ 0 }>;
-    using one_type = Constant< result_t< Var >{ 1 }>;
+    template< typename Vars >
+    struct Helper;
 
-    struct ScalarEvaluator
+    template< variable... Vars >
+    struct Helper< unique_variables< Vars... >>
     {
-        // if we don't depend on Var then this term should be zero
-        template< typename ExprU >
-        constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
-        requires( not depends_on_variable_v< Var, ExprU >)
-        { return 0; }
+        using type = result_t< ExprT >;
+        static constexpr type
+        value( ExprT const& expr )
+        {
+            // X_{1....i...,N}  
+            // f( 0...,1...,0 ) - f( 0...,0...,0 ) = A_i
+            static constexpr auto one_scope = make_scope< ExprT >( 
+                ( var_id_v< Vars > == var_id_v< Var > ? 1 : 0 )... );
+            static constexpr auto zero_scope = make_scope< ExprT >(
+                ( var_id_v< Vars > - var_id_v< Vars > )... );
 
-        // if we depend on Var and only Var then set Var equal to 1
-        template< typename ExprU >
-        constexpr result_t< ExprU > operator ()( ExprU const& expr ) const
-        requires( depends_on_variable_v< Var, ExprU > and
-            free_variables_t< ExprU >::size == 1 )
-        { return expr | make_scope< Var >( 1 ); }
-
-        // otherwise continue parsing the expression (default manipulation behavior)
+            return ( expr | one_scope ) - ( expr | zero_scope );
+        }
     };
 
     using type = decltype( result_t< ExprT >{} / result_t< Var >{} );
@@ -783,7 +782,7 @@ struct ScalarOf< Var, ExprT >
 //        return substitute_for< Var >( zeroed_non_dependents, one_type{} ) | eval();
 //        return substitute( zeroed_non_dependents, one_type{} ) | eval();
 //        return substitute( expr, one_type{} ) | eval();
-        return expr | ScalarEvaluator{};
+        return type{ Helper< free_variables_t< ExprT >>::value( expr )};
     }
 };
 
@@ -872,11 +871,12 @@ private:
     
     template< typename LeftT, typename RightT >
     static constexpr auto bterm( Equals< LeftT, RightT > const& eq )
-    { return non_homogeneous_term_of( eq.right_arg() - eq.left_arg() ); }
+    { return non_homogeneous_term_of( get_argument< 1 >( eq ) - 
+        get_argument< 0 >( eq )); }
 
     template< typename LeftT >
     static constexpr auto bterm( EqualsZero< LeftT > const& eq )
-    { return non_homogeneous_term_off( -eq.arg() ); }
+    { return non_homogeneous_term_of( -eq.arg() ); }
 
     static constexpr auto b( expression_type const& expr )
     { 
@@ -888,7 +888,8 @@ private:
 
     template< size_t J, typename LeftT, typename RightT >
     static constexpr auto Aterm( Equals< LeftT, RightT > const& eq )
-    { return scalar_of< var< J >>( eq.left_arg() - eq.right_arg() ); }
+    { return scalar_of< var< J >>( get_argument< 0 >( eq ) - 
+        get_argument< 1 >( eq )); }
 
     template< size_t J, typename LeftT >
     static constexpr auto Aterm( EqualsZero< LeftT > const& eq )
@@ -1235,7 +1236,9 @@ struct Solver< Equals< Sum< Var< I, T >, AddendT >, ExprT >>:
     using base_solver = Solver< Equals< Var< I, T >, Difference< ExprT, AddendT >>>;
 
     constexpr Solver( expression_type const& expr = {} ):
-        base_solver{{ expr.left_arg().left_arg(), { expr.right_arg(), expr.left_arg().right_arg() }}}
+        base_solver{{ get_argument< 0 >( get_argument< 0 >( expr )), 
+            { get_argument< 1 >( expr ), 
+                get_argument< 1 >( get_argument< 0 >( expr )) }}}
     { }
 };
 

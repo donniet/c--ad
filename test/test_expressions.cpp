@@ -357,6 +357,8 @@ std::pair< bool, std::string > test_boolean_satisfaction()
 
 constexpr bool test_is_linear()
 {
+    using x_type = Var< 0, float >;
+    using y_type = Var< 1, float >;
     static constexpr Var< 0, float > x;
     static constexpr Var< 1, float > y;
     static constexpr Var< 2, float > z;
@@ -413,11 +415,14 @@ constexpr bool test_is_linear()
                 Product< StaticValue< int >, Var< 1, float >>>,
             StaticValue< int >>> );
     static_assert( expressions::detail::IsLinearOf< Var< 1, float >, hxy_type >::value );
-
+    static_assert( not is_boolean_expression_v< hxy_type > );
+    static_assert( depends_on_variable_v< Var< 1, float >, hxy_type > );
+    
     static_assert( scalar_of( 2*x + 3*y + 4, x ) == 2 );
     static_assert( scalar_of( 2*x + 3*y + 4, y ) == 3 );
     static_assert( non_homogeneous_term_of( 2*x + 3*y + 4 ) == 4 ); 
 
+    // solution is ( -4, 1 )
     static constexpr auto sys = 
         (   x - 7*y == -11 ) and
         ( 5*x + 2*y == -18 );
@@ -449,11 +454,24 @@ constexpr bool test_is_linear()
     static_assert( deps::size == 2 );
 
     // verifying conjunction
-    static_assert( is_conjunction_v< decltype( sys )> );
+    static_assert( is_conjunction_v< std::remove_cv_t< decltype( sys )>> );
 
     // verify each formula is a linear equation
     static_assert( is_linear_equation( get_argument< 0 >( sys )) );
     static_assert( is_linear_equation( get_argument< 1 >( sys )) );
+
+    static constexpr auto first_eq = get_argument< 0 >( sys );
+    static constexpr auto second_eq = get_argument< 1 >( sys );
+
+    // verify the scalars 
+    static_assert( scalar_of< x_type >( get_argument< 0 >( first_eq )) ==  1 );
+    static_assert( scalar_of< y_type >( get_argument< 0 >( first_eq )) == -7 );
+    static_assert( scalar_of< x_type >( get_argument< 0 >( second_eq )) == 5 );
+    static_assert( scalar_of< y_type >( get_argument< 0 >( second_eq )) == 2 );
+
+    // verify the non-homogeneous terms
+    static_assert(( get_argument< 1 >( first_eq )  == -11 ) | eval() );
+    static_assert(( get_argument< 1 >( second_eq ) == -18 ) | eval() );
 
     //static_assert( expressions::detail::LinearSystem< decltype( sys )>::value );
 

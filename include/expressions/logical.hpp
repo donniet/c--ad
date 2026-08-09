@@ -159,6 +159,7 @@ struct IsCompliment< Compliment< ExprT >>:
 
 template< typename ExprT >
 struct IsCanonicalTerminus: integral_constant< bool, 
+    IsBooleanExpression< ExprT >::value and
     not IsConjunction< ExprT >::value and
     not IsDisjunction< ExprT >::value and
     not IsCompliment< ExprT >::value > { };
@@ -203,13 +204,13 @@ template< typename ExprT >
 constexpr bool is_boolean_expression_v = IsBooleanExpression< ExprT >::value;
 
 template< typename ExprT >
-constexpr bool is_conjunction_v = IsBooleanExpression< ExprT >::value;
+constexpr bool is_conjunction_v = IsConjunction< ExprT >::value;
 
 template< typename ExprT >
-constexpr bool is_disjunction_v = IsBooleanExpression< ExprT >::value;
+constexpr bool is_disjunction_v = IsDisjunction< ExprT >::value;
 
 template< typename ExprT >
-constexpr bool is_compliment_v = IsBooleanExpression< ExprT >::value;
+constexpr bool is_compliment_v = IsCompliment< ExprT >::value;
 
 template< typename ExprT >
 constexpr bool is_canonical_v = IsCanonical< ExprT >::value;

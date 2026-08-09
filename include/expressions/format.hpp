@@ -55,7 +55,8 @@ struct formatter< expressions::Sum< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Sum< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}+{})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}+{})", get_argument< 0 >( expr ),
+            get_argument< 1 >( expr ));
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -68,7 +69,7 @@ struct formatter< expressions::Product< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Product< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}*{})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}*{})", get_argument< 0 >( expr ), get_argument< 1 >( expr ) );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -81,7 +82,7 @@ struct formatter< expressions::Quotient< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Quotient< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}/{})", expr.numerator_arg(), expr.denominator_arg() );
+        auto str = std::format( "({}/{})", get_argument< 0 >( expr ), get_argument< 1 >( expr ) );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -94,7 +95,8 @@ struct formatter< expressions::Difference< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Difference< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}-{})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}-{})", get_argument< 0 >( expr ), 
+            get_argument< 1 >( expr ));
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -122,7 +124,7 @@ struct formatter< expressions::Equals< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Equals< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}=={})", expr.left_arg(), expr.right_arg() );
+        auto str = std::format( "({}=={})", get_argument< 0 >( expr ), get_argument< 1 >( expr ) );
         return formatter< std::string >::format( str, ctx );
     }
 };
@@ -135,7 +137,7 @@ struct formatter< expressions::Conjunction< LeftT, RightT >, char >:
     FormatContext::iterator format( expressions::Conjunction< LeftT, RightT > expr, 
         FormatContext& ctx ) const
     { 
-        auto str = std::format( "({}and{})", expr.template arg<0>(), expr.template arg<1>() );
+        auto str = std::format( "({}and{})", get_argument< 0 >( expr ), get_argument< 1 >( expr ) );
         return formatter< std::string >::format( str, ctx );
     }
 };
