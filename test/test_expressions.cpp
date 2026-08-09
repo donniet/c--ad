@@ -79,9 +79,6 @@ bool test_simple_expressions()
 {
     using std::println, std::print;
 
-    auto zero = constant_zero;
-    auto one = constant_one;
-
     auto vars = declare_variables(
         var< long double >( "x" ), 
         var< long double >( "y" ),
@@ -101,18 +98,18 @@ bool test_simple_expressions()
 //    auto d_z = differential( z );
 //    auto d_w = differential( w );
 
-    println( "{}", zero );
+    println( "{}", 0_c );
 
-    auto f = ( 5 + zero + one );
+    auto f = ( 5 + 0_c + 1_c );
 
     println( "{}", f | vars );
     println( "{}", x | vars );
-    println( "{}", ( x * one )| vars );
-    println( "{}", ( x + one )| vars );
-    println( "{}", ( x - one )| vars );
+    println( "{}", ( x * 1_c )| vars );
+    println( "{}", ( x + 1_c )| vars );
+    println( "{}", ( x - 1_c )| vars );
     println( "{}", ( -x )| vars );
-    println( "{}", ( x == one )| vars );
-    println( "{}", ( x == one and x == zero )| vars );
+    println( "{}", ( x == 1_c )| vars );
+    println( "{}", ( x == 1_c and x == 0_c )| vars );
     
     vars( x = 8.l, l = 12_in );
 
@@ -316,15 +313,14 @@ struct PreOrderVisitTests
     static constexpr Var< 0, int > v0;
     static constexpr Var< 1, int > v1;
     static constexpr Var< 2, int > v2;
-    static constexpr Constant< (int)0 > zero;
 
-    static_assert(( count_expressions( v0 + zero ) | eval( )) == 3ul );
+    static_assert(( count_expressions( v0 + 0_c ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 ) | eval( )) == 1ul );
     static_assert(( count_expressions( v0 + v0 ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 + v1 ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 + ( v1 * v2 )) | eval( )) == 5ul );
-    static_assert(( count_expressions( zero + zero * zero / zero + zero ) | eval( )) == 9ul );
-    static_assert(( count_expressions( v0 + zero * v1 / v2 + zero ) | eval( )) == 9ul );
+    static_assert(( count_expressions( 0_c + 0_c * 0_c / 0_c + 0_c ) | eval( )) == 9ul );
+    static_assert(( count_expressions( v0 + 0_c * v1 / v2 + 0_c ) | eval( )) == 9ul );
 };
 
 std::pair< bool, std::string > test_boolean_satisfaction()
@@ -362,29 +358,26 @@ constexpr bool test_is_linear()
     static constexpr Var< 0, float > x;
     static constexpr Var< 1, float > y;
     static constexpr Var< 2, float > z;
-    static constexpr Constant< 0.f > zero;
-    static constexpr Constant< 1.f > one;
-    static constexpr Constant< 2.f > two;
     //auto two = static_expr( 2.f );
 
-    static_assert( is_linear_equation( zero == one ));
-    static_assert( is_linear_equation( x + y == zero ));
-    static_assert( is_linear_equation( x / one - y == x ));
-    static_assert( not is_linear_equation( x / y == one ));
+    static_assert( is_linear_equation( 0_c == 1_c ));
+    static_assert( is_linear_equation( x + y == 0_c ));
+    static_assert( is_linear_equation( x / 1_c - y == x ));
+    static_assert( not is_linear_equation( x / y == 1_c ));
     // NOTE: pow<(0|1)> is not considered linear until canonicalizer has been written
-    // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + one ));
-    static_assert( is_linear_equation( x == y + one ));
-    static_assert( not is_linear_equation( x < y + one ));
-    static_assert( not is_linear_equation( x * y == one ));
-    static_assert( not is_linear_equation( sin( x ) == zero ));
+    // static_assert( is_linear_equation( pow< 1 >( x ) + pow< 0 >( y ) == x + 1_c ));
+    static_assert( is_linear_equation( x == y + 1_c ));
+    static_assert( not is_linear_equation( x < y + 1_c ));
+    static_assert( not is_linear_equation( x * y == 1_c ));
+    static_assert( not is_linear_equation( sin( x ) == 0_c ));
     static_assert( is_linear_equation( 2*x == y ));
 
     static_assert( is_linear_of( x + y, x ));
     static_assert( is_linear_of( 2*x, x ));
-    static_assert( is_linear_of( 2*x + y*y + zero, x ));
-    static_assert( not is_linear_of( 2*x + y*y + zero, y ));
+    static_assert( is_linear_of( 2*x + y*y + 0_c, x ));
+    static_assert( not is_linear_of( 2*x + y*y + 0_c, y ));
 
-    static_assert(( substitute( 2*x, one ) | eval()) == 2 );
+    static_assert(( substitute( 2*x, 1_c ) | eval()) == 2 );
     
     static constexpr auto fx = ( 5 * x );
     using deps_fx  = free_variables_t< std::remove_cv_t< decltype( fx )>>;
@@ -495,13 +488,11 @@ consteval bool basic_solvers()
     using value_type = std::remove_cv_t< decltype( Value )>;
     static constexpr Var< 0, value_type > x;
     Constant< Value > value;
-    Constant< static_cast< value_type >( 1 )> one;
-    Constant< static_cast< value_type >( 2 )> two;
 
     static_assert(( x == value | solve_for( x )) == Value );
     static_assert(( x == static_expr( Value ) | solve_for( x )) == Value );
-    static_assert(( x + one == value + one | solve_for( x )) == Value );
-    static_assert(( x + two == value + one + one | solve_for( x )) == Value );
+    static_assert(( x + 1_c == value + 1_c | solve_for( x )) == Value );
+    static_assert(( x + 2_c == value + 1_c + 1_c | solve_for( x )) == Value );
 
 
     return true;
