@@ -140,8 +140,12 @@ template< typename... Ts >
 constexpr Product< Ts... > product_( Ts... ts )
 { return { ts... }; }
 
+using std::print;
+using std::println;
+
 int main( int ac, char* av[] )
 {
+    print("TESTING DISJUNCTIVE NORMAL FORM CANONICALIZATION...");
     // type tests
     static_assert( is_same_v< dnf_result_t< bool >, bool > );
     static_assert( is_same_v< dnf_result_t< b0 >, b0 > );
@@ -247,7 +251,7 @@ int main( int ac, char* av[] )
         (int)c == ( 2 + 3 ) * ( 4 + 5 ) and
         (int)c == (int)distribute< Sum, Product >( c ) );
     
-
+    println("SUCCESS.");
     return EXIT_SUCCESS;
 }
 

@@ -16,7 +16,7 @@ tensors::contract<0UL, 1UL,
  */
 
 using std::is_same_v;
-using std::println;
+using std::println, std::print;
 
 using namespace tensors;
 
@@ -44,6 +44,7 @@ int main( int ac, char* av[] )
 
 void test_contraction()
 {
+    print("TESTING CONTRACTION...");
     auto t1 = make_tensor< Shape< 1, 1, 6 >>( 
         0., 1., 2., 3., 4., 5. );
     auto t2 = make_tensor< Shape< 1, 1, 6 >>(
@@ -72,10 +73,12 @@ void test_contraction()
 
     auto t6 = contract< 0, 1 >( t5 );
     assert( t6 == make_tensor< Shape<>>( 15. ));
+    println("SUCCESS.");
 }
 
 void test_subtensor()
 {
+    print("TESTING SUBTENSOR...");
     auto t5 = make_tensor< Shape< 3,3 >>( 
         1., 2., 3.,
         4., 5., 6.,
@@ -92,10 +95,12 @@ void test_subtensor()
     auto a1 = make_tensor< Shape< 2, 2 >>( 2., 3., 5., 7. );
     auto a2 = make_tensor< Shape< 2, 2 >>( 7., 5., 3., 2. );
     assert(( a1 + a2 == make_tensor< Shape<2,2>>( 9., 8., 8., 9. )));
+    println("SUCCESS.");
 }
 
 void test_multiplication()
 {
+    print("TESTING MULTIPLICATION...");
     auto m5 = make_tensor<Shape<1,2>>( 5., 6. );
     auto m6 = make_tensor<Shape<2,1>>( 7., 8. );
 
@@ -113,10 +118,12 @@ void test_multiplication()
         6. * 7., 6. * 8. );
 
     assert( u5 * u6 == u5u6 );
+    println("SUCCESS.");
 }
 
 void test_transpose()
 {
+    print("TESTING TRANSPOSE...");
     auto u5u6 = make_tensor< Shape< 2,2 >>(
         5. * 7., 5. * 8.,
         6. * 7., 6. * 8. );
@@ -138,10 +145,12 @@ void test_transpose()
         7., 8., 9. );
 
     assert(( transpose< 0, 1 >( t5 ) == t5_t ));
+    println("SUCCESS.");
 }
 
 void test_determinant()
 {
+    print("TESTING DETERMINANT...");
     auto t5 = make_tensor< Shape< 3,3 >>( 
         1., 2., 3.,
         4., 5., 6.,
@@ -154,10 +163,12 @@ void test_determinant()
         2., 3. );
 
     assert( det( d2 ) == 3*3 - 2*2 );
+    println("SUCCESS.");
 }
 
 void test_cofactor()
 {
+    print("TESTING COFACTOR...");
     auto d2 = make_tensor< Shape< 2, 2 >>(
         3., 2.,
         2., 3. );
@@ -171,11 +182,12 @@ void test_cofactor()
     // println( "d2_co:\n{} {}\n{} {}", get< 0 >( d2_co ), get< 1 >( d2_co ), 
     //     get< 2 >( d2_co ), get< 3 >( d2_co ));
     assert( cofactor( d2 ) == cofactor_d2 );
+    println("SUCCESS.");
 }
 
 void test_inverse()
 {
-
+    print("TESTING INVERSE...");
     auto i2 = make_tensor< Shape< 2, 2 >>(
         5., 4.,
         3., 4. );
@@ -203,4 +215,6 @@ void test_inverse()
     assert(( matmul( i2, inverse( i2 )) == make_tensor< Shape< 2, 2 >>( 
         1., 0.,
         0., 1. )));
+
+    println("SUCCESS.");
 }
