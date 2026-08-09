@@ -6,7 +6,17 @@
 #include "expressions/expressions.hpp"
 #include "expressions/arithmetic.hpp"
 
+#include <type_traits>
+
+using std::true_type, std::false_type;
+
 namespace expressions {
+
+template< typename ExprT, typename VarU >
+struct Derivative;
+
+template< >
+struct IsExpressionOperation< Derivative >: true_type { };
 
 ///////////////
 /// Derivations
@@ -107,19 +117,20 @@ struct Differential
 
     template< typename U >
     auto operator()( Tangent< U > const& expr )
-    { return (*this)( expr.arg() ) / pow< 2 >( cos( expr.arg() )); }
+    { return (*this)( expr.arg() ) / pow( cos( expr.arg(), 2_c )); }
 
     template< typename U >
     auto operator()( Arcsine< U > const& expr )
-    { return (*this)( expr.arg() ) / sqrt( constant_one - pow< 2 >( expr.arg() )); }
+    { return (*this)( expr.arg() ) / sqrt( 1_c - pow( expr.arg(), 2_c )); }
 
     template< typename U >
     auto operator()( Arccosine< U > const& expr )
-    { return -(*this)( expr.arg() ) / sqrt( constant_one - pow< 2 >( expr.arg() )); }
+    { return -(*this)( expr.arg() ) / sqrt( 1_c - pow( expr.arg(), 2_c )); }
 
     template< typename U >
     auto operator()( Arctangent< U > const& expr )
-    { return (*this)( expr.arg() ) / ( constant_one - pow< 2 >( expr.arg() )); }
+    { return (*this)( expr.arg() ) / ( 1_c - pow( expr.arg(), 2_c )); }
+
 
     // TODO: double check the math here
     // TODO: also could we have multiple options for these derivative expressions
