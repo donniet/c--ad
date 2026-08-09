@@ -24,6 +24,7 @@ add_executable(test_normalize test_normalize.cpp)
 
 add_test(NAME test_units COMMAND test_units)
 add_test(NAME test_substitution COMMAND test_substitution)
+add_test(NAME test_expressions COMMAND test_expressions)
 
 # message("source dir ${CMAKE_SOURCE_DIR}")
 
