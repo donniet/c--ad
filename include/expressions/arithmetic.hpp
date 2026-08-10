@@ -13,6 +13,7 @@ using std::sqrt;
 using std::sin, std::cos, std::tan;
 using std::asin, std::acos, std::atan, std::atan2;
 using std::exp, std::log, std::pow;
+using std::abs;
 
 } // namespace impl
 
@@ -141,6 +142,10 @@ struct SquareRoot: Arguments< SquareRoot, T >
     using Arguments< SquareRoot, T >::Arguments;
 };
 
+////////////
+/// Pow ///
+//////////
+///
 template< typename Base, typename Exp >
 struct Pow;
 
@@ -335,6 +340,26 @@ struct Exp: Arguments< Exp, T >
     { return impl::exp( arg ); }
 
     using Arguments< Exp, T >::Arguments;
+};
+
+////////////
+/// Abs ///
+//////////
+///
+template< typename T >
+struct Abs;
+
+template< >
+struct IsExpressionOperation< Abs >: true_type { };
+
+template< typename T >
+struct Abs: Arguments< Abs, T >
+{
+    static constexpr auto
+    value( T const& arg )
+    { return impl::abs( arg ); }
+
+    using Arguments< Abs, T >::Arguments;
 };
 
 //////////////////

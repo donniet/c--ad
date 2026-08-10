@@ -277,6 +277,11 @@ struct Arguments: tuple< Args... >
     args() const
     { return *this; }
 
+    template< size_t I >
+    constexpr Args...[ I ] const&
+    arg() const
+    { return std::get( *this ); }
+
     // calls Op< Args... >::value static method to calculate the result of the
     // operation
     constexpr auto
@@ -314,6 +319,11 @@ struct Arguments< Op, Args... >: tuple< Args... >
     constexpr arguments_tuple const& 
     args() const
     { return *this; }
+
+    template< size_t I >
+    constexpr Args...[ I ] const&
+    arg() const
+    { return std::get( *this ); }
 
 private:
     // DT: is it ok to static_cast this to a derived class pointer?
