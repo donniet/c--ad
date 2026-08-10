@@ -497,6 +497,11 @@ public:
     { return VarsSub< make_expression_t< Args >... >::value( *this, 
         make_expression( args )... ); }
 
+    // attempting to evaluate a function is the same as evaluating the formula
+//    constexpr result_t< formula_type >
+//    operator ()() const
+//    { return formula()(); }
+
     constexpr Func( formula_type const& func, 
         Vars const&... vars ): arguments_tuple{ func, vars... } 
     { };
@@ -1494,7 +1499,7 @@ public:
 /// @brief substituting into a non-expresssion, a closed expression is, or an
 ///        open expression with no substitution arguments is idempotent
 template< typename T, typename... Ss >
-requires( not expression< T > or /* closed_expression< T > or */ // circular logic? 
+requires( not expression< T > or closed_expression< T > or // circular logic? 
     ( open_expression< T > and sizeof...( Ss ) == 0 ))
 struct Substituter< T, Ss... >
 {
@@ -1728,6 +1733,86 @@ private:
     // substitutions, 
     value_type _expr;
 };
+
+//////////////////////////////////
+/// Closed Sub Specialization ///
+////////////////////////////////
+///
+/// Represents a substitution into an expression with no free variables
+template< closed_expression ExprT, typename... Ss >
+struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
+{
+    using formula_type = ExprT;
+    using expression_type = Sub< ExprT, Ss... >;
+    using arguments_tuple = tuple< ExprT, Ss... >;
+
+    static constexpr size_t arguments_size = 1 + sizeof...( Ss );
+    static constexpr make_seq< arguments_size > for_args;
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    constexpr formula_type
+    formula() const
+    { return std::get< 0 >( args() ); }
+
+    template< size_t I >
+    constexpr Ss...[ I ]
+    arg() const
+    { return std::get< 1 + I >( args() ); }
+
+    template< typename... Ts >
+    constexpr result_t< ExprT >
+    operator ()( Ts const&... ) const
+    { return formula()(); }
+
+    constexpr Sub( ExprT const& formula, Ss const&... subs ):
+        tuple< ExprT, Ss... >{ formula, subs... }
+    { }
+    constexpr Sub( Sub const& ) = default;
+    constexpr Sub() = default;
+};
+
+///////////////////////////////////
+/// Closed Func Specialization ///
+/////////////////////////////////
+///
+template< closed_expression ExprT, variable... Vars >
+struct Func< ExprT, Vars... >: std::tuple< ExprT, Vars... >
+{
+    using formula_type = ExprT;
+    using arguments_tuple = std::tuple< formula_type, Vars... >;
+    using this_type = Func< formula_type, Vars... >;
+
+    constexpr formula_type const&
+    formula() const
+    { return std::get< 0 >( *this ); }
+
+    template< size_t K >
+    constexpr Vars...[ K ]
+    var() const
+    { return std::get< 1 + K >( *this ); }
+
+    template< typename... Args >
+    requires( sizeof...( Args ) == sizeof...( Vars ))
+    constexpr result_t< formula_type >
+    operator ()( Args const&... ) const
+    { return formula()(); }
+
+    // attempting to evaluate a function is the same as evaluating the formula
+    constexpr result_t< formula_type >
+    operator ()() const
+    { return formula()(); }
+
+    constexpr Func( formula_type const& func, 
+        Vars const&... vars ): arguments_tuple{ func, vars... } 
+    { };
+    constexpr Func( Func const& ) = default;
+    constexpr Func() = default;
+
+};
+
 } // namespace expressions 
 
 #endif

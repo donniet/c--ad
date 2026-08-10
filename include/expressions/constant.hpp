@@ -39,7 +39,10 @@ struct Constant
     constexpr operator value_type() const
     { return value; }
 
-    constexpr value_type operator ()() const
+    // any amount of substitution into a constant results in the constant's 
+    // value
+    template< typename... Ts >
+    constexpr value_type operator ()( Ts const&... ) const
     { return value; }
 
     constexpr Constant() = default;

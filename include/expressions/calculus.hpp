@@ -19,7 +19,7 @@ template< typename ExprT, variable Var >
 requires( not expression< ExprT > )
 struct Derivative< ExprT, Var >
 {
-    using type = Constant< 0 >;
+    using type = Func< Constant< 0 >, Var >;
     static constexpr type
     value( ExprT const&, Var const& )
     { return {}; }
@@ -29,13 +29,14 @@ template< typename ExprT, variable Var >
 requires( not free_variables_t< ExprT >::template contains< Var >() )
 struct Derivative< ExprT, Var >
 {
-    using type = Constant< 0 >;
+    using type = Func< Constant< 0 >, Var >;
     static constexpr type
     value( ExprT const&, Var const& )
     { return {}; }
 };
 
 template< variable ExprV, variable Var >
+requires( free_variables_t< ExprV >::template contains< Var >() )
 struct Derivative< ExprV, Var >
 {
     using type = Constant< ( var_id_v< ExprV > == var_id_v< Var > ? 1 : 0 )>;
@@ -180,7 +181,7 @@ struct Derivative< SquareRoot< T >, Var >
     static constexpr type
     value( SquareRoot< T > const& expr, Var const& var )
     {
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return { Constant< -0.5 >{}, { Derivative< T, Var >::value( arg, var ), 
             { expr.template arg< 0 >() }}}; 
@@ -198,7 +199,7 @@ struct Derivative< Pow< T, Constant< N >>, Var >
     static constexpr type
     value( Pow< T, Constant< N >> const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return { Constant< N >{}, { arg, Constant< N - 1 >{} }, 
             Derivative< T, Var >::value( arg, var ) };
@@ -214,7 +215,7 @@ struct Derivative< Sine< T >, Var >
     static constexpr type
     value( Sine< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return {{ arg }, Derivative< T, Var >::value( arg, var )};
     }
@@ -230,7 +231,7 @@ struct Derivative< Cosine< T >, Var >
     static constexpr type
     value( Cosine< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return {{{ arg }}, Derivative< T, Var >::value( arg, var )};
     }
@@ -246,7 +247,7 @@ struct Derivative< Tangent< T >, Var >
     static constexpr type
     value( Tangent< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return { Derivative< T, Var >::value( arg, var ), {{ arg }, {}}};
     }
@@ -262,7 +263,7 @@ struct Derivative< Arcsine< T >, Var >
     static constexpr type
     value( Arcsine< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return { Derivative< T, Var >::value( arg, var ),
             {{ {}, { arg, {} }}}};
@@ -279,7 +280,7 @@ struct Derivative< Arccosine< T >, Var >
     static constexpr type
     value( Arccosine< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
         
         return {{ Derivative< T, Var >::value( arg, var ),
             {{ {}, { arg, {} }}}}};
@@ -296,7 +297,7 @@ struct Derivative< Arctangent< T >, Var >
     static constexpr type
     value( Arctangent< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
         
         return { Derivative< T, Var >::value( expr, var ),
             {{ {}, { arg, {} }}}};
@@ -313,7 +314,7 @@ struct Derivative< Arctangent2< T, U >, Var >
     static constexpr type
     value( Arctangent2< T, U > const& expr, Var const& var )
     { 
-        auto [ num, den ] = expr;
+        auto [ num, den ] = expr.args();
 
         return Derivative< Arctangent< Quotient< T, U >>, Var >::
             value({{ num, den }}, var ); 
@@ -329,7 +330,7 @@ struct Derivative< Log< T >, Var >
     static constexpr type
     value( Log< T > const& expr, Var const& var )
     { 
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return { Derivative< T, Var >::value( arg, var ), { arg }};
     }
@@ -344,7 +345,7 @@ struct Derivative< Exp< T >, Var >
     static constexpr type
     value( Exp< T > const& expr, Var const& var )
     {
-        auto [ arg ] = expr;
+        auto [ arg ] = expr.args();
 
         return {{ arg }, Derivative< T, Var >::value( arg, var )};
     }

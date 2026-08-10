@@ -505,6 +505,19 @@ struct Applier< ExprT, ManipulatorT >
     { return f( expr ); }
 };
 
+template< closed_expression ExprT, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, ExprT > )
+struct Applier< ExprT, ManipulatorT >
+{
+    using type = Applier< std::remove_cvref_t< decltype( ExprT{}() )>, 
+        ManipulatorT >::type;
+
+    static constexpr type
+    value( ExprT const& expr, ManipulatorT& f )
+    { return Applier< std::remove_cvref_t< decltype( ExprT{}() )>,
+        ManipulatorT >::value( expr(), f ); }
+};
+
 template< template< typename... > class Op, typename... Args, typename ManipulatorT >
 requires( compound_expression< Op< Args... >> )
 struct Applier< Op< Args... >, ManipulatorT >
@@ -512,12 +525,14 @@ struct Applier< Op< Args... >, ManipulatorT >
     typedef make_seq< sizeof...( Args )> for_args;
 
     template< size_t I >
-    using arg_t = Applier< Args...[ I ], ManipulatorT >::type;
+    using arg_t = make_expression_t< typename 
+        Applier< Args...[ I ], ManipulatorT >::type >;
 
     template< size_t I >
     static constexpr arg_t< I >
     arg( Args...[ I ] const& a, ManipulatorT& f )
-    { return Applier< Args...[ I ], ManipulatorT >::value( a, f ); }
+    { return make_expression( 
+        Applier< Args...[ I ], ManipulatorT >::value( a, f )); }
 
     template< typename Seq >
     struct Helper;
