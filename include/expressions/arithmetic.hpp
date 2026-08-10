@@ -2,18 +2,23 @@
 #define __EXPRESSIONS_ARITHMETIC_HPP__
 
 #include "expressions.hpp"
+#include "units.hpp"
 
-using std::true_type;
+using std::true_type, std::false_type, std::integral_constant;
+using std::is_arithmetic_v;
 
 namespace expressions {
 
+/////////////////////////////////////
+/// Math Function Implementation ///
+///////////////////////////////////
+///
 namespace impl {
 
-using std::sqrt;
-using std::sin, std::cos, std::tan;
-using std::asin, std::acos, std::atan, std::atan2;
-using std::exp, std::log, std::pow;
-using std::abs;
+using units::abs;
+using units::sin, units::cos, units::tan;
+using units::asin, units::acos, units::atan, units::atan2;
+using units::sqrt, units::pow, units::exp, units::log;
 
 } // namespace impl
 
@@ -152,14 +157,27 @@ struct Pow;
 template< >
 struct IsExpressionOperation< Pow >: true_type { };
 
-template< typename Base, typename Exp >
-struct Pow: Arguments< Pow, Base, Exp >
+// only powers of constants are allowed for unit types
+template< typename Base, int N >
+struct Pow< Base, Constant< N >>: Arguments< Pow, Base, Constant< N >>
 {
     static constexpr auto
-    value( Base const& base, Exp const& exp )
-    { return impl::pow( base, exp ); }
+    value( Base const& base, Constant< N > )
+    { return impl::pow< N >( base ); }
 
-    using Arguments< Pow, Base, Exp >::Arguments;
+    using Arguments< Pow, Base, Constant< N >>::Arguments;
+};
+
+// non-unit expressions reduce to the std::pow function
+template< typename Base, typename Ex >
+requires( not units::unit< result_t< Base >> )
+struct Pow< Base, Ex >: Arguments< Pow, Base, Ex >
+{
+    static constexpr auto
+    value( Base const& base, Ex const& ex )
+    { return std::pow( base, ex ); }
+
+    using Arguments< Pow, Base, Ex >::Arguments;
 };
 
 /////////////

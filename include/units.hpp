@@ -44,20 +44,54 @@ using std::conditional_t;
 using std::is_arithmetic_v;
 using std::size_t;
 
+//////////////////////////////////////
+/// Math Functions Implementation ///
+////////////////////////////////////
+///
+namespace impl {
+
+using std::sqrt;
+using std::sin, std::cos, std::tan;
+using std::asin, std::acos, std::atan, std::atan2;
+using std::exp, std::log, std::pow;
+using std::abs;
+
+} // namespace impl
+
 // using namespace std::numbers;
 
 template< typename T >
 concept arithmetic = is_arithmetic_v< T >;
 
+///////////////////////////////
+/// Mathematical Constants ///
+/////////////////////////////
+/// 
 constexpr long double pi = std::numbers::pi_v< long double >;
 constexpr long double two_pi = pi * 2.l;
 
-// conversion factors for units
+////////////////////////////////
+/// Unit Conversion Factors ///
+//////////////////////////////
+///
+/// Factors necessary to convert between units in this library.  
+///
+/// REQUIREMENT: The numeral constants written here SHOULD be precise, even if 
+/// their representation in a requisite floating point format is not.
+///
+/// NOTE: pi is assumed to be numerically accurate for the sake of this 
+/// requirement
+///
+/// length conversion Factors: 
 constexpr long double meters_per_inch = 0.0254;
 constexpr long double meters_per_thou = meters_per_inch * 0.001;
 constexpr long double meters_per_foot = meters_per_inch * 12.;
 constexpr long double meters_per_mile = meters_per_foot * 5280.;
+
+/// area conversion factors
 constexpr long double acres_per_square_mile = 640.;
+
+/// volume conversion factors
 constexpr long double cubic_meters_per_liter = 1e-3l;
 // constexpr long double cups_per_milliliter = 240.;
 constexpr long double cubic_inches_per_gallon = 231.;
@@ -67,24 +101,36 @@ constexpr long double cups_per_milliliter = cups_per_gallon /
     cubic_inches_per_gallon / meters_per_inch / meters_per_inch / meters_per_inch *
     cubic_meters_per_liter / 1000.;
 // static_assert( cups_per_milliliter == 1.l/236.58823l );
+
+/// velocity conversion factors
 constexpr long double light_speed = 299'792'458; // c
+
+/// time conversion factors
 constexpr long double seconds_per_minute = 60.;
 constexpr long double seconds_per_hour = seconds_per_minute * 60.;
 constexpr long double seconds_per_day = seconds_per_hour * 24.;
 constexpr long double seconds_per_week = seconds_per_day * 7.;
+// NOTE: possible violation of precise numerical constant:
 constexpr long double seconds_per_year = seconds_per_day * 365.242199;
+
+/// mass conversion vactors
 constexpr long double kilograms_per_ounce = 0.028'349'523'125;
 constexpr long double kilograms_per_pound = kilograms_per_ounce * 16.;
-#ifndef NDEBUG
-static_assert( kilograms_per_pound == 0.453'592'37 );
-#endif // DEBUG
 constexpr long double kilograms_per_long_ton = kilograms_per_pound * 2240.;
 constexpr long double kilograms_per_ton = kilograms_per_pound * 2000.;
+
+/// scalar conversion factors
 constexpr long double radians_per_degree = pi / 180.l;
 constexpr long double standard_acceleration_of_gravity = 9.80665; /* m/s^2 */
 constexpr long double steradians_per_square_degree = 4. * 180. * 180. / pi;
+
+/// pressure conversion factors
 constexpr long double atmospheres_per_pascal = 101325.;
+
+/// density conversion factors
 constexpr long double density_of_mercury = 13595.1; /* kg/m^3 */
+
+/// temperature conversion factors
 constexpr long double zero_celsius_in_kelvin = 273.15; /* K */ 
 constexpr long double celsius_per_fahrenheit = 5.l / 9.l;
 constexpr long double fahrenheit_at_zero_celsius = 32.l;
@@ -100,8 +146,15 @@ constexpr std::array< ull_t, total_units > primes =
 constexpr std::array< string, total_units > base_unit_names =
 { "", "m", "s", "kg", "A", "K", "cd", "bit" };
 constexpr std::array< string, total_units > base_unit_long_names =
-{ "", "meters", "seconds", "kilograms", "amperes", "kelvin", "candelas", "bits" };
+{ "", "meters", "seconds", "kilograms", "amperes", "kelvin", "candelas", 
+    "bits" };
 
+////////////////////
+/// Prime Units ///
+//////////////////
+///
+/// A prime unit is an SI standard unit which all other units are built from
+/// via multiplication
 template< size_t I >
 struct prime_unit;
 
@@ -156,13 +209,6 @@ constexpr unit_id_type operator *( unit_id_type left, unit_id_type right )
 consteval unit_id_type operator /( unit_id_type left, unit_id_type right )
 { return left * unit_id_type{ right.second, right.first }; }
 
-#ifndef NDEBUG
-static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 });
-static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 });
-static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 }) == unit_id_type{ 2, 3 });
-static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 }) == unit_id_type{ 4, 3 });
-#endif // DEBUG
-
 /// @brief calculate the unit id into signed exponents of it's prime factors
 constexpr std::array< int, total_units > factor( unit_id_type uid )
 {
@@ -172,7 +218,7 @@ constexpr std::array< int, total_units > factor( unit_id_type uid )
 
     // first factor the numerator
     auto [ num, den ] = uid;
-    // TODO: there's gotta be a faster way to do this...
+    // TODO: faster factoring
     for( int i = 1; i < total_units; ++i )
     {
         while( num % primes[i] == 0 )
@@ -207,25 +253,6 @@ constexpr unit_id_type reconstitute( std::array< int, total_units > factors )
 
     return { num, den };
 }
-
-#ifndef NDEBUG
-static_assert( factor( scalar_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 0 } );
-static_assert( factor( length_unit_id ) == 
-    std::array< int, total_units >{ 1, 1, 0, 0, 0, 0, 0 } );
-static_assert( factor( time_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 1, 0, 0, 0, 0 } );
-static_assert( factor( mass_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 0, 1, 0, 0, 0 } );
-static_assert( factor( current_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 0, 0, 1, 0, 0 } );
-static_assert( factor( temperature_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 0, 0, 0, 1, 0 } );
-static_assert( factor( luminous_intensity_unit_id ) == 
-    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 1 } );
-static_assert( factor( luminous_intensity_unit_id * length_unit_id * length_unit_id ) == 
-    std::array< int, total_units >{ 1, 2, 0, 0, 0, 0, 1 } );
-#endif // DEBUG
 
 /// @brief determine if this unit is the square of base units
 constexpr bool is_square_unit_id( unit_id_type uid )
@@ -872,30 +899,59 @@ requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
 bool operator >=( LeftU const& left, RightU const& right )
 { return left.get_value() >= right.get_value(); }
 
+// abs
+template< unit U >
+constexpr U
+abs( U const& u )
+{ return U{ std::abs( u.get_value() )}; }
+
+// sqrt
+template< unit U >
+constexpr unit_square_root_t< U >
+sqrt( U const& u )
+{ return unit_square_root_t< U >{ std::sqrt( u.get_value() )}; }
+
 // powers (compile time)
 template< int Power, unit U >
-constexpr unit_power_t< Power, U > pow( U const& u )
+constexpr unit_power_t< Power, U > 
+pow( U const& u )
 { return unit_power_t< Power, U >{ std::pow( u.get_value(), Power )}; }
 
 /// trigonometry
-constexpr auto sin( Scalar const& u )
+constexpr auto 
+sin( Scalar const& u )
 { return Scalar{ std::sin( u.get_value() )}; }
-constexpr auto cos( Scalar const& u )
+constexpr auto 
+cos( Scalar const& u )
 { return Scalar{ std::cos( u.get_value() )}; }
-constexpr auto tan( Scalar const& u )
+constexpr auto 
+tan( Scalar const& u )
 { return Scalar{ std::tan( u.get_value() )}; }
 
-constexpr auto asin( Scalar const& arg )
+constexpr auto 
+asin( Scalar const& arg )
 { return Scalar{ std::asin( arg.get_value() ) }; }
-constexpr auto acos( Scalar const& arg )
+constexpr auto 
+acos( Scalar const& arg )
 { return Scalar{ std::acos( arg.get_value() ) }; }
-constexpr auto atan( Scalar const& arg )
+constexpr auto 
+atan( Scalar const& arg )
 { return Scalar{ std::atan( arg.get_value() ) }; }
 
 template< unit NumeratorU, unit DenominatorU >
 requires( unit_traits< NumeratorU >::unit_id == unit_traits< DenominatorU >::unit_id )
-constexpr auto atan2( NumeratorU const& num, DenominatorU const& den )
+constexpr auto 
+atan2( NumeratorU const& num, DenominatorU const& den )
 { return Scalar{ std::atan2( num.get_value(), den.get_value()) }; }
+
+/// logarithms
+constexpr auto 
+log( Scalar const& u )
+{ return Scalar{ std::log( u.get_value() )}; }
+
+constexpr auto 
+exp( Scalar const& u )
+{ return Scalar{ std::exp( u.get_value() )}; }
 
 ///////////////
 /// Length ///

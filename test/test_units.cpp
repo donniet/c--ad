@@ -4,11 +4,34 @@
 #include <string>
 #include <cassert>
 
+using namespace units;
+
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 2 } == unit_id_type{ 3, 1 });
+static_assert( unit_id_type{ 2, 1 } * unit_id_type{ 3, 1 } == unit_id_type{ 6, 1 });
+static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 1 }) == unit_id_type{ 2, 3 });
+static_assert(( unit_id_type{ 2, 1 } / unit_id_type{ 3, 2 }) == unit_id_type{ 4, 3 });
+
+static_assert( factor( scalar_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 0 } );
+static_assert( factor( length_unit_id ) == 
+    std::array< int, total_units >{ 1, 1, 0, 0, 0, 0, 0 } );
+static_assert( factor( time_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 1, 0, 0, 0, 0 } );
+static_assert( factor( mass_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 1, 0, 0, 0 } );
+static_assert( factor( current_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 1, 0, 0 } );
+static_assert( factor( temperature_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 1, 0 } );
+static_assert( factor( luminous_intensity_unit_id ) == 
+    std::array< int, total_units >{ 1, 0, 0, 0, 0, 0, 1 } );
+static_assert( factor( luminous_intensity_unit_id * length_unit_id * length_unit_id ) == 
+    std::array< int, total_units >{ 1, 2, 0, 0, 0, 0, 1 } );
+
 int main( int ac, char* av[] )
 {
     using std::string, std::println, std::runtime_format;
 
-    using namespace units;
 
     string program = av[0];
     println( "running {}", program );

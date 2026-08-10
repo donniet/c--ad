@@ -746,6 +746,13 @@ struct ScalarOf< Var, ExprT >
     { return {}; }
 };
 
+/////////////////
+/// ScalarOf ///
+///////////////
+///
+/// Returns the scalar of the given variable in a linear expression by
+/// subtracting f(1) = f(0)
+///
 template< variable Var, typename ExprT >
 requires( not is_boolean_expression_v< ExprT > and 
     depends_on_variable_v< Var, ExprT > and
