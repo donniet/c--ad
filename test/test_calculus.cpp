@@ -21,10 +21,11 @@ int main( int ac, char* av[] )
     Var< 0, float > x;
     Var< 1, float > y;
    
-    assert(( d( y, x )( 1 ) | eval() ) == 0 );
+    assert(( d( y, x )( 1 )) == 0 );
     assert( d( x, x )( 1 ) == 1 );
     assert( d( sin(x), x )( 0 ) == 1 );
     assert( d( sin(y), x )( 1 ) == 0 );
+    assert( d( d( sin(y), x ), x )( 0 ) == 0 );
 
 
     println( "SUCCESS." );
