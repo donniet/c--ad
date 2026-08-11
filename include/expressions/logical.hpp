@@ -10,56 +10,56 @@ namespace expressions {
 /////////////////////////////
 /// 
 /// **WORK IN PROGRESS**
-template< typename T >
-constexpr T if_( bool cond, T true_value, T false_value = {} )
-{ return cond ? true_value : false_value; }
-
-template< typename ConditionT, typename TrueResultT,
-    typename FalseResultT >
-requires( is_same_v< result_t< ConditionT >, bool > and
-    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
-struct Conditional;
-
-template< expression ConditionT, typename TrueResultT, typename FalseResultT >
-constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
-if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result );
-
-template< typename ConditionT, typename TrueResultT,
-    typename FalseResultT >
-requires( is_same_v< result_t< ConditionT >, bool > and
-    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
-struct Conditional: Arguments< Conditional, ConditionT, 
-    TrueResultT, FalseResultT >
-{
-    using condition_type = ConditionT;
-    using true_result_type = TrueResultT;
-    using false_result_type = FalseResultT;
-
-    constexpr condition_type condition() const 
-    { return get_argument< 0 >( *this ); }
-
-    constexpr true_result_type true_result() const
-    { return get_argument< 1 >( *this ); }
-
-    constexpr false_result_type false_result() const
-    { return get_argument< 2 >( *this ); }
-
-    template< typename C, typename T, typename F >
-    static constexpr auto value( C cond, T true_case, F false_case )
-    { return if_( cond, true_case, false_case ); }
-
-    constexpr Conditional() = default;
-    constexpr Conditional( condition_type condition,
-        true_result_type true_result, false_result_type false_result ): 
-        Arguments< Conditional, ConditionT, TrueResultT, FalseResultT >{ 
-            condition, true_result, false_result }
-    { }
-};
-
-template< expression ConditionT, typename TrueResultT, typename FalseResultT >
-constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
-if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result )
-{ return { condition, true_result, false_result }; }
+//template< typename T >
+//constexpr T if_( bool cond, T true_value, T false_value = {} )
+//{ return cond ? true_value : false_value; }
+//
+//template< typename ConditionT, typename TrueResultT,
+//    typename FalseResultT >
+//requires( is_same_v< result_t< ConditionT >, bool > and
+//    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
+//struct Conditional;
+//
+//template< expression ConditionT, typename TrueResultT, typename FalseResultT >
+//constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
+//if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result );
+//
+//template< typename ConditionT, typename TrueResultT,
+//    typename FalseResultT >
+//requires( is_same_v< result_t< ConditionT >, bool > and
+//    is_same_v< result_t< TrueResultT >, result_t< FalseResultT >> )
+//struct Conditional: Compound< Conditional, ConditionT, 
+//    TrueResultT, FalseResultT >
+//{
+//    using condition_type = ConditionT;
+//    using true_result_type = TrueResultT;
+//    using false_result_type = FalseResultT;
+//
+//    constexpr condition_type condition() const 
+//    { return get_argument< 0 >( *this ); }
+//
+//    constexpr true_result_type true_result() const
+//    { return get_argument< 1 >( *this ); }
+//
+//    constexpr false_result_type false_result() const
+//    { return get_argument< 2 >( *this ); }
+//
+//    template< typename C, typename T, typename F >
+//    static constexpr auto value( C cond, T true_case, F false_case )
+//    { return if_( cond, true_case, false_case ); }
+//
+//    constexpr Conditional() = default;
+//    constexpr Conditional( condition_type condition,
+//        true_result_type true_result, false_result_type false_result ): 
+//        Compound< Conditional, ConditionT, TrueResultT, FalseResultT >{ 
+//            condition, true_result, false_result }
+//    { }
+//};
+//
+//template< expression ConditionT, typename TrueResultT, typename FalseResultT >
+//constexpr Conditional< ConditionT, TrueResultT, FalseResultT >
+//if_( ConditionT condition, TrueResultT true_result, FalseResultT false_result )
+//{ return { condition, true_result, false_result }; }
 
 ////////////////////
 /// Conjunction ///
@@ -69,18 +69,18 @@ template< typename... Ts >
 struct Conjunction;
 
 template< >
-struct IsExpressionOperation< Conjunction >: std::true_type { };
+struct IsCompoundOperation< Conjunction >: std::true_type { };
 
 /// @brief logical and expression
 /// @tparam Ts... 
 template< typename... Ts >
-struct Conjunction: Arguments< Conjunction, Ts... >
+struct Conjunction: Compound< Conjunction< Ts... >>
 {
     static constexpr auto
     value( Ts const&... ts )
     { return ( ts and ... and true ); }
 
-    using Arguments< Conjunction, Ts... >::Arguments;
+    using Compound< Conjunction< Ts... >>::Compound;
 };
 
 ////////////////////
@@ -91,18 +91,18 @@ template< typename... Ts >
 struct Disjunction;
 
 template< >
-struct IsExpressionOperation< Disjunction >: std::true_type { };
+struct IsCompoundOperation< Disjunction >: std::true_type { };
 
 /// @brief logical or expression
 /// @tparam Ts...
 template< typename... Ts >
-struct Disjunction: Arguments< Disjunction, Ts... >
+struct Disjunction: Compound< Disjunction< Ts... >>
 {
     static constexpr auto
     value( Ts const&... ts )
     { return ( ts or ... or false ); }
 
-    using Arguments< Disjunction, Ts... >::Arguments;
+    using Compound< Disjunction< Ts... >>::Compound;
 };
 
 ///////////////////
@@ -113,19 +113,19 @@ template< typename T >
 struct Compliment;
 
 template< >
-struct IsExpressionOperation< Compliment >: std::true_type { };
+struct IsCompoundOperation< Compliment >: std::true_type { };
 
 /// @brief logical not expression
 /// @tparam T 
 /// @tparam U 
 template< typename T >
-struct Compliment: Arguments< Compliment, T >
+struct Compliment: Compound< Compliment< T >>
 {
     static constexpr auto 
     value( T const& arg )
     { return not arg; }
 
-    using Arguments< Compliment, T >::Arguments;
+    using Compound< Compliment< T >>::Compound;
 };
 
 //////////////////////////////////

@@ -1389,7 +1389,7 @@ constexpr LoopWhile< WhileE >
 loop_while( WhileE while_expr );
 
 template< expression UntilExpr >
-struct LoopUntil< UntilExpr >: Arguments< LoopUntil, UntilExpr >
+struct LoopUntil< UntilExpr >: Compound< LoopUntil< UntilExpr >>
 {
     using until_expression_type = UntilExpr;
     using scope_type = expression_traits< until_expression_type >::scope_type;
@@ -1651,7 +1651,7 @@ operator |( Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> const& ite
 
 
 template< expression ExprT, variable... Vars >
-struct ArgumentMinimum: Arguments< ArgumentMinimum, ExprT >
+struct ArgumentMinimum: Compound< ArgumentMinimum< ExprT >>
 {
     using variables_tuple = tuple< Vars... >;
     using expression_type = ExprT;
@@ -1866,7 +1866,7 @@ gradient_descent( Vars... vars )
 { return { vars... }; }
 
 template< variable Var, typename ConstraintT >
-struct Minimizer: Arguments< Minimizer, Var, ConstraintT >
+struct Minimizer: Compound< Minimizer< Var, ConstraintT >>
 {
     using variable_type = Var;
     using constraint_type = ConstraintT;

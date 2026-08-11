@@ -33,7 +33,7 @@ template< typename T >
 struct Negation;
 
 template< >
-struct IsExpressionOperation< Negation >: true_type { };
+struct IsCompoundOperation< Negation >: true_type { };
 
 template< typename T >
 struct Negation: Compound< Negation< T >>
@@ -75,16 +75,16 @@ template< typename... Ts >
 struct Difference;
 
 template< >
-struct IsExpressionOperation< Difference >: true_type { };
+struct IsCompoundOperation< Difference >: true_type { };
 
 template< typename... Ts >
-struct Difference: Arguments< Difference, Ts... >
+struct Difference: Compound< Difference< Ts... >>
 {
     static constexpr auto
     value( Ts const&... ts )
     { return ( ts - ... - 0 ); }
 
-    using Arguments< Difference, Ts... >::Arguments;
+    using Compound< Difference< Ts... >>::Compound;
 };
 
 ////////////////
@@ -95,16 +95,16 @@ template< typename... >
 struct Product;
 
 template< >
-struct IsExpressionOperation< Product >: true_type { };
+struct IsCompoundOperation< Product >: true_type { };
 
 template< typename... Args >
-struct Product: Arguments< Product, Args... >
+struct Product: Compound< Product< Args... >>
 {
     static constexpr auto
     value( Args const&... args )
     { return ( args * ... * 1 ); }
 
-    using Arguments< Product, Args... >::Arguments;
+    using Compound< Product< Args... >>::Compound;
 };
 
 /////////////////
@@ -115,16 +115,16 @@ template< typename... Args >
 struct Quotient;
 
 template< >
-struct IsExpressionOperation< Quotient >: true_type { };
+struct IsCompoundOperation< Quotient >: true_type { };
 
 template< typename... Args >
-struct Quotient: Arguments< Quotient, Args... >
+struct Quotient: Compound< Quotient< Args... >>
 {
     static constexpr auto
     value( Args const&... args )
     { return ( args / ... / 1 ); }
 
-    using Arguments< Quotient, Args... >::Arguments;
+    using Compound< Quotient< Args... >>::Compound;
 };
 
 ///////////////////
@@ -135,16 +135,16 @@ template< typename T >
 struct SquareRoot;
 
 template< >
-struct IsExpressionOperation< SquareRoot >: true_type { };
+struct IsCompoundOperation< SquareRoot >: true_type { };
 
 template< typename T >
-struct SquareRoot: Arguments< SquareRoot, T >
+struct SquareRoot: Compound< SquareRoot< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::sqrt( arg ); }
 
-    using Arguments< SquareRoot, T >::Arguments;
+    using Compound< SquareRoot< T >>::Compound;
 };
 
 ////////////
@@ -155,29 +155,29 @@ template< typename Base, typename Exp >
 struct Pow;
 
 template< >
-struct IsExpressionOperation< Pow >: true_type { };
+struct IsCompoundOperation< Pow >: true_type { };
 
 // only powers of constants are allowed for unit types
 template< typename Base, int N >
-struct Pow< Base, Constant< N >>: Arguments< Pow, Base, Constant< N >>
+struct Pow< Base, Constant< N >>: Compound< Pow< Base, Constant< N >>>
 {
     static constexpr auto
     value( Base const& base, Constant< N > )
     { return impl::pow< N >( base ); }
 
-    using Arguments< Pow, Base, Constant< N >>::Arguments;
+    using Compound< Pow< Base, Constant< N >>>::Compound;
 };
 
 // non-unit expressions reduce to the std::pow function
 template< typename Base, typename Ex >
 requires( not units::unit< result_t< Base >> )
-struct Pow< Base, Ex >: Arguments< Pow, Base, Ex >
+struct Pow< Base, Ex >: Compound< Pow< Base, Ex >>
 {
     static constexpr auto
     value( Base const& base, Ex const& ex )
     { return std::pow( base, ex ); }
 
-    using Arguments< Pow, Base, Ex >::Arguments;
+    using Compound< Pow< Base, Ex >>::Compound;
 };
 
 /////////////
@@ -188,16 +188,16 @@ template< typename T >
 struct Sine;
 
 template< >
-struct IsExpressionOperation< Sine >: true_type { };
+struct IsCompoundOperation< Sine >: true_type { };
 
 template< typename T >
-struct Sine: Arguments< Sine, T >
+struct Sine: Compound< Sine< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::sin( arg ); }
 
-    using Arguments< Sine, T >::Arguments;
+    using Compound< Sine< T >>::Compound;
 };
 
 ///////////////
@@ -208,16 +208,16 @@ template< typename T >
 struct Cosine;
 
 template< >
-struct IsExpressionOperation< Cosine >: true_type { };
+struct IsCompoundOperation< Cosine >: true_type { };
 
 template< typename T >
-struct Cosine: Arguments< Cosine, T >
+struct Cosine: Compound< Cosine< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::cos( arg ); }
 
-    using Arguments< Cosine, T >::Arguments;
+    using Compound< Cosine< T >>::Compound;
 };
 
 ////////////////
@@ -228,16 +228,16 @@ template< typename T >
 struct Tangent;
 
 template< >
-struct IsExpressionOperation< Tangent >: true_type { };
+struct IsCompoundOperation< Tangent >: true_type { };
 
 template< typename T >
-struct Tangent: Arguments< Tangent, T >
+struct Tangent: Compound< Tangent< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::tan( arg ); }
 
-    using Arguments< Tangent, T >::Arguments;
+    using Compound< Tangent< T >>::Compound;
 };
 
 ////////////////
@@ -248,16 +248,16 @@ template< typename T >
 struct Arcsine;
 
 template< >
-struct IsExpressionOperation< Arcsine >: true_type { };
+struct IsCompoundOperation< Arcsine >: true_type { };
 
 template< typename T >
-struct Arcsine: Arguments< Arcsine, T >
+struct Arcsine: Compound< Arcsine< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::asin( arg ); }
 
-    using Arguments< Arcsine, T >::Arguments;
+    using Compound< Arcsine< T >>::Compound;
 };
 
 //////////////////
@@ -268,16 +268,16 @@ template< typename T >
 struct Arccosine;
 
 template< >
-struct IsExpressionOperation< Arccosine >: true_type { };
+struct IsCompoundOperation< Arccosine >: true_type { };
 
 template< typename T >
-struct Arccosine: Arguments< Arccosine, T >
+struct Arccosine: Compound< Arccosine< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::acos( arg ); }
 
-    using Arguments< Arccosine, T >::Arguments;
+    using Compound< Arccosine< T >>::Compound;
 };
 
 ///////////////////
@@ -288,16 +288,16 @@ template< typename T >
 struct Arctangent;
 
 template< >
-struct IsExpressionOperation< Arctangent >: true_type { };
+struct IsCompoundOperation< Arctangent >: true_type { };
 
 template< typename T >
-struct Arctangent: Arguments< Arctangent, T >
+struct Arctangent: Compound< Arctangent< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::atan( arg ); }
 
-    using Arguments< Arctangent, T >::Arguments;
+    using Compound< Arctangent< T >>::Compound;
 };
 
 ////////////////////
@@ -308,16 +308,16 @@ template< typename T, typename U >
 struct Arctangent2;
 
 template< >
-struct IsExpressionOperation< Arctangent2 >: true_type { };
+struct IsCompoundOperation< Arctangent2 >: true_type { };
 
 template< typename T, typename U >
-struct Arctangent2: Arguments< Arctangent2, T, U >
+struct Arctangent2: Compound< Arctangent2< T, U >>
 { 
     static constexpr auto 
     value( T const& num, U const& den )
     { return impl::atan2( num, den ); }
 
-    using Arguments< Arctangent2, T, U >::Arguments;
+    using Compound< Arctangent2< T, U >>::Compound;
 };
 
 ////////////
@@ -328,16 +328,16 @@ template< typename T >
 struct Log;
 
 template< >
-struct IsExpressionOperation< Log >: true_type { };
+struct IsCompoundOperation< Log >: true_type { };
 
 template< typename T >
-struct Log: Arguments< Log, T >
+struct Log: Compound< Log< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::log( arg ); }
 
-    using Arguments< Log, T >::Arguments;
+    using Compound< Log< T >>::Compound;
 };
 
 ////////////
@@ -348,16 +348,16 @@ template< typename T >
 struct Exp;
 
 template< >
-struct IsExpressionOperation< Exp >: true_type { };
+struct IsCompoundOperation< Exp >: true_type { };
 
 template< typename T >
-struct Exp: Arguments< Exp, T >
+struct Exp: Compound< Exp< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return impl::exp( arg ); }
 
-    using Arguments< Exp, T >::Arguments;
+    using Compound< Exp< T >>::Compound;
 };
 
 ////////////
@@ -368,16 +368,16 @@ template< typename T >
 struct Abs;
 
 template< >
-struct IsExpressionOperation< Abs >: true_type { };
+struct IsCompoundOperation< Abs >: true_type { };
 
 template< typename T >
-struct Abs: Arguments< Abs, T >
+struct Abs: Compound< Abs< T >>
 {
     static constexpr auto
     value( T const& arg )
     { return impl::abs( arg ); }
 
-    using Arguments< Abs, T >::Arguments;
+    using Compound< Abs< T >>::Compound;
 };
 
 //////////////////

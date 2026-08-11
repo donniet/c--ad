@@ -13,20 +13,20 @@ template< typename T >
 struct EqualsZero;
 
 template< >
-struct IsExpressionOperation< EqualsZero >: std::true_type { };
+struct IsCompoundOperation< EqualsZero >: std::true_type { };
 
 /// @brief equals zero expression
 ///
 /// This is not intended to be used to construct expressions, but 
 /// instead is used in the canonical form of all other comparisons
 template< typename T >
-struct EqualsZero: Arguments< EqualsZero, T >
+struct EqualsZero: Compound< EqualsZero< T >>
 {
     static constexpr auto 
     value( T const& arg )
     { return arg == 0; }
 
-    using Arguments< EqualsZero, T >::Arguments;
+    using Compound< EqualsZero< T >>::Compound;
 };
 
 ///////////////
@@ -37,19 +37,19 @@ template< typename T, typename U >
 struct Equals;
 
 template< >
-struct IsExpressionOperation< Equals >: std::true_type { };
+struct IsCompoundOperation< Equals >: std::true_type { };
 
 /// @brief equality expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct Equals: Arguments< Equals, T, U >
+struct Equals: Compound< Equals< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left == right; }
     
-    using Arguments< Equals, T, U >::Arguments;
+    using Compound< Equals< T, U >>::Compound;
 };
 
 //////////////////
@@ -60,19 +60,19 @@ template< typename T, typename U >
 struct NotEquals;
 
 template< >
-struct IsExpressionOperation< NotEquals >: std::true_type { };
+struct IsCompoundOperation< NotEquals >: std::true_type { };
 
 /// @brief non-equality expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct NotEquals: Arguments< NotEquals, T, U >
+struct NotEquals: Compound< NotEquals< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left != right; }
     
-    using Arguments< NotEquals, T, U >::Arguments;
+    using Compound< NotEquals< T, U >>::Compound;
 };
 
 ////////////////////
@@ -83,19 +83,19 @@ template< typename T, typename U >
 struct GreaterThan;
 
 template< >
-struct IsExpressionOperation< GreaterThan >: std::true_type { };
+struct IsCompoundOperation< GreaterThan >: std::true_type { };
 
 /// @brief greater than expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct GreaterThan: Arguments< GreaterThan, T, U >
+struct GreaterThan: Compound< GreaterThan< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left > right; }
     
-    using Arguments< GreaterThan, T, U >::Arguments;
+    using Compound< GreaterThan< T, U >>::Compound;
 };
 
 /////////////////
@@ -106,19 +106,19 @@ template< typename T, typename U >
 struct LessThan;
 
 template< >
-struct IsExpressionOperation< LessThan >: std::true_type { };
+struct IsCompoundOperation< LessThan >: std::true_type { };
 
 /// @brief less than expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct LessThan: Arguments< LessThan, T, U >
+struct LessThan: Compound< LessThan< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left < right; }
     
-    using Arguments< LessThan, T, U >::Arguments;
+    using Compound< LessThan< T, U >>::Compound;
 };
 
 ////////////////////////////
@@ -129,19 +129,19 @@ template< typename T, typename U >
 struct GreaterThanOrEquals;
 
 template< >
-struct IsExpressionOperation< GreaterThanOrEquals >: std::true_type { };
+struct IsCompoundOperation< GreaterThanOrEquals >: std::true_type { };
 
 /// @brief greater than or equal to expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct GreaterThanOrEquals: Arguments< GreaterThanOrEquals, T, U >
+struct GreaterThanOrEquals: Compound< GreaterThanOrEquals< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left >= right; }
     
-    using Arguments< GreaterThanOrEquals, T, U >::Arguments;
+    using Compound< GreaterThanOrEquals< T, U >>::Compound;
 };
 
 /////////////////////////
@@ -152,19 +152,19 @@ template< typename T, typename U >
 struct LessThanOrEquals;
 
 template< >
-struct IsExpressionOperation< LessThanOrEquals >: std::true_type { };
+struct IsCompoundOperation< LessThanOrEquals >: std::true_type { };
 
 /// @brief less than or equal to expression
 /// @tparam T 
 /// @tparam U 
 template< typename T, typename U >
-struct LessThanOrEquals: Arguments< LessThanOrEquals, T, U >
+struct LessThanOrEquals: Compound< LessThanOrEquals< T, U >>
 { 
     static constexpr auto
     value( T const& left, U const& right )
     { return left <= right; }
     
-    using Arguments< LessThanOrEquals, T, U >::Arguments;
+    using Compound< LessThanOrEquals< T, U >>::Compound;
 };
 
 /////////////////////////

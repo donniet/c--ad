@@ -204,13 +204,62 @@ namespace expressions {
 ///     using Compound< Element< I, Arr >>::Compound;
 /// };
 /// ```
-template< typename Op >
+template< typename Op, typename... Subs >
 struct Compound;
 
-template< template< typename... > class Op, typename... Args >
-struct Compound< Op< Args... >>: tuple< Args... >
+//////////////////////
+/// Reconstituter ///
+////////////////////
+///
+/// Creates a new compound expression using provided subs as arguments
+///
+namespace detail {
+
+template< typename ExprT, typename... Subs >
+struct Reconstituter;
+
+template< template< typename... > class Op, typename... Args, 
+    typename... Subs >
+requires( sizeof...( Args ) == sizeof...( Subs ))
+struct Reconstituter< Op< Args... >, Subs... >
 {
-    using expression_type = Op< Args... >;
+    using type = Op< Subs... >;
+    static constexpr type
+    value( Op< Args... > const& expr, Subs const&... subs )
+    { return { subs... }; }
+};
+
+template< template< auto, typename... > class Op, auto Discriminator,
+    typename... Args, typename... Subs >
+requires( sizeof...( Args ) == sizeof...( Subs ))
+struct Reconstituter< Op< Discriminator, Args... >, Subs... >
+{
+    using type = Op< Discriminator, Subs... >;
+    static constexpr type
+    value( Op< Discriminator, Args... > const& expr, Subs const&... subs )
+    { return { subs... }; } 
+};
+
+} // namespace detail
+  //
+template< typename ExprT, typename... Subs >
+using reconstitute_t = detail::Reconstituter< ExprT, Subs... >::type;
+
+template< typename ExprT, typename... Subs>
+constexpr reconstitute_t< ExprT, Subs... >
+reconstitute( ExprT const& expr, Subs const&... subs )
+{ return detail::Reconstituter< ExprT, Subs... >::value( expr, subs... ); }
+
+///////////////////////
+/// CompoundCommon ///
+/////////////////////
+/// 
+/// Base class for compound and discriminated expressions
+///
+template< typename ExprT, typename... Args >
+struct CompoundCommon: tuple< Args... >
+{
+    using expression_type = ExprT;
     using arguments_tuple = tuple< Args... >;
     static constexpr size_t arguments_size = sizeof...( Args );
     static constexpr make_seq< arguments_size > for_args;
@@ -223,6 +272,10 @@ struct Compound< Op< Args... >>: tuple< Args... >
     constexpr Args...[ I ] const&
     arg() const
     { return get< I >( args() ); }
+    
+    constexpr expression_type const&
+    expr() const
+    { return *static_cast< expression_type const* >( this ); }
 
     constexpr auto
     operator ()() const
@@ -233,16 +286,18 @@ struct Compound< Op< Args... >>: tuple< Args... >
         return helper( for_args );
     }
 
-    constexpr Compound( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Compound( Compound const& ) = default;
-    constexpr Compound() = default;
+    constexpr CompoundCommon( Args const&... args ): 
+        tuple< Args... >{ args... } { }
+    constexpr CompoundCommon( CompoundCommon const& ) = default;
+    constexpr CompoundCommon() = default;
 };
 
-template< template< typename... > class Op, typename... Args >
+/// specialization for a compound with at least one expression as an argument
+template< typename ExprT, typename... Args >
 requires(( expression< Args > or ... or false ))
-struct Compound< Op< Args... >>: tuple< Args... >
+struct CompoundCommon< ExprT, Args... >: tuple< Args... >
 {
-    using expression_type = Op< Args... >;
+    using expression_type = ExprT;
     using arguments_tuple = tuple< Args... >;
     static constexpr size_t arguments_size = sizeof...( Args );
     typedef make_seq< arguments_size > for_args;
@@ -256,273 +311,8 @@ struct Compound< Op< Args... >>: tuple< Args... >
     arg() const
     { return get< I >( args() ); }
 
-private:
+protected:    
     constexpr expression_type const&
-    expr() const
-    { return *static_cast< expression_type const* >( this ); }
-
-    template< size_t I >
-    struct ArgEvaluator
-    { 
-        using type = Args...[ I ];
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return std::get< I >( tup ); }
-    };
-
-    // NOTE: this does not guard against open expression idempotency on 
-    //       Args...[I]::operator()** because Arguments< Op, Args... >::
-    //       operator()*** guards itself so there be no circular logic.
-    template< size_t I >
-    requires( expression< Args...[ I ]> )
-    struct ArgEvaluator< I >
-    {
-        using type = result_t< Args...[ I ]>;
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return get< I >( tup )(); } // ** the invocation operator()
-    }; 
-
-    template< typename Seq >
-    struct ResultHelper;
-
-    template< size_t... Is >
-    struct ResultHelper< seq< Is... >>
-    {
-        using type = std::remove_cvref_t< decltype( Op< typename 
-            ArgEvaluator< Is >::type... >::value( typename 
-                ArgEvaluator< Is >::type{}... ))>;
-
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return Op< typename ArgEvaluator< Is >::type... >::value(
-            ArgEvaluator< Is >::value( tup )... ); }
-    };
-
-public:
-    using result_type = ResultHelper< for_args >::type;
-    
-    constexpr result_type 
-    operator ()() const 
-    requires(( closed_expression< Args > and ... and true ))
-    { return ResultHelper< for_args >::value( args() ); }
-
-    constexpr expression_type const&
-    operator ()() const
-    requires(( open_expression< Args > or ...  or false ))
-    { return expr(); }
-
-    /// @brief Sub via invocation operator
-    template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< expression_type, First, Rest... > )
-    constexpr substitute_t< expression_type, make_expression_t< First >, 
-        make_expression_t< Rest >... >
-    operator ()( First first, Rest... rest ) const
-    { return substitute( expr(), make_expression( first ), 
-        make_expression( rest )... ); }
-
-    constexpr Compound( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Compound( Compound const& ) = default;
-    constexpr Compound() = default;
-};
-
-template< template< auto, typename... > class Op, auto Discriminator, 
-    typename... Args >
-struct Compound< Op< Discriminator, Args... >>: tuple< Args... >
-{
-    using expression_type = Op< Discriminator, Args... >;
-    using arguments_tuple = tuple< Args... >;
-    static constexpr size_t arguments_size = sizeof...( Args );
-    static constexpr make_seq< arguments_size > for_args;
-
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
-
-    template< size_t I >
-    constexpr Args...[ I ] const&
-    arg() const
-    { return get< I >( args() ); }
-
-    constexpr auto
-    operator ()() const
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value( arg< Is >()... ); };
-
-        return helper( for_args );
-    }
-
-    constexpr Compound( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Compound( Compound const& ) = default;
-    constexpr Compound() = default;
-};
-
-template< template< auto, typename... > class Op, auto Discriminator, 
-    typename... Args >
-requires(( expression< Args > or ... or false ))
-struct Compound< Op< Discriminator, Args... >>: tuple< Args... >
-{
-    using expression_type = Op< Discriminator, Args... >;
-    using arguments_tuple = tuple< Args... >;
-    static constexpr size_t arguments_size = sizeof...( Args );
-    typedef make_seq< arguments_size > for_args;
-
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
-
-    template< size_t I >
-    constexpr Args...[ I ] const&
-    arg() const
-    { return get< I >( args() ); }
-
-private:
-    constexpr expression_type const&
-    expr() const
-    { return *static_cast< expression_type const* >( this ); }
-
-    template< size_t I >
-    struct ArgEvaluator
-    { 
-        using type = Args...[ I ];
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return std::get< I >( tup ); }
-    };
-
-    // NOTE: this does not guard against open expression idempotency on 
-    //       Args...[I]::operator()** because Arguments< Op, Args... >::
-    //       operator()*** guards itself so there be no circular logic.
-    template< size_t I >
-    requires( expression< Args...[ I ]> )
-    struct ArgEvaluator< I >
-    {
-        using type = result_t< Args...[ I ]>;
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return get< I >( tup )(); } // ** the invocation operator()
-    }; 
-
-    template< typename Seq >
-    struct ResultHelper;
-
-    template< size_t... Is >
-    struct ResultHelper< seq< Is... >>
-    {
-        using result_op = Op< Discriminator, 
-            typename ArgEvaluator< Is >::type... >;
-
-        using type = std::remove_cvref_t< decltype( 
-            result_op::value( typename ArgEvaluator< Is >::type{}... )
-        )>;
-
-        static constexpr type
-        value( arguments_tuple const& tup )
-        { return result_op::value( ArgEvaluator< Is >::value( tup )... ); }
-    };
-
-public:
-    using result_type = ResultHelper< for_args >::type;
-    
-    constexpr result_type 
-    operator ()() const 
-    requires(( closed_expression< Args > and ... and true ))
-    { return ResultHelper< for_args >::value( args() ); }
-
-    constexpr expression_type const&
-    operator ()() const
-    requires(( open_expression< Args > or ...  or false ))
-    { return expr(); }
-
-    /// @brief Sub via invocation operator
-    template< typename First, typename... Rest >
-    requires( is_compatible_substitution_v< expression_type, First, Rest... > )
-    constexpr substitute_t< expression_type, make_expression_t< First >, 
-        make_expression_t< Rest >... >
-    operator ()( First first, Rest... rest ) const
-    { return substitute( expr(), make_expression( first ), 
-        make_expression( rest )... ); }
-
-    constexpr Compound( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Compound( Compound const& ) = default;
-    constexpr Compound() = default;
-};
-
-//////////////////////////////////////////////////////
-/// Arguments Base Class for Compound Expressions ///
-////////////////////////////////////////////////////
-///
-/// Provides storage for expression arguments and the implementation of the
-/// evaluation and substitution operator().
-///
-/// @brief default case is a tuple that calls the parent's value method upon
-///        evaluation
-///
-/// @pre   Op< Args... > implementation MUST define a static value method
-///        taking the ...Args as parameters
-///
-template< template< typename... > class Op, typename... Args >
-struct Arguments: tuple< Args... > 
-{
-    using expression_type = Op< Args... >;
-    using arguments_tuple = tuple< Args... >;
-
-    static constexpr size_t arguments_size = sizeof...( Args );
-    static constexpr make_seq< arguments_size > for_args;
-
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
-
-    template< size_t I >
-    constexpr Args...[ I ] const&
-    arg() const
-    { return std::get( *this ); }
-
-    // calls Op< Args... >::value static method to calculate the result of the
-    // operation
-    constexpr auto
-    operator ()() const
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return expression_type::value( get< Is >( args() )... ); };
-
-        return helper( for_args );
-    }
-
-    constexpr Arguments( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Arguments( Arguments const& ) = default;
-    constexpr Arguments() = default;
-};
-
-/// @brief specialization of Arguments when there is at least one expression
-///        argument. We allow substitutions via operator() with at least one
-///        parameter.  We calculate our result type from the nullary
-///        operator() of the default implementation (which in turn calls the
-///        Op< Args... >::value( Args... ) static method)
-template< template< typename... > class Op, typename... Args >
-requires(( expression< Args > or ... or false ))
-struct Arguments< Op, Args... >: tuple< Args... > 
-{
-    using expression_type = Op< Args... >;
-    using arguments_tuple = tuple< Args... >;
-    static constexpr size_t arguments_size = sizeof...( Args );
-    typedef make_seq< arguments_size > for_args;
-
-    constexpr arguments_tuple const& 
-    args() const
-    { return *this; }
-
-    template< size_t I >
-    constexpr Args...[ I ] const&
-    arg() const
-    { return std::get( *this ); }
-
-private:
-    // DT: is it ok to static_cast this to a derived class pointer?
-    // DT: seems so: https://en.cppreference.com/cpp/language/static_cast
-    constexpr expression_type const& 
     expr() const
     { return *static_cast< expression_type const* >( this ); }
 
@@ -537,7 +327,7 @@ private:
     };
 
     // NOTE: this does not guard against open expression idempotency on 
-    //       Args...[I]::operator()** because Arguments< Op, Args... >::
+    //       Args...[I]::operator()** because Compound< Op, Args... >::
     //       operator()*** guards itself so there be no circular logic.
     template< size_t I >
     requires( expression< Args...[ I ]> )
@@ -556,33 +346,22 @@ private:
     struct ResultHelper< seq< Is... >>
     {
         using type = std::remove_cvref_t< decltype( 
-            Op< typename ArgEvaluator< Is >::type... >::value(
-                typename ArgEvaluator< Is >::type{}... ))>;
+            reconstitute_t< expression_type, typename ArgEvaluator< Is >::
+                type... >::value( typename ArgEvaluator< Is >::type{}... ))>;
 
         static constexpr type
         value( arguments_tuple const& tup )
-        { return Op< typename ArgEvaluator< Is >::type... >::value(
-            ArgEvaluator< Is >::value( tup )... ); }
+        { return reconstitute_t< expression_type, typename ArgEvaluator< Is >::
+            type... >::value( ArgEvaluator< Is >::value( tup )... ); }
     };
 
 public:
     using result_type = ResultHelper< for_args >::type;
-    // std::remove_cvref_t< decltype(
-    //    Op< result_t< Args >... >::value( result_t< Args >{}... )) >;
-    //        Arguments< Op, result_t< Args >... >{}() )>;
-    
     
     constexpr result_type 
     operator ()() const 
     requires(( closed_expression< Args > and ... and true ))
     { return ResultHelper< for_args >::value( args() ); }
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> 
-//            result_type
-//        { return Op< typename ArgEvaluator< Is >::type... >{ 
-//            ArgEvaluator< Is >::value( args() )... }(); };
-//
-//        return helper( for_args{} );
-//    }
 
     constexpr expression_type const&
     operator ()() const
@@ -598,19 +377,25 @@ public:
     { return substitute( expr(), make_expression( first ), 
         make_expression( rest )... ); }
 
-    // DEBUG:
-//    template< typename First, typename... Rest >
-//    constexpr int debug_sub( First const& first, Rest const&... rest )
-//    //{ static_assert( is_same_v< void, free_variables_t< expression_type >> ); }
-//    { static_assert( is_same_v< void, std::tuple< 
-//        substitute_t< expression_type, First, Rest... >,
-//        Sub< expression_type, First, Rest... >>> ); }
-//    //{ static_assert( is_same_v< void, Sub< expression_type, First, Rest... >> ); }
+    constexpr CompoundCommon( Args const&... args ): 
+        tuple< Args... >{ args... } { }
+    constexpr CompoundCommon( CompoundCommon const& ) = default;
+    constexpr CompoundCommon() = default;
 
-    constexpr Arguments( Args const&... args ): tuple< Args... >{ args... } { }
-    constexpr Arguments( Arguments const& ) = default;
-    constexpr Arguments() = default; 
 };
+
+// Compound Expression Base Class
+template< template< typename... > class Op, typename... Args >
+struct Compound< Op< Args... >>: CompoundCommon< Op< Args... >, Args... >
+{ using CompoundCommon< Op< Args... >, Args... >::CompoundCommon; };
+
+// Discriminated Expression Bae Class
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+struct Compound< Op< Discriminator, Args... >>: 
+    CompoundCommon< Op< Discriminator, Args... >, Args... >
+{ using CompoundCommon< Op< Discriminator, Args... >, Args... >::
+    CompoundCommon; };
 
 ///////////////////////////////
 /// Element Implementation ///

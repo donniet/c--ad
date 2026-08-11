@@ -63,9 +63,6 @@ template< typename T >
 struct IsExpression: std::false_type { };
 
 template< template< typename... > class Op >
-struct IsExpressionOperation: std::false_type { };
-
-template< template< typename... > class Op >
 struct IsCompoundOperation: std::false_type { };
 
 template< template< auto, typename... > class Op >
@@ -91,7 +88,7 @@ struct IsExpression< Tensor< S, Ts... >>: integral_constant< bool,
 // or an expression operation (deprecated)
 template< template< typename... > class Op, typename... Args >
 struct IsCompoundExpression< Op< Args... >>: integral_constant< bool,
-    IsExpressionOperation< Op >::value or IsCompoundOperation< Op >::value > 
+    IsCompoundOperation< Op >::value > 
 { };
 
 // Op< auto, typename... > is a compound operation if Op is a discriminated
@@ -292,7 +289,7 @@ struct Sub;
 // NOTE: we aren't treating Sub<...> as a compound expression, but
 //       instead are treating any specialization as an expression
 template< >
-struct IsExpressionOperation< Sub >: std::true_type { };
+struct IsCompoundOperation< Sub >: std::true_type { };
 
 /// @brief any specializaiton of a Sub</*stitution*/> is an 
 ///        expression, but it is not a compound expression.  This 
