@@ -3,7 +3,12 @@
 
 #include "expressions/forward_decl.hpp"
 
+#include <type_traits>
+
 namespace expressions {
+
+using std::integral_constant;
+using std::true_type, std::false_type;
 
 ////////////////////
 /// StaticValue ///
@@ -19,7 +24,8 @@ template< typename T >
 struct StaticValue;
 
 template< typename T >
-struct IsExpression< StaticValue< T >>: std::true_type { };
+struct IsExpression< StaticValue< T >>: integral_constant< bool,
+    not IsExpression< T >::value > { };
 
 /// @brief result of a static value is the result of it's value type
 template< typename T >
@@ -68,7 +74,7 @@ struct MakeExpression
     using type = StaticValue< T >;
     static constexpr type 
     value( T const& value )
-    { return { value }; }
+    { return type{ value }; }
 };
 
 template< expression T >

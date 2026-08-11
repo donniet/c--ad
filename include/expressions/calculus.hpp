@@ -12,52 +12,103 @@ using std::true_type, std::false_type;
 
 namespace expressions {
 
+using namespace units;
+
+template< typename T >
+struct IsMetric: integral_constant< bool, unit< T > or is_arithmetic_v< T >>
+{ };
+
+/////////////////////
+/// Metric Types ///
+///////////////////
+///
+/// trait to identify types that allow basic arithmetic operations including
+/// units
+template< typename T >
+constexpr bool is_metric_v = IsMetric< T >::value;
+
+template< typename T >
+concept metric = is_metric_v< T >;
+
+template< typename T >
+struct IsMetricFunction: false_type {};
+
+template< typename ExprT, variable... Vars >
+struct IsMetricFunction< Func< ExprT, Vars... >>: integral_constant< bool,
+    is_metric_v< result_t< ExprT >> and 
+        ( is_metric_v< result_t< Vars >> and ... and true )> { };
+
+////////////////////////
+/// Metric Function ///
+//////////////////////
+/// 
+/// trait to identify whether an expression is a function which takes metric
+/// variables and returns a metric result.
+template< typename T >
+constexpr bool is_metric_function_v = IsMetricFunction< T >::value;
+
+template< typename T >
+concept metric_function = is_metric_function_v< T >;
+
 template< typename ExprT, typename VarU >
 struct Derivative;
 
-template< typename ExprT, variable Var >
+template< >
+struct IsExpressionOperation< Derivative >: true_type { };
+
+template< typename ExprT, typename X >
 requires( not expression< ExprT > )
-struct Derivative< ExprT, Var >
+struct Derivative< ExprT, X >: Arguments< Derivative, ExprT, X >
 {
-    using type = Func< Constant< 0 >, Var >;
+    using type = Func< Constant< 0 >, X >;
     static constexpr type
-    value( ExprT const&, Var const& )
+    value( ExprT const&, X const& )
     { return {}; }
+
+    using Arguments< Derivative, ExprT, X >::Arguments;
 };
 
 template< typename ExprT, variable Var >
 requires( not free_variables_t< ExprT >::template contains< Var >() )
-struct Derivative< ExprT, Var >
+struct Derivative< ExprT, Var >: Arguments< Derivative, ExprT, Var >
 {
     using type = Func< Constant< 0 >, Var >;
     static constexpr type
     value( ExprT const&, Var const& )
     { return {}; }
+
+    using Arguments< Derivative, ExprT, Var >::Arguments;
 };
 
 template< variable ExprV, variable Var >
 requires( free_variables_t< ExprV >::template contains< Var >() )
-struct Derivative< ExprV, Var >
+struct Derivative< ExprV, Var >: Arguments< Derivative, ExprV, Var >
 {
     using type = Constant< ( var_id_v< ExprV > == var_id_v< Var > ? 1 : 0 )>;
     static constexpr type
     value( ExprV const&, Var const& )
     { return {}; }
+
+    using Arguments< Derivative, ExprV, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Negation< T >, Var >
+struct Derivative< Negation< T >, Var >: 
+    Arguments< Derivative, Negation< T >, Var >
 {
     using type = Negation< typename Derivative< T, Var >::type >;
     static constexpr type
     value( Negation< T > const& expr, Var const& var )
     { return { Derivative< T, Var >::value( expr.template arg< 0 >() ) }; }
+
+    using Arguments< Derivative, Negation< T >, Var >::Arguments;
 };
 
 template< typename... Ts, variable Var >
 requires( free_variables_t< Sum< Ts... >>::template contains< Var >() )
-struct Derivative< Sum< Ts... >, Var >
+struct Derivative< Sum< Ts... >, Var >: 
+    Arguments< Derivative, Sum< Ts... >, Var >
 {
     using type = Sum< typename Derivative< Ts, Var >::type... >;
     static constexpr type
@@ -71,11 +122,14 @@ struct Derivative< Sum< Ts... >, Var >
 
         return helper( for_args );
     }
+
+    using Arguments< Derivative, Sum< Ts... >, Var >::Arguments;
 };
 
 template< typename... Ts, variable Var >
 requires( free_variables_t< Difference< Ts... >>::template contains< Var >() )
-struct Derivative< Difference< Ts... >, Var >
+struct Derivative< Difference< Ts... >, Var >: 
+    Arguments< Derivative, Difference< Ts... >, Var >
 {
     using type = Difference< typename Derivative< Ts, Var >::type... >;
     static constexpr type
@@ -89,11 +143,14 @@ struct Derivative< Difference< Ts... >, Var >
 
         return helper( for_args );
     }
+
+    using Arguments< Derivative, Difference< Ts... >, Var >::Arguments;
 };
 
 template< typename... Ts, variable Var >
 requires( free_variables_t< Product< Ts... >>::template contains< Var >() )
-struct Derivative< Product< Ts... >, Var >
+struct Derivative< Product< Ts... >, Var >: 
+    Arguments< Derivative, Product< Ts... >, Var >
 {
     typedef make_seq< sizeof...( Ts )> for_args;
 
@@ -144,11 +201,14 @@ struct Derivative< Product< Ts... >, Var >
     static constexpr type
     value( Product< Ts... > const& expr, Var const& var )
     { Helper< for_args >::value( expr, var ); }
+
+    using Arguments< Derivative, Product< Ts... >, Var >::Arguments;
 };
 
 template< typename T, typename... Ts, variable Var >
 requires( free_variables_t< Quotient< T, Ts... >>::template contains< Var >() )
-struct Derivative< Quotient< T, Ts... >, Var >
+struct Derivative< Quotient< T, Ts... >, Var >: 
+    Arguments< Derivative, Quotient< T, Ts... >, Var >
 {
     using type = Quotient< 
         Difference< 
@@ -169,11 +229,14 @@ struct Derivative< Quotient< T, Ts... >, Var >
             { first, Derivative< Quotient< Ts... >, Var >::
                 value( rest, var ) }}, { rest, Constant< 2 >{} }};
     }
+
+    using Arguments< Derivative, Quotient< T, Ts... >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< SquareRoot< T >, Var >
+struct Derivative< SquareRoot< T >, Var >: 
+    Arguments< Derivative, SquareRoot< T >, Var >
 {
     using type = Product< Constant< -0.5 >, Quotient< 
         typename Derivative< T, Var >::type, SquareRoot< T >>>;
@@ -186,12 +249,15 @@ struct Derivative< SquareRoot< T >, Var >
         return { Constant< -0.5 >{}, { Derivative< T, Var >::value( arg, var ), 
             { expr.template arg< 0 >() }}}; 
     }
+
+    using Arguments< Derivative, SquareRoot< T >, Var >::Arguments;
 };
 
 template< typename T, auto N, variable Var >
 requires( free_variables_t< T >::template contains< Var >() and 
     std::is_arithmetic_v< decltype( N )> )
-struct Derivative< Pow< T, Constant< N >>, Var >
+struct Derivative< Pow< T, Constant< N >>, Var >: 
+    Arguments< Derivative, Pow< T, Constant< N >>, Var >
 {
     using type = Product< Constant< N >, Pow< T, Constant< N - 1 >>,
         typename Derivative< T, Var >::type >;
@@ -204,11 +270,13 @@ struct Derivative< Pow< T, Constant< N >>, Var >
         return { Constant< N >{}, { arg, Constant< N - 1 >{} }, 
             Derivative< T, Var >::value( arg, var ) };
     }
+
+    using Arguments< Derivative, Pow< T, Constant< N >>, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Sine< T >, Var >
+struct Derivative< Sine< T >, Var >: Arguments< Derivative, Sine< T >, Var >
 {
     using type = Product< Cosine< T >, typename Derivative< T, Var >::type >;
 
@@ -219,11 +287,14 @@ struct Derivative< Sine< T >, Var >
 
         return {{ arg }, Derivative< T, Var >::value( arg, var )};
     }
+
+    using Arguments< Derivative, Sine< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Cosine< T >, Var >
+struct Derivative< Cosine< T >, Var >: 
+    Arguments< Derivative, Cosine< T >, Var >
 {
     using type = Product< Negation< Sine< T >>, 
           typename Derivative< T, Var >::type >;
@@ -235,11 +306,14 @@ struct Derivative< Cosine< T >, Var >
 
         return {{{ arg }}, Derivative< T, Var >::value( arg, var )};
     }
+
+    using Arguments< Derivative, Cosine< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Tangent< T >, Var >
+struct Derivative< Tangent< T >, Var >: 
+    Arguments< Derivative, Tangent< T >, Var >
 {
     using type = Quotient< typename Derivative< T, Var >::type, 
         Pow< Cosine< T >, Constant< 2 >>>;
@@ -251,11 +325,14 @@ struct Derivative< Tangent< T >, Var >
 
         return { Derivative< T, Var >::value( arg, var ), {{ arg }, {}}};
     }
+
+    using Arguments< Derivative, Tangent< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Arcsine< T >, Var >
+struct Derivative< Arcsine< T >, Var >: 
+    Arguments< Derivative, Arcsine< T >, Var >
 {
     using type = Quotient< typename Derivative< T, Var >::type,
         SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>;
@@ -268,11 +345,14 @@ struct Derivative< Arcsine< T >, Var >
         return { Derivative< T, Var >::value( arg, var ),
             {{ {}, { arg, {} }}}};
     }
+
+    using Arguments< Derivative, Arcsine< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Arccosine< T >, Var >
+struct Derivative< Arccosine< T >, Var >: 
+    Arguments< Derivative, Arccosine< T >, Var >
 {
     using type = Negation< Quotient< typename Derivative< T, Var >::type,
         SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>>;
@@ -285,11 +365,14 @@ struct Derivative< Arccosine< T >, Var >
         return {{ Derivative< T, Var >::value( arg, var ),
             {{ {}, { arg, {} }}}}};
     }
+
+    using Arguments< Derivative, Arccosine< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Arctangent< T >, Var >
+struct Derivative< Arctangent< T >, Var >: 
+    Arguments< Derivative, Arctangent< T >, Var >
 {
     using type = Quotient< typename Derivative< T, Var >::type,
         SquareRoot< Sum< Constant< 1 >, Pow< T, Constant< 2 >>>>>;
@@ -302,12 +385,15 @@ struct Derivative< Arctangent< T >, Var >
         return { Derivative< T, Var >::value( expr, var ),
             {{ {}, { arg, {} }}}};
     }
+
+    using Arguments< Derivative, Arctangent< T >, Var >::Arguments;
 };
 
 template< typename T, typename U, variable Var >
 requires( free_variables_t< T >::template contains< Var >() or
     free_variables_t< U >::template contains< Var >() )
-struct Derivative< Arctangent2< T, U >, Var >
+struct Derivative< Arctangent2< T, U >, Var >: 
+    Arguments< Derivative, Arctangent2< T, U >, Var >
 {
     using type = Derivative< Arctangent< Quotient< T, U >>, Var >::type;
 
@@ -319,11 +405,13 @@ struct Derivative< Arctangent2< T, U >, Var >
         return Derivative< Arctangent< Quotient< T, U >>, Var >::
             value({{ num, den }}, var ); 
     }
+
+    using Arguments< Derivative, Arctangent2< T, U >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Log< T >, Var >
+struct Derivative< Log< T >, Var >: Arguments< Derivative, Log< T >, Var >
 {
     using type = Quotient< typename Derivative< T, Var >::type, Abs< T >>;
 
@@ -334,11 +422,13 @@ struct Derivative< Log< T >, Var >
 
         return { Derivative< T, Var >::value( arg, var ), { arg }};
     }
+
+    using Arguments< Derivative, Log< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Exp< T >, Var >
+struct Derivative< Exp< T >, Var >: Arguments< Derivative, Exp< T >, Var >
 {
     using type = Product< Exp< T >, typename Derivative< T, Var >::type >;
 
@@ -349,16 +439,19 @@ struct Derivative< Exp< T >, Var >
 
         return {{ arg }, Derivative< T, Var >::value( arg, var )};
     }
+
+    using Arguments< Derivative, Exp< T >, Var >::Arguments;
 };
 
 template< typename T, variable Var >
 requires( free_variables_t< T >::template contains< Var >() )
-struct Derivative< Abs< T >, Var >
+struct Derivative< Abs< T >, Var >: Arguments< Derivative, Abs< T >, Var >
 { static_assert( false, "piece-wise functions are not implemented yet" ); };
 
 template< typename... Ts, variable Var >
 requires( free_variables_t< tuple< Ts... >>::template contains< Var >() )
-struct Derivative< tuple< Ts... >, Var >
+struct Derivative< tuple< Ts... >, Var >: 
+    Arguments< Derivative, tuple< Ts... >, Var >
 {
     using type = tuple< typename Derivative< Ts, Var >::type... >;
 
@@ -373,11 +466,14 @@ struct Derivative< tuple< Ts... >, Var >
 
         return helper( for_elements );
     }
+
+    using Arguments< Derivative, tuple< Ts... >, Var >::Arguments;
 };
 
 template< shape S, typename... Ts, variable Var >
 requires( free_variables_t< Tensor< S, Ts... >>::template contains< Var >() )
-struct Derivative< Tensor< S, Ts... >, Var >
+struct Derivative< Tensor< S, Ts... >, Var >: 
+    Arguments< Derivative, Tensor< S, Ts... >, Var >
 {
     using type = Tensor< S, typename Derivative< Ts, Var >::type... >;
 
@@ -392,6 +488,8 @@ struct Derivative< Tensor< S, Ts... >, Var >
 
         return helper( for_elements );
     }
+
+    using Arguments< Derivative, Tensor< S, Ts... >, Var >::Arguments;
 };
 
 template< typename ExprT, typename VarU >
@@ -402,21 +500,59 @@ constexpr derivative_t< ExprT, VarU >
 derivative( ExprT const& expr, VarU const& var )
 { return Derivative< ExprT, VarU >::value( expr, var ); }
 
-template< typename ExprT, typename VarU >
-struct Derive;
+template< typename FuncT >
+struct Gradient;
 
 template< >
-struct IsExpressionOperation< Derive >: true_type { };
+struct IsExpressionOperation< Gradient >: true_type { };
 
-template< typename ExprT, variable Var >
-struct Derive< ExprT, Var >: Arguments< Derive, ExprT, Var >
-{
-    static constexpr derivative_t< ExprT, Var >
-    value( ExprT const& expr, Var const& var )
-    { return derivative( expr, var ); }
+template< typename FuncT >
+struct Gradient: Arguments< Gradient, FuncT > {
+private:
+    template< typename VarsSet >
+    struct Helper;
 
-    using Arguments< Derive, ExprT, Var >::Arguments;
+    template< variable... Vars >
+    struct Helper< unique_variables< Vars... >>
+    {
+        using type = Tensor< Shape< sizeof...( Vars )>, 
+            derivative_t< FuncT, Vars >... >;
+        static constexpr type
+        value( FuncT const& func )
+        { return { derivative( func, Vars{} )... }; }
+    };
+
+public:
+    using type = Helper< free_variables_t< FuncT >>::type;
+
+    static constexpr type
+    value( FuncT const& func )
+    { return Helper< free_variables_t< FuncT >>::value( func ); }
+
+    using Arguments< Gradient, FuncT >::Arguments;
 };
+
+template< typename ExprT, variable... Vars >
+struct Gradient< Func< ExprT, Vars... >>: 
+    Arguments< Gradient, Func< ExprT, Vars... >> 
+{
+    using type = Tensor< Shape< sizeof...( Vars )>, 
+        derivative_t< Func< ExprT, Vars... >, Vars >... >;
+
+    static constexpr type
+    value( Func< ExprT, Vars... > const& func )
+    { return { derivative( func, Vars{} )... }; }
+
+    using Arguments< Gradient, Func< ExprT, Vars... >>::Arguments;
+};
+
+template< typename FuncT >
+using gradient_t = Gradient< FuncT >::type;
+
+template< typename FuncT >
+constexpr gradient_t< FuncT >
+gradient( FuncT const& func )
+{ return Gradient< FuncT >::value( func ); }
 
 
 ///////////////////////////////////

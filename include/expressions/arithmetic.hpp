@@ -36,13 +36,13 @@ template< >
 struct IsExpressionOperation< Negation >: true_type { };
 
 template< typename T >
-struct Negation: Arguments< Negation, T >
+struct Negation: Compound< Negation< T >>
 { 
     static constexpr auto 
     value( T const& arg )
     { return -arg; }
 
-    using Arguments< Negation, T >::Arguments;
+    using Compound< Negation< T >>::Compound;
 };
 
 //static_assert(( Negation< Var< 0, int >>{} | simple_scope( 5 )) == -5 );
@@ -55,16 +55,16 @@ template< typename... Args >
 struct Sum;
 
 template< >
-struct IsExpressionOperation< Sum >: true_type { };
+struct IsCompoundOperation< Sum >: true_type { };
 
 template< typename... Args >
-struct Sum: Arguments< Sum, Args... >
+struct Sum: Compound< Sum< Args... >> 
 { 
     static constexpr auto 
     value( Args const&... args )
     { return ( args + ... + 0 ); }
 
-    using Arguments< Sum, Args... >::Arguments;
+    using Compound< Sum< Args... >>::Compound;
 };
 
 ///////////////////

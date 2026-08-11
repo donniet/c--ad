@@ -41,6 +41,7 @@ using std::tuple, std::make_tuple, std::tuple_element_t, std::get;
 using std::map, std::set;
 using std::any, std::any_cast;
 using std::optional;
+using std::integral_constant, std::true_type, std::false_type;
 
 using namespace tensors;
 
@@ -50,6 +51,11 @@ using namespace tensors;
 ///
 /// Forward declaration, concept, and traits to identify an expression class
 ///
+/// expression< Op<...>>
+/// - CompoundExpression< Op<... >>
+///     - ExpressionOperation< Op > // deprecated
+///     - CompoundOperation< Op >
+///     - DiscriminatedOperation< Op >
 
 /// @brief trait to identify a type as an expression type
 /// @tparam T is the type to be checked
@@ -59,8 +65,19 @@ struct IsExpression: std::false_type { };
 template< template< typename... > class Op >
 struct IsExpressionOperation: std::false_type { };
 
-template< template< typename... > class Op, typename... Args >
-struct IsExpression< Op< Args... >>: IsExpressionOperation< Op > { };
+template< template< typename... > class Op >
+struct IsCompoundOperation: std::false_type { };
+
+template< template< auto, typename... > class Op >
+struct IsDiscriminatedOperation: std::false_type { };
+
+template< typename T >
+struct IsCompoundExpression: std::false_type { };
+
+// all compound expressions are expressions
+template< typename T >
+requires( IsCompoundExpression< T >::value )
+struct IsExpression< T >: true_type { };
 
 template< typename... Ts >
 struct IsExpression< tuple< Ts... >>: integral_constant< bool,
@@ -70,11 +87,19 @@ template< shape S, typename... Ts >
 struct IsExpression< Tensor< S, Ts... >>: integral_constant< bool,
     ( IsExpression< Ts >::value or ... )> { };
 
-template< typename T >
-struct IsCompoundExpression: std::false_type { };
-
+// Op< typename... > is a compound expression if Op is an compound operation
+// or an expression operation (deprecated)
 template< template< typename... > class Op, typename... Args >
-struct IsCompoundExpression< Op< Args... >>: IsExpressionOperation< Op > { };
+struct IsCompoundExpression< Op< Args... >>: integral_constant< bool,
+    IsExpressionOperation< Op >::value or IsCompoundOperation< Op >::value > 
+{ };
+
+// Op< auto, typename... > is a compound operation if Op is a discriminated
+// operation
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+struct IsCompoundExpression< Op< Discriminator, Args... >>:
+    IsDiscriminatedOperation< Op > { };
 
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
@@ -170,6 +195,13 @@ requires( compound_expression< Op< Args... >> )
 struct Result< Op< Args... >>
 { using type = std::remove_cvref_t< decltype(
     Op< typename Result< Args >::type... >{}() )>; };
+
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+requires( compound_expression< Op< Discriminator, Args... >> )
+struct Result< Op< Discriminator, Args... >>
+{ using type = std::remove_cvref_t< decltype(
+    Op< Discriminator, typename Result< Args >::type... >{}() )>; };
 
 /// @brief trait to resolve the result type of an expression
 template< typename T >

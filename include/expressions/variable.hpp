@@ -917,6 +917,37 @@ private:
         { return Helper< for_args >::value( expr, sub ); }
     };
 
+    //  recurse into compound discriminated expressions
+    template< template< auto, typename... > class Op, auto Discriminator,
+        typename... Args >
+    struct CompoundParser< Op< Discriminator, Args... >>
+    {
+        typedef make_seq< sizeof...( Args )> for_args;
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            using type = Op< Discriminator, typename Parser< Args...[ Is ]>::
+                type... >;
+
+            static constexpr type
+            value( Op< Discriminator, Args... > const& expr, 
+                referent_type const& sub )
+            { return { Parser< Args...[ Is ]>::value(
+                get_argument< Is >( expr ), sub )... }; };
+        };
+
+        using type = Helper< for_args >::type;
+        static constexpr type
+        value( Op< Discriminator, Args... > const& expr, 
+            referent_type const& sub )
+        { return Helper< for_args >::value( expr, sub ); }
+
+    };
+
     // parser for substitution expressions
     template< typename SubExpr >
     struct SubstitutionParser;
