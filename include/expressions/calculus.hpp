@@ -62,7 +62,7 @@ struct Derivative< Id, ExprT >: Compound< Derivative< Id, ExprT >>
 {
     using variable_type = Var< Id, ExprT >;
 
-    using type = Func< Constant< ExprT{ 0 }>, variable_type >;
+    using type = Func< Constant< 0 >, variable_type >; // scalar
     static constexpr type
     value( ExprT const& )
     { return {}; }
@@ -76,7 +76,7 @@ requires( expression< ExprT > and
 struct Derivative< Id, ExprT >: Compound< Derivative< Id, ExprT>>
 {
     using variable_type = Var< Id, result_t< ExprT >>;
-    using type = Func< Constant< result_t< ExprT >{ 0 }>, variable_type >;
+    using type = Func< Constant< 0 >, variable_type >; // scalar
         
     static constexpr type
     value( ExprT const& )
@@ -90,7 +90,7 @@ requires( free_variables_t< ExprV >::contains_id( Id ) and
     var_id_v< ExprV > == Id )
 struct Derivative< Id, ExprV >: Compound< Derivative< Id, ExprV >>
 {
-    using type = Constant< result_t< ExprV >{ 1 }>;
+    using type = Constant< 1 >; // scalar
     static constexpr type
     value( ExprV const& )
     { return {}; }
@@ -109,10 +109,14 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Negation< T > >: 
     Compound< Derivative< Id, Negation< T >>>
 {
-    using type = Negation< typename Derivative< Id, T >::type >;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Negation< typename Derivative< Id, T >::type >,
+        Constant< result_t< variable_type >{ 1 }>>;
+    
     static constexpr type
     value( Negation< T > const& expr )
-    { return { Derivative< Id, T >::value( expr.template arg< 0 >() ) }; }
+    { return {{ Derivative< Id, T >::value( expr.template arg< 0 >() ) }, 
+        {}}; }
 
     using Compound< Derivative< Id, Negation< T >>>::Compound;
 };
@@ -122,15 +126,19 @@ requires( free_variables_t< Sum< Ts... >>::contains_id( Id ) )
 struct Derivative< Id, Sum< Ts... > >: 
     Compound< Derivative< Id, Sum< Ts... >>>
 {
-    using type = Sum< typename Derivative< Id, Ts >::type... >;
+    using variable_type = free_variables_t< Sum< Ts... >>::template 
+        variable_t< Id >;
+    using type = Quotient< Sum< typename Derivative< Id, Ts >::type... >,
+        Constant< result_t< variable_type >{ 1 }>>;
+
     static constexpr type
     value( Sum< Ts... > const& expr )
     {
         static constexpr make_seq< sizeof...( Ts )> for_args;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return { Derivative< Id, Ts...[ Is ] >::value( expr.template 
-            arg< Is >() )... }; };
+        { return {{ Derivative< Id, Ts...[ Is ] >::value( expr.template 
+            arg< Is >() )... }, {}}; };
 
         return helper( for_args );
     }
@@ -143,15 +151,19 @@ requires( free_variables_t< Difference< Ts... >>::contains_id( Id ) )
 struct Derivative< Id, Difference< Ts... > >: 
     Compound< Derivative< Id, Difference< Ts... >>>
 {
-    using type = Difference< typename Derivative< Id, Ts >::type... >;
+    using variable_type = free_variables_t< Difference< Ts... >>::template 
+        variable_t< Id >;
+    using type = Quotient< Difference< typename Derivative< Id, Ts >::type... >,
+        Constant< result_t< variable_type >{ 1 }>>;
+
     static constexpr type
     value( Difference< Ts... > const& expr )
     {
         static constexpr make_seq< sizeof...( Ts )> for_args;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return { Derivative< Id, Ts...[ Is ] >::value( expr.template 
-            arg< Is >() )... }; };
+        { return {{ Derivative< Id, Ts...[ Is ] >::value( expr.template 
+            arg< Is >() )... }, {}}; };
 
         return helper( for_args );
     }
@@ -209,10 +221,14 @@ struct Derivative< Id, Product< Ts... > >:
         { return { Term< Is, for_args >::value( expr, var )... }; }
     };
 
-    using type = Helper< for_args >::type;
+    using variable_type = free_variables_t< Product< Ts... >>::template 
+        variable_t< Id >;
+    using type = Quotient< typename Helper< for_args >::type,
+        Constant< result_t< variable_type >{ 1 }>>;
+
     static constexpr type
     value( Product< Ts... > const& expr )
-    { Helper< for_args >::value( expr, var ); }
+    { return { Helper< for_args >::value( expr, var ), {}}; }
 
     using Compound< Derivative< Id, Product< Ts... >>>::Compound;
 };
@@ -222,11 +238,14 @@ requires( free_variables_t< Quotient< T, Ts... >>::contains_id( Id ) )
 struct Derivative< Id, Quotient< T, Ts... > >: 
     Compound< Derivative< Id, Quotient< T, Ts... >>>
 {
-    using type = Quotient< 
+    using variable_type = free_variables_t< Quotient< T, Ts...>>::template 
+        variable_t< Id >;
+    using type = Quotient< Quotient< 
         Difference< 
             Product< typename Derivative< Id, T >::type, Quotient< Ts... >>,
             Product< T, typename Derivative< Id, Quotient< Ts... > >::type >>,
-        Pow< Quotient< Ts... >, Constant< 2 >>>;
+        Pow< Quotient< Ts... >, Constant< 2 >>>,
+        Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Quotient< T, Ts... > const& expr )
@@ -250,16 +269,18 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, SquareRoot< T > >: 
     Compound< Derivative< Id, SquareRoot< T >>>
 {
-    using type = Product< Constant< -0.5 >, Quotient< 
-        typename Derivative< Id, T >::type, SquareRoot< T >>>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Product< Constant< -0.5 >, Quotient< 
+        typename Derivative< Id, T >::type, SquareRoot< T >>>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( SquareRoot< T > const& expr )
     {
         auto [ arg ] = expr.args();
 
-        return { Constant< -0.5 >{}, { Derivative< Id, T >::value( arg, var ), 
-            { expr.template arg< 0 >() }}}; 
+        return {{ Constant< -0.5 >{}, { Derivative< Id, T >::value( arg, var ), 
+            { expr.template arg< 0 >() }}, {}}}; 
     }
 
     using Compound< Derivative< Id, SquareRoot< T >>>::Compound;
@@ -271,8 +292,10 @@ requires( free_variables_t< T >::contains_id( Id ) and
 struct Derivative< Id, Pow< T, Constant< N >> >: 
     Compound< Derivative< Id, Pow< T, Constant< N >>>>
 {
-    using type = Product< Constant< N >, Pow< T, Constant< N - 1 >>,
-        typename Derivative< Id, T >::type >;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Product< Constant< N >, Pow< T, Constant< N - 1 >>,
+        typename Derivative< Id, T >::type >, 
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Pow< T, Constant< N >> const& expr )
@@ -290,14 +313,17 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Sine< T > >: Compound< Derivative< Id, Sine< T >>>
 {
-    using type = Product< Cosine< T >, typename Derivative< Id, T >::type >;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Product< Cosine< T >, 
+        typename Derivative< Id, T >::type >, 
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Sine< T > const& expr )
     { 
         auto [ arg ] = expr.args();
 
-        return {{ arg }, Derivative< Id, T >::value( arg )};
+        return {{{ arg }, Derivative< Id, T >::value( arg )}, {}};
     }
 
     using Compound< Derivative< Id, Sine< T >>>::Compound;
@@ -308,15 +334,17 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Cosine< T > >: 
     Compound< Derivative< Id, Cosine< T >>>
 {
-    using type = Product< Negation< Sine< T >>, 
-          typename Derivative< Id, T >::type >;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Product< Negation< Sine< T >>, 
+        typename Derivative< Id, T >::type >, 
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Cosine< T > const& expr )
     { 
         auto [ arg ] = expr.args();
 
-        return {{{ arg }}, Derivative< Id, T >::value( arg )};
+        return {{{{ arg }}, Derivative< Id, T >::value( arg )}, {}};
     }
 
     using Compound< Derivative< Id, Cosine< T >>>::Compound;
@@ -327,15 +355,17 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Tangent< T > >: 
     Compound< Derivative< Id, Tangent< T >>>
 {
-    using type = Quotient< typename Derivative< Id, T >::type, 
-        Pow< Cosine< T >, Constant< 2 >>>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Quotient< typename Derivative< Id, T >::type, 
+        Pow< Cosine< T >, Constant< 2 >>>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Tangent< T > const& expr )
     { 
         auto [ arg ] = expr.args();
 
-        return { Derivative< Id, T >::value( arg ), {{ arg }, {}}};
+        return {{ Derivative< Id, T >::value( arg ), {{ arg }, {}}}, {}};
     }
 
     using Compound< Derivative< Id, Tangent< T >>>::Compound;
@@ -346,16 +376,18 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Arcsine< T > >: 
     Compound< Derivative< Id, Arcsine< T >>>
 {
-    using type = Quotient< typename Derivative< Id, T >::type,
-        SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Quotient< typename Derivative< Id, T >::type,
+        SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Arcsine< T > const& expr )
     { 
         auto [ arg ] = expr.args();
 
-        return { Derivative< Id, T >::value( arg ),
-            {{ {}, { arg, {} }}}};
+        return {{ Derivative< Id, T >::value( arg ),
+            {{{}, { arg, {}}}}}, {}};
     }
 
     using Compound< Derivative< Id, Arcsine< T >>>::Compound;
@@ -366,16 +398,18 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Arccosine< T > >: 
     Compound< Derivative< Id, Arccosine< T >>>
 {
-    using type = Negation< Quotient< typename Derivative< Id, T >::type,
-        SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Negation< Quotient< typename Derivative< Id, T >::type,
+        SquareRoot< Difference< Constant< 1 >, Pow< T, Constant< 2 >>>>>>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Arccosine< T > const& expr )
     { 
         auto [ arg ] = expr.args();
         
-        return {{ Derivative< Id, T >::value( arg ),
-            {{ {}, { arg, {} }}}}};
+        return {{{ Derivative< Id, T >::value( arg ),
+            {{{}, { arg, {} }}}}}, {}};
     }
 
     using Compound< Derivative< Id, Arccosine< T >>>::Compound;
@@ -386,16 +420,18 @@ requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Arctangent< T > >: 
     Compound< Derivative< Id, Arctangent< T >>>
 {
-    using type = Quotient< typename Derivative< Id, T >::type,
-        SquareRoot< Sum< Constant< 1 >, Pow< T, Constant< 2 >>>>>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< Quotient< typename Derivative< Id, T >::type,
+        SquareRoot< Sum< Constant< 1 >, Pow< T, Constant< 2 >>>>>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Arctangent< T > const& expr )
     { 
         auto [ arg ] = expr.args();
         
-        return { Derivative< Id, T >::value( expr ),
-            {{ {}, { arg, {} }}}};
+        return {{ Derivative< Id, T >::value( expr ),
+            {{ {}, { arg, {} }}}, {}}};
     }
 
     using Compound< Derivative< Id, Arctangent< T >>>::Compound;
@@ -425,14 +461,17 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Log< T > >: Compound< Derivative< Id, Log< T >>>
 {
-    using type = Quotient< typename Derivative< Id, T >::type, Abs< T >>;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< 
+        Quotient< typename Derivative< Id, T >::type, Abs< T >>,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Log< T > const& expr )
     { 
         auto [ arg ] = expr.args();
 
-        return { Derivative< Id, T >::value( arg ), { arg }};
+        return {{ Derivative< Id, T >::value( arg ), { arg }}, {}};
     }
 
     using Compound< Derivative< Id, Log< T >>>::Compound;
@@ -442,14 +481,17 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derivative< Id, Exp< T > >: Compound< Derivative< Id, Exp< T >>>
 {
-    using type = Product< Exp< T >, typename Derivative< Id, T >::type >;
+    using variable_type = free_variables_t< T >::template variable_t< Id >;
+    using type = Quotient< 
+        Product< Exp< T >, typename Derivative< Id, T >::type >,
+            Constant< result_t< variable_type >{ 1 }>>;
 
     static constexpr type
     value( Exp< T > const& expr )
     {
         auto [ arg ] = expr.args();
 
-        return {{ arg }, Derivative< Id, T >::value( arg )};
+        return {{{ arg }, Derivative< Id, T >::value( arg )}, {}};
     }
 
     using Compound< Derivative< Id, Exp< T >>>::Compound;
