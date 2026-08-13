@@ -28,7 +28,7 @@
 /// into ExprT replacing it with the referent expression SubU.
 ///
 /// Substitutions automatically evaluate static and closed expressions. See the 
-/// evaluation logic in the intermediate class detail::SubstituteForIdSeq.
+/// evaluation logic in the intermediate class SubstituteForIdSeq.
 ///
 ////////////////////
 /// Definitions ///
@@ -425,176 +425,6 @@ public:
     { }
     constexpr Sub( Sub const& ) = default;
     constexpr Sub() = default;
-};
-
-/////////////
-/// Func ///
-///////////
-///
-/// @brief unbound function specialization
-template< typename ExprT, variable... Vars >
-struct Func: std::tuple< ExprT, Vars... >
-{
-    using formula_type = ExprT;
-    using arguments_tuple = std::tuple< formula_type, Vars... >;
-    using this_type = Func< formula_type, Vars... >;
-
-private:
-    static constexpr size_t vars_size = sizeof...( Vars );
-    typedef make_seq< vars_size > for_vars;
-
-    template< typename... Args >
-    struct VarsSub
-    { static constexpr bool is_compatible = false; };
-
-    template< typename... Args >
-    requires( sizeof...( Args ) == vars_size )
-    struct VarsSub< Args... >
-    {
-        template< typename Seq >
-        struct Helper;
-
-        template< size_t... Is >
-        struct Helper< seq< Is... >>
-        {
-            // we are compatible if each ...Args is substitutible into the 
-            // corresponding ...Vars as an expression
-            static constexpr bool
-            is_compatible = ( is_compatible_substitution_v< 
-                Vars...[ Is ], Args...[ Is ]> and ... and true );
-
-            using type = Sub< this_type, Args... >;
-            static constexpr type 
-            value( Func const& func, Args const&... args )
-            { return { func, args... }; }
-        };
-
-        static constexpr bool 
-        is_compatible = Helper< for_vars >::is_compatible;
-
-        using type = Helper< for_vars >::type;
-
-        static constexpr type
-        value( Func const& func, Args const&... args )
-        { return Helper< for_vars >::value( func, args... ); }
-    };
-
-public:
-    constexpr formula_type const&
-    formula() const
-    { return std::get< 0 >( *this ); }
-
-    template< size_t K >
-    constexpr Vars...[ K ]
-    var() const
-    { return std::get< 1 + K >( *this ); }
-
-    // substitutes make_expression( args )... in for vars...
-    template< typename... Args >
-    requires( VarsSub< make_expression_t< Args >... >::is_compatible )
-    constexpr typename VarsSub< make_expression_t< Args >... >::type
-    operator ()( Args const&... args ) const
-    { return VarsSub< make_expression_t< Args >... >::value( *this, 
-        make_expression( args )... ); }
-
-    // attempting to evaluate a function is the same as evaluating the formula
-//    constexpr result_t< formula_type >
-//    operator ()() const
-//    { return formula()(); }
-
-    constexpr Func( formula_type const& func, 
-        Vars const&... vars ): arguments_tuple{ func, vars... } 
-    { };
-    constexpr Func( Func const& ) = default;
-    constexpr Func() = default;
-};
-
-////////////
-/// Var ///
-//////////
-///
-/// @brief a placeholder in an expression whose value can change
-/// @tparam I is the id in the declared variables to this variable
-/// @tparam T is the value_type of this variable
-///
-/// Two variables with the same identifier I are considered equal and MUST
-/// have the same value_type T. The identifier I is also used to sort a
-/// list of free variables when substituting (ie: binding order).
-///
-/// The value_type T must a literal type and may be an expression type, in 
-/// which case the result_type of the variable will be the result_t< T >. 
-/// If the value_type is not an expression, then any substitution into the
-/// variable must only match result_types with the type T.  If the value_type
-/// is an expression itself then the value being substituted must also be
-/// substitutable into the value_type.
-///
-/// is_valid_substitution< Var< I, T >, ExprT >:
-/// - is_convertible_v< result_t< ExprT >, result_t< T >> and
-/// - 
-///
-/// The result_type of a variable is the result_type of the value_type of
-/// the variable. If the value_type is not an expression then it is the 
-/// result type. If the value_type is an expression then it is a template
-/// for what is substituted in for the variable.
-///
-/// f(x)(x+1) =>
-///
-/// Sub( Var< 0, Func< Var< 0, int >, Var< 1, int >>>{}, 
-///     Plus< Var< 1, int >, Const< 2 >>>{} )
-///
-/// @brief variable implementation
-template< size_t I, typename T >
-struct Var
-{ 
-    using value_type = T;
-    static constexpr size_t id = I;
-
-private:
-    using this_type = Var< id, value_type >;
-
-public:
-    /// @brief operator= is overriden to construct a SetVarValue 
-    /// expression
-    /// HACK: this is not typical of C++ classes and may cause problems
-    constexpr SetVarValue< Var > 
-    operator=( value_type const& other ) const
-    { return { *this, other }; }
-
-    constexpr string const& 
-    name() const 
-    { return _name; }
-
-    constexpr void 
-    set_name( string const& new_name )
-    { _name = new_name; }
-
-    // DT: consider including a value again.
-    //constexpr value_type const& 
-    //value() const
-    //{ return _value; }
-
-    //constexpr void
-    //set_value( value_type const& val )
-    //{ _value = val; }
-
-    /// @brief direct substitution into a variable creates a function 
-    template< variable First, variable... Rest > 
-    requires( is_non_repeating_v< seq< var_id_v< First >,
-        var_id_v< Rest >... >> ) 
-    constexpr Func< increase_var_order_t< this_type >, First, Rest... >
-    operator ()( First first, Rest... rest ) const
-    { return { name(), first, rest... }; }
-
-    //constexpr Var( string const& name = "var", value_type const& value ): 
-    //    _name{ name }, _value{ value }
-    //{ }
-    constexpr Var( string const& name = "var", value_type const& value = {} ): 
-        _name{ name } { }
-    constexpr Var( Var const& ) = default; 
-
-private:
-    string _name;
-    //value_type _value;
 };
 
 //////////////////
@@ -1035,8 +865,6 @@ sub_for( ExprT const& expr, SubU const& sub )
     make_expression_t< SubU >>::value( make_expression( expr ), 
         make_expression( sub )); }
 
-namespace detail {
-
 ///////////////////////////
 /// SubstituteForIdSeq ///
 /////////////////////////
@@ -1050,13 +878,13 @@ namespace detail {
 ///        ...Subs in order.  This is an intermediate step of substitute(...) 
 ///        and not intended to be invoked directly. See Substituter<...> for
 ///        invocation details.
-template< typename ExprT, typename IdSeq, typename... Subs >
+template< typename IdSeq, typename ExprT, typename... Subs >
 struct SubstituteForIdSeq;
 
 /// @brief substitution into a non-expression is idempotent
-template< typename ExprT, typename IdSeq, typename... Subs >
+template< typename IdSeq, typename ExprT, typename... Subs >
 requires( not expression< ExprT >)
-struct SubstituteForIdSeq< ExprT, IdSeq, Subs... >
+struct SubstituteForIdSeq< IdSeq, ExprT, Subs... >
 {
     using type = ExprT;
     static constexpr type
@@ -1065,13 +893,13 @@ struct SubstituteForIdSeq< ExprT, IdSeq, Subs... >
 };
 
 /// @brief we evaluate substitution expressions breadth-first.
-template< typename ExprT, typename... Ss, size_t... Ids, typename... Subs >
+template< size_t... Ids, typename ExprT, typename... Ss, typename... Subs >
 requires( closed_expression< Sub< ExprT, Ss... >> )
-struct SubstituteForIdSeq< Sub< ExprT, Ss... >, seq< Ids... >, Subs... >
+struct SubstituteForIdSeq< seq< Ids... >, Sub< ExprT, Ss... >, Subs... >
 {
     // process subs in breadth first order
-    using type = SubstituteForIdSeq< substitute_t< ExprT, Ss... >, 
-        seq< Ids... >, Subs... >::type;
+    using type = SubstituteForIdSeq< seq< Ids... >, 
+        substitute_t< ExprT, Ss... >, Subs... >::type;
 
     static constexpr type
     value( Sub< ExprT, Ss... > const& expr, Subs const&... subs )
@@ -1079,8 +907,8 @@ struct SubstituteForIdSeq< Sub< ExprT, Ss... >, seq< Ids... >, Subs... >
         static constexpr make_seq< sizeof...( Ss )> for_subsubs;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return SubstituteForIdSeq< substitute_t< ExprT, Ss... >, 
-            seq< Ids... >, Subs... >::value( substitute( expr.formula(),
+        { return SubstituteForIdSeq< seq< Ids... >, 
+            substitute_t< ExprT, Ss... >, Subs... >::value( substitute( expr.formula(),
                 expr.template arg< Is >()... ), subs... ); };
 
         return helper( for_subsubs );
@@ -1089,10 +917,10 @@ struct SubstituteForIdSeq< Sub< ExprT, Ss... >, seq< Ids... >, Subs... >
 
 /// @brief if our expression has none of the ...Ids as free then
 ///        substitution is idempotent
-template< typename ExprT, size_t... Ids, typename... Subs >
+template< size_t... Ids, typename ExprT, typename... Subs >
 requires( open_expression< ExprT > and 
     not ( free_variables_t< ExprT >::contains_id( Ids ) or ... or false ))
-struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
+struct SubstituteForIdSeq< seq< Ids... >, ExprT, Subs... >
 {
     using type = ExprT;
     static constexpr type
@@ -1102,11 +930,11 @@ struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
 
 /// @brief terminal case for closed expressions that is not a substitution
 ///        expression itself returns the result_type
-template< typename ExprT, size_t... Ids, typename... Subs >
+template< size_t... Ids, typename ExprT, typename... Subs >
 requires( not is_substitution_expression_v< ExprT > and
     not is_function_v< ExprT > and
         closed_expression< ExprT > )
-struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
+struct SubstituteForIdSeq< seq< Ids... >, ExprT, Subs... >
 {
     using type = result_t< ExprT >;
     static constexpr type
@@ -1114,9 +942,11 @@ struct SubstituteForIdSeq< ExprT, seq< Ids... >, Subs... >
     { return expr(); }
 };
 
-template< typename ExprT, variable... Vars, size_t... Ids, typename... Subs >
+/// DT: Do we need this? 
+/// DT: shouldn't it evaluate the expression?
+template< size_t... Ids, typename ExprT, variable... Vars, typename... Subs >
 requires( closed_expression< Func< ExprT, Vars... >> )
-struct SubstituteForIdSeq< Func< ExprT, Vars... >, seq< Ids... >, Subs... >
+struct SubstituteForIdSeq< seq< Ids... >, Func< ExprT, Vars... >, Subs... >
 {
     using type = Func< ExprT, Vars... >;
     static constexpr type
@@ -1131,42 +961,48 @@ struct SubstituteForIdSeq< Func< ExprT, Vars... >, seq< Ids... >, Subs... >
 ///       properly.
 /// NOTE: there is a chance of a circular dependency:
 ///       FreeVars< Sub<...>> -> BoundVars< Sub<...>> ->
-template< typename ExprT, size_t FirstId, size_t... RestIds, 
+template< size_t FirstId, size_t... RestIds, typename ExprT, 
     typename FirstSub, typename... RestSubs >
 requires( free_variables_t< ExprT >::contains_id( FirstId )) 
-struct SubstituteForIdSeq< ExprT, seq< FirstId, RestIds... >, 
+struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT, 
     FirstSub, RestSubs... >
 {
-    using type = SubstituteForIdSeq< typename
-        SubFor< FirstId, ExprT, FirstSub >::type, 
-            seq< RestIds... >, RestSubs... >::type;
+    using type = SubstituteForIdSeq< seq< RestIds... >, typename
+        SubFor< FirstId, ExprT, FirstSub >::type, RestSubs... >::type;
 
     static constexpr type
     value( ExprT const& expr, FirstSub const& first, RestSubs const&... rest )
-    { return SubstituteForIdSeq< typename 
-        SubFor< FirstId, ExprT, FirstSub >::type, 
-            seq< RestIds... >, RestSubs... >::value(
-                SubFor< FirstId, ExprT, FirstSub >::value( expr, first ),
-                    rest... ); }
+    { return SubstituteForIdSeq< seq< RestIds... >, typename 
+        SubFor< FirstId, ExprT, FirstSub >::type, RestSubs... >::value(
+            SubFor< FirstId, ExprT, FirstSub >::value( expr, first ),
+                rest... ); }
 };
 
 /// @brief recursive case for open expressions that does not contain the first 
 ///        Id as a free variable
-template< typename ExprT, size_t FirstId, size_t... RestIds, 
+template< size_t FirstId, size_t... RestIds, typename ExprT, 
     typename FirstSub, typename... RestSubs >
 requires( open_expression< ExprT > and 
     not free_variables_t< ExprT >::contains_id( FirstId ))
-struct SubstituteForIdSeq< ExprT, seq< FirstId, RestIds... >, 
+struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT, 
     FirstSub, RestSubs... >
 {
-    using type = SubstituteForIdSeq< ExprT, 
-        seq< RestIds... >, RestSubs... >::type;
+    using type = SubstituteForIdSeq< seq< RestIds... >, ExprT, 
+        RestSubs... >::type;
 
     static constexpr type
     value( ExprT const& expr, FirstSub const& first, RestSubs const&... rest )
-    { return SubstituteForIdSeq< ExprT, 
-        seq< RestIds... >, RestSubs... >::value( expr, rest... ); }
+    { return SubstituteForIdSeq< seq< RestIds... >, ExprT, RestSubs... >::
+        value( expr, rest... ); }
 };
+
+template< typename Seq, typename ExprT, typename... Subs >
+using substitute_for_id_seq_t = SubstituteForIdSeq< Seq, ExprT, Subs... >::type;
+
+template< typename Seq, typename ExprT, typename... Subs >
+constexpr substitute_for_id_seq_t< Seq, ExprT, Subs... >
+substitute_for_id_seq( ExprT const& expr, Subs const&... subs )
+{ return SubstituteForIdSeq< Seq, ExprT, Subs... >::value( expr, subs... ); }
 
 ///////////////////////////////////////////////
 /// Binding Order for Direct Substitutions /// 
@@ -1209,8 +1045,6 @@ struct DirectSubOrder< Func< ExprT, Vars... >>
     }
 };
 
-} // namespace detail
-
 //////////////////////////////////////////
 /// Bound Variables of a Substitution ///
 ////////////////////////////////////////
@@ -1225,8 +1059,8 @@ template< typename ExprT, typename... Subs >
 struct BoundVars< Sub< ExprT, Subs... >> {
 public:
     // we are friends with any Id seq substituter for bootstrapping
-    template< typename ExprU, typename Seq, typename... SubSubs >
-    friend struct detail::SubstituteForIdSeq;
+    template< typename Seq, typename ExprU, typename... SubSubs >
+    friend struct SubstituteForIdSeq;
 
 // private:
     using expression_type = Sub< ExprT, Subs... >;
@@ -1234,7 +1068,7 @@ public:
 
     // determine the order we should match variables to substituted expressions
     using formula_variable_tuple = 
-        detail::DirectSubOrder< formula_expression >::type;
+        DirectSubOrder< formula_expression >::type;
     static constexpr size_t formula_variables_size = 
         std::tuple_size_v< formula_variable_tuple >; 
 
@@ -1242,10 +1076,10 @@ public:
     // in the appropriate binding order
     static constexpr formula_variable_tuple
     formula_variables( expression_type const& expr )
-    { return detail::DirectSubOrder< formula_expression >::value( 
+    { return DirectSubOrder< formula_expression >::value( 
         std::get< 0 >( expr )); }
 
-    using variable_sub_order = detail::DirectSubOrder< ExprT >;
+    using variable_sub_order = DirectSubOrder< ExprT >;
 
 public:
     // the number of variables that will be bound is the minimum of the number
@@ -1504,17 +1338,36 @@ struct Substituter {
 
     // we enumerate the bound variable ids and their referents in substitution
     // order for the intermediate helper class, SubstituteForIdSeq
+    //
+    // case: the resulting expression after the substitution is closed, 
+    //       evaluate it.
     template< size_t... Is >
+    requires( closed_expression< substitute_for_id_seq_t< 
+        seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >> )
     struct Helper< seq< Is... >>
     {
-        using subber = detail::SubstituteForIdSeq< formula_type, 
-            seq< var_id_of< Is >... >, referent_t< Is >... >;
+        using type = result_t< substitute_for_id_seq_t< 
+            seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >>;
 
-        using type = subber::type;
+        static constexpr type
+        value( formula_type const& expr, Subs const&... subs )
+        { return substitute_for_id_seq< seq< var_id_of< Is >... >>(
+            expr, referent_t< Is >( expr, subs... )... )(); }
+    };
+
+    // case: the resultant expression will be open, return it
+    template< size_t... Is >
+    requires( open_expression< substitute_for_id_seq_t< 
+        seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >> )
+    struct Helper< seq< Is... >>
+    {
+        using type = substitute_for_id_seq_t< 
+            seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >;
 
         static constexpr type
         value( formula_type const& expr, Subs const&... subs ) 
-        { return subber::value( expr, referent< Is >( expr, subs... )... ); }
+        { return substitute_for_id_seq< seq< var_id_of< Is >... >>( 
+            expr, referent< Is >( expr, subs... )... ); }
     };
 
 public:
@@ -1527,10 +1380,17 @@ public:
     // //
 };
 
+/// DT: we need a case for Substituter< Func<...>> which corresponds to the
+///     direct substitution into a function.  This would result in a 
+///     Sub< Func<...>> if the substitution was incomplete, and a 
+///     substitute_for_id_seq_t<...> if it was.
+/// DT: do we? I accidentally included a "closed_expression<..>" condition
+///     on the specialization below.  I think the handles above may be working
+
 /// @brief substituting into a non-expresssion, a closed expression is, or an
 ///        open expression with no substitution arguments is idempotent
 template< typename T, typename... Ss >
-requires( not expression< T > or closed_expression< T > or // circular logic? 
+requires( not expression< T > or // circular logic? 
     ( open_expression< T > and sizeof...( Ss ) == 0 ))
 struct Substituter< T, Ss... >
 {
@@ -1573,6 +1433,7 @@ struct GetFreeVars< Op< Args... >>: GetFreeVars< tuple< Args... >>
 /// @brief variables have a single free variable plus any variables in the
 ///        the nested type T
 template< size_t I, typename T >
+requires( expression< T > )
 struct GetFreeVars< Var< I, T >> {
 private:
     // get the free variables of the value type
@@ -1599,6 +1460,16 @@ public:
                 this_variable ),
             this_variable );
     }
+};
+
+template< size_t I, typename T >
+requires( not expression< T > )
+struct GetFreeVars< Var< I, T >> 
+{
+    using type = unique_variables< Var< I, T >>;
+    static constexpr type
+    value( Var< I, T > const& var )
+    { return { var }; }
 };
 
 /// @brief trait to identify free variables in an unbound function
@@ -1668,6 +1539,182 @@ struct GetFreeVars< Element< I, T >>
     value( Element< I, T > const& expr )
     { return GetFreeVars< T >::value( std::get< 0 >( expr )); }
 };
+
+/////////////
+/// Func ///
+///////////
+///
+/// @brief unbound function specialization
+template< typename ExprT, variable... Vars >
+struct Func: std::tuple< ExprT, Vars... >
+{
+    using formula_type = ExprT;
+    using arguments_tuple = std::tuple< formula_type, Vars... >;
+    using this_type = Func< formula_type, Vars... >;
+
+private:
+    static constexpr size_t vars_size = sizeof...( Vars );
+    typedef make_seq< vars_size > for_vars;
+
+    template< typename... Args >
+    struct VarsSub
+    { static constexpr bool is_compatible = false; };
+
+    template< typename... Args >
+    requires( sizeof...( Args ) == vars_size )
+    struct VarsSub< Args... >
+    {
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            // we are compatible if each ...Args is substitutible into the 
+            // corresponding ...Vars as an expression
+            static constexpr bool
+            is_compatible = ( is_compatible_substitution_v< 
+                Vars...[ Is ], Args...[ Is ]> and ... and true );
+
+            //using type = Sub< this_type, Args... >;
+            //using type = substitute_for_id_seq_t< 
+            //    seq< var_id_v< Vars...[ Is ]>... >, ExprT, Args...[ Is ]... >;
+            using type = substitute_t< Sub< this_type, Args... >>;
+
+            static constexpr type 
+            value( Func const& func, Args const&... args )
+            { return substitute( Sub< this_type, Args... >{ func, args... }); }
+        };
+
+        static constexpr bool 
+        is_compatible = Helper< for_vars >::is_compatible;
+
+        using type = Helper< for_vars >::type;
+
+        static constexpr type
+        value( Func const& func, Args const&... args )
+        { return Helper< for_vars >::value( func, args... ); }
+    };
+
+public:
+    constexpr formula_type const&
+    formula() const
+    { return std::get< 0 >( *this ); }
+
+    template< size_t K >
+    constexpr Vars...[ K ]
+    var() const
+    { return std::get< 1 + K >( *this ); }
+
+    // substitutes make_expression( args )... in for vars...
+    template< typename... Args >
+    requires( VarsSub< make_expression_t< Args >... >::is_compatible )
+    constexpr typename VarsSub< make_expression_t< Args >... >::type
+    operator ()( Args const&... args ) const
+    { return VarsSub< make_expression_t< Args >... >::value( *this, 
+        make_expression( args )... ); }
+
+    // attempting to evaluate a function is the same as evaluating the formula
+//    constexpr result_t< formula_type >
+//    operator ()() const
+//    { return formula()(); }
+
+    constexpr Func( formula_type const& func, 
+        Vars const&... vars ): arguments_tuple{ func, vars... } 
+    { };
+    constexpr Func( Func const& ) = default;
+    constexpr Func() = default;
+};
+
+
+////////////
+/// Var ///
+//////////
+///
+/// @brief a placeholder in an expression whose value can change
+/// @tparam I is the id in the declared variables to this variable
+/// @tparam T is the value_type of this variable
+///
+/// Two variables with the same identifier I are considered equal and MUST
+/// have the same value_type T. The identifier I is also used to sort a
+/// list of free variables when substituting (ie: binding order).
+///
+/// The value_type T must a literal type and may be an expression type, in 
+/// which case the result_type of the variable will be the result_t< T >. 
+/// If the value_type is not an expression, then any substitution into the
+/// variable must only match result_types with the type T.  If the value_type
+/// is an expression itself then the value being substituted must also be
+/// substitutable into the value_type.
+///
+/// is_valid_substitution< Var< I, T >, ExprT >:
+/// - is_convertible_v< result_t< ExprT >, result_t< T >> and
+/// - 
+///
+/// The result_type of a variable is the result_type of the value_type of
+/// the variable. If the value_type is not an expression then it is the 
+/// result type. If the value_type is an expression then it is a template
+/// for what is substituted in for the variable.
+///
+/// f(x)(x+1) =>
+///
+/// Sub( Var< 0, Func< Var< 0, int >, Var< 1, int >>>{}, 
+///     Plus< Var< 1, int >, Const< 2 >>>{} )
+///
+/// @brief variable implementation
+template< size_t I, typename T >
+struct Var
+{ 
+    using value_type = T;
+    static constexpr size_t id = I;
+
+private:
+    using this_type = Var< id, value_type >;
+
+public:
+    /// @brief operator= is overriden to construct a SetVarValue 
+    /// expression
+    /// HACK: this is not typical of C++ classes and may cause problems
+    constexpr SetVarValue< Var > 
+    operator=( value_type const& other ) const
+    { return { *this, other }; }
+
+    constexpr string const& 
+    name() const 
+    { return _name; }
+
+    constexpr void 
+    set_name( string const& new_name )
+    { _name = new_name; }
+
+    // DT: consider including a value again.
+    //constexpr value_type const& 
+    //value() const
+    //{ return _value; }
+
+    //constexpr void
+    //set_value( value_type const& val )
+    //{ _value = val; }
+
+    /// @brief direct substitution into a variable creates a function 
+    template< variable First, variable... Rest > 
+    requires( is_non_repeating_v< seq< var_id_v< First >,
+        var_id_v< Rest >... >> ) 
+    constexpr Func< increase_var_order_t< this_type >, First, Rest... >
+    operator ()( First first, Rest... rest ) const
+    { return { name(), first, rest... }; }
+
+    //constexpr Var( string const& name = "var", value_type const& value ): 
+    //    _name{ name }, _value{ value }
+    //{ }
+    constexpr Var( string const& name = "var", value_type const& value = {} ): 
+        _name{ name } { }
+    constexpr Var( Var const& ) = default; 
+
+private:
+    string _name;
+    //value_type _value;
+};
+
 
 //////////////////////////////
 /// Higher-Order Variable ///

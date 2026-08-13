@@ -98,6 +98,9 @@ template< template< auto, typename... > class Op, auto Discriminator,
 struct IsCompoundExpression< Op< Discriminator, Args... >>:
     IsDiscriminatedOperation< Op > { };
 
+template< typename T >
+constexpr bool is_compound_expression_v = IsCompoundExpression< T >::value;
+
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
 ///
@@ -113,7 +116,7 @@ template< typename T >
 concept non_expression = not expression< T >;
 
 template< typename T >
-concept compound_expression = IsCompoundExpression< T >::value; 
+concept compound_expression = is_compound_expression_v< T >;
 
 /// @brief type erased expression container
 /// TODO: build a stack representation of the expression
@@ -204,6 +207,49 @@ struct Result< Op< Discriminator, Args... >>
 template< typename T >
 using result_t = Result< T >::type;
 
+//////////////////////
+/// Reconstituter ///
+////////////////////
+///
+/// Creates a new compound expression using provided subs as arguments
+///
+namespace detail {
+
+template< typename ExprT, typename... Subs >
+struct Reconstituter;
+
+template< template< typename... > class Op, typename... Args, 
+    typename... Subs >
+requires( sizeof...( Args ) == sizeof...( Subs ))
+struct Reconstituter< Op< Args... >, Subs... >
+{
+    using type = Op< Subs... >;
+    static constexpr type
+    value( Op< Args... > const& expr, Subs const&... subs )
+    { return { subs... }; }
+};
+
+template< template< auto, typename... > class Op, auto Discriminator,
+    typename... Args, typename... Subs >
+requires( sizeof...( Args ) == sizeof...( Subs ))
+struct Reconstituter< Op< Discriminator, Args... >, Subs... >
+{
+    using type = Op< Discriminator, Subs... >;
+    static constexpr type
+    value( Op< Discriminator, Args... > const& expr, Subs const&... subs )
+    { return { subs... }; } 
+};
+
+} // namespace detail
+  
+template< typename ExprT, typename... Subs >
+using reconstitute_t = detail::Reconstituter< ExprT, Subs... >::type;
+
+template< typename ExprT, typename... Subs>
+constexpr reconstitute_t< ExprT, Subs... >
+reconstitute( ExprT const& expr, Subs const&... subs )
+{ return detail::Reconstituter< ExprT, Subs... >::value( expr, subs... ); }
+
 ////////////
 /// Var ///
 //////////
@@ -277,6 +323,18 @@ struct IsStaticExpression< Op< Args... >>: std::integral_constant< bool,
 
 template< typename T >
 concept static_expression = IsStaticExpression< T >::value;
+
+///////////////////////
+/// Terminal trait ///
+/////////////////////
+///
+template< typename T >
+struct IsTerminal: std::true_type {};
+
+template< expression ExprT >
+struct IsTerminal< ExprT >: integral_constant< bool,
+    std::is_same_v< std::remove_cvref_t< decltype( ExprT{}() )>, ExprT >>
+{ };
 
 ////////////
 /// Sub ///

@@ -48,6 +48,15 @@ struct Constant
     constexpr Constant() = default;
 };
 
+template< typename T >
+struct IsConstant: std::false_type { };
+
+template< auto N >
+struct IsConstant< Constant< N >>: std::true_type { };
+
+template< typename T >
+constexpr bool is_constant_v = IsConstant< T >::value;
+
 namespace detail {
 
 // credit: Google Gemini [https://share.gemini.google/0Zw1JP77CQ1t]

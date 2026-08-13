@@ -449,6 +449,12 @@ requires( not expression< T > )
 constexpr auto operator /( T const& left, U const& right )
 { return Quotient< StaticValue< T >, U >{ static_expr( left ), right }; }
 
+// absolute value
+template< expression T >
+constexpr auto 
+abs( T const& arg )
+{ return Abs< T >{ arg }; }
+
 // trig functions
 template< typename T >
 requires( not expression< T > )

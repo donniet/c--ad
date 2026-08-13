@@ -58,6 +58,15 @@ using std::abs;
 
 } // namespace impl
 
+// we also use them inside the units namespace to accept arithmetic arguments
+// as well as units with these methods
+using std::sqrt;
+using std::sin, std::cos, std::tan;
+using std::asin, std::acos, std::atan, std::atan2;
+using std::exp, std::log, std::pow;
+using std::abs;
+
+
 // using namespace std::numbers;
 
 template< typename T >

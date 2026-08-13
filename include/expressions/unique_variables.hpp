@@ -51,6 +51,9 @@ protected:
 public:
     template< size_t I >
     using element_t = void; // should never be instantiated
+    
+    template< size_t Id >
+    using variable_t = void; // should never be instantiated
 
     constexpr scope_type make_scope() const;
 

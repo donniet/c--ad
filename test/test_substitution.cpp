@@ -18,6 +18,15 @@ struct SubTests
     static constexpr Constant< 1.f > one;
     static constexpr Constant< (int)0 > zeroi;
 
+    static_assert( is_expression_v< Constant< 0.f >>, 
+        "constant is an expression" );
+    static_assert( not is_compound_expression_v< Constant< 0.f >>,
+        "constant is not a compound expression" );
+    static_assert( is_expression_v< StaticValue< float >>,
+        "static_value is an expression" );
+    static_assert( not is_compound_expression_v< StaticValue< float >>,
+        "static_value is not a compound expression" );
+
     static_assert( is_compatible_substitution_v< Var< 0, float >, float >);
     static_assert( is_compatible_substitution_v< tuple< float, Var< 0, float >>, float >);
 
@@ -59,7 +68,25 @@ struct SubTests
         Sum< Var< 0, int >, Var< 0, int >>>::template Is<
             Sum< Constant< 5 >, Constant< 5 >>>::matches_type >, 
                 match< Var< 0, int >, Constant< 5 >>> );
+
+    static_assert( closed_expression< Quotient< Negation< Constant<1>>, 
+            Constant<1.000000e+00>>> );
     
+    static_assert( closed_expression< Sub< 
+        Func< Quotient< Sum< 
+                    Product< Constant<1>,StaticValue<float>>,
+                    Product<Var<0,float>,Constant<0>>>,
+                Constant<1.000000e+00>>,
+            Var<0,float>>,
+        StaticValue<int>>> );
+
+    static_assert( is_arithmetic_v< substitute_t< Sub< 
+        Func< Quotient< Sum< 
+                    Product< Constant<1>,StaticValue<float>>,
+                    Product<Var<0,float>,Constant<0>>>,
+                Constant<1.000000e+00>>,
+            Var<0,float>>,
+        StaticValue<int>>>> );
 };
 
 bool test_eval() 

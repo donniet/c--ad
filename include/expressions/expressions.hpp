@@ -199,56 +199,25 @@ namespace expressions {
 /// struct Element: Compound< Element< I, ArrayT >>
 /// {
 ///     static constexpr auto value( ArrayT const& arr )
-///     { return std::get< I >( arr ); }
+///     { return get< I >( arr ); }
 ///
 ///     using Compound< Element< I, Arr >>::Compound;
 /// };
 /// ```
+///
+/// Expressions represent a non-evaluated function and should be named a noun.
+/// The corresponding function or operation should be a verb, for example
+/// `Derivative` would be the expression class name and `derive` would be the
+/// corresponding function.  
+///
+/// Expressions may operate on and return other expressions. In these cases 
+/// there is a risk of circular logic. An expression whose value method returns
+/// an object of the same type is considered "terminal" and will not be 
+/// evaluated to prevent this. One may still construct pairwise infinite 
+/// recursions or other more complex infinite loops though.
+///
 template< typename Op, typename... Subs >
 struct Compound;
-
-//////////////////////
-/// Reconstituter ///
-////////////////////
-///
-/// Creates a new compound expression using provided subs as arguments
-///
-namespace detail {
-
-template< typename ExprT, typename... Subs >
-struct Reconstituter;
-
-template< template< typename... > class Op, typename... Args, 
-    typename... Subs >
-requires( sizeof...( Args ) == sizeof...( Subs ))
-struct Reconstituter< Op< Args... >, Subs... >
-{
-    using type = Op< Subs... >;
-    static constexpr type
-    value( Op< Args... > const& expr, Subs const&... subs )
-    { return { subs... }; }
-};
-
-template< template< auto, typename... > class Op, auto Discriminator,
-    typename... Args, typename... Subs >
-requires( sizeof...( Args ) == sizeof...( Subs ))
-struct Reconstituter< Op< Discriminator, Args... >, Subs... >
-{
-    using type = Op< Discriminator, Subs... >;
-    static constexpr type
-    value( Op< Discriminator, Args... > const& expr, Subs const&... subs )
-    { return { subs... }; } 
-};
-
-} // namespace detail
-  //
-template< typename ExprT, typename... Subs >
-using reconstitute_t = detail::Reconstituter< ExprT, Subs... >::type;
-
-template< typename ExprT, typename... Subs>
-constexpr reconstitute_t< ExprT, Subs... >
-reconstitute( ExprT const& expr, Subs const&... subs )
-{ return detail::Reconstituter< ExprT, Subs... >::value( expr, subs... ); }
 
 ///////////////////////
 /// CompoundCommon ///
