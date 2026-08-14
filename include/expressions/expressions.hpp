@@ -321,7 +321,7 @@ public:
     requires( is_compatible_substitution_v< expression_type, First, Rest... > )
     constexpr substitute_t< expression_type, make_expression_t< First >, 
         make_expression_t< Rest >... >
-    operator ()( First first, Rest... rest ) const
+    operator ()( First const& first, Rest const&... rest ) const
     { return substitute( expr(), make_expression( first ), 
         make_expression( rest )... ); }
 
@@ -341,7 +341,7 @@ struct Compound< Op< Args... >>:
     CompoundCommon< Op< Args... >, Args... >
 { using CompoundCommon< Op< Args... >, Args... >::CompoundCommon; };
 
-// Discriminated Expression Bae Class
+// Discriminated Expression Base Class
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 struct Compound< Op< Discriminator, Args... >>: 
@@ -349,10 +349,34 @@ struct Compound< Op< Discriminator, Args... >>:
 { using CompoundCommon< Op< Discriminator, Args... >, Args... >::
     CompoundCommon; };
 
-///////////////////////////////
-/// Element Implementation ///
-/////////////////////////////
+///////////////////////////
+/// Element expression ///
+/////////////////////////
 ///
+template< size_t I, typename ArrayT >
+struct GetElement
+{
+    using type = std::tuple_element_t< I, ArrayT >;
+
+    static constexpr type
+    value( ArrayT const& arr )
+    { return std::get< I >( arr ); }
+};
+
+template< size_t I, typename ArrayT >
+using get_element_t = GetElement< I, ArrayT >::type;
+
+template< size_t I, typename ArrayT >
+constexpr get_element_t< I, ArrayT >
+get_element( ArrayT const& arr )
+{ return GetElement< I, ArrayT >::value( arr ); }
+
+template< size_t I, typename ArrayT >
+struct Element;
+
+template< >
+struct IsDiscriminatedOperation< Element >: true_type { };
+
 template< size_t I, typename ArrayT >
 struct Element: Compound< Element< I, ArrayT >>
 {
@@ -360,9 +384,18 @@ struct Element: Compound< Element< I, ArrayT >>
 
     static constexpr tuple_element_t< I, ArrayT >
     value( ArrayT const& arg )
-    { return get< I >( arg ); }
+    { return get_element< I >( arg ); }
 
     using Compound< Element< I, ArrayT >>::Compound;
+};
+
+template< size_t I, expression ExprT >
+struct GetElement< I, ExprT >
+{
+    using type = Element< I, ExprT >;
+    static constexpr type
+    value( ExprT const& expr )
+    { return { expr }; }
 };
 
 ///////////////////////

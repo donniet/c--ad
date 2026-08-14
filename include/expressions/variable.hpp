@@ -606,12 +606,6 @@ struct IsCompatibleVarSub< Id, Tensor< Shp, Ts... >, S >:
     IsCompatibleVarSub< Id, std::tuple< Ts... >, S >
 { };
 
-/// @brief substitution into an element expression is compatible if the same
-///        substitution is compatible into the array argument
-template< size_t Id, size_t I, typename ArrayT, typename Sub >
-struct IsCompatibleVarSub< Id, Element< I, ArrayT >, Sub >:
-    IsCompatibleVarSub< Id, ArrayT, Sub > { };
-
 } // namespace detail
 
 //////////////////////
@@ -662,16 +656,6 @@ private:
         static constexpr type
         value( Var const&, referent_type const& sub )
         { return sub; }
-    };
-
-    // element requires a case here since it is a pseudo-expression
-    template< size_t I, typename ExprU >
-    struct Parser< Element< I, ExprU >>
-    {
-        using type = Parser< ExprU >::type;
-        static constexpr type
-        value( Element< I, ExprU > const& expr, referent_type const& sub )
-        { return Parser< ExprU >::value( get< 0 >( expr )); }
     };
 
     // parser for func expressions
@@ -1527,17 +1511,6 @@ public:
     { return subtract_unique_variables(
         GetFreeVars< ExprT >::value( expr.formula() ),
         bound_variables_type::variable_set( expr )); }
-};
-
-// @brief free variables in an element expression are those free in it's array
-//        argument
-template< size_t I, typename T >
-struct GetFreeVars< Element< I, T >>
-{
-    using type = GetFreeVars< T >::type;
-    static constexpr type
-    value( Element< I, T > const& expr )
-    { return GetFreeVars< T >::value( std::get< 0 >( expr )); }
 };
 
 /////////////
