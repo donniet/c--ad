@@ -366,6 +366,7 @@ struct GetElement
 template< size_t I, typename ArrayT >
 using get_element_t = GetElement< I, ArrayT >::type;
 
+/// get_element default implementation
 template< size_t I, typename ArrayT >
 constexpr get_element_t< I, ArrayT >
 get_element( ArrayT const& arr )
@@ -377,6 +378,7 @@ struct Element;
 template< >
 struct IsDiscriminatedOperation< Element >: true_type { };
 
+/// Element expression class 
 template< size_t I, typename ArrayT >
 struct Element: Compound< Element< I, ArrayT >>
 {
@@ -389,6 +391,7 @@ struct Element: Compound< Element< I, ArrayT >>
     using Compound< Element< I, ArrayT >>::Compound;
 };
 
+/// get_element expression specialization
 template< size_t I, expression ExprT >
 struct GetElement< I, ExprT >
 {
@@ -397,19 +400,6 @@ struct GetElement< I, ExprT >
     value( ExprT const& expr )
     { return { expr }; }
 };
-
-///////////////////////
-/// element method ///
-/////////////////////
-///
-/// @brief lazy version of std::get for tuples, arrays and tensors
-template< size_t I, typename T >
-using element_t = Element< I, T >;
-
-template< size_t I, typename T >
-constexpr Element< I, T >
-element( T const& arr )
-{ return { arr }; }
 
 /////////////////////////////////////////////////
 /// Scope Contains Free Expression Variables ///
@@ -459,21 +449,8 @@ constexpr bool scope_contains_free_variables_v =
 template< typename ScopeT = void >
 struct Evaluator;
 
-/// @brief void evaluator will recursively evaluate compound expressions
-///        using the static value method, and understands non-expressions,
-///        Constant<...> and StaticValue<...> types. It cannot evaluate
-///        Var<...> types and is idempotent expressions containing
-///        free variables.
-///
-/// EXCEPTION: unlike other expression manipulator's Evaluator<void> handles
-///            the recursion into compound expressions itself.  This is
-///            required because Evaluator<void> is used by Arguments<...>
-///            to implement operator() (BOOTSTRAPING)
-///
-/// DT: I've gone back and forth on where to put the logic for re-recursing
-///     expressions to complete their evaluation/manipulator application.  It
-///     could go in the evaluator or in the applier.  It may be needed in both?
-///
+/// @brief void evaluator understands non-exprssions, constants and 
+///        static_values, and the applier handles the parsing of the expression
 template< >
 struct Evaluator< void >
 { 
