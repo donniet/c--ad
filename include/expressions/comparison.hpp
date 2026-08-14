@@ -5,6 +5,32 @@
 
 namespace expressions {
 
+////////////////
+/// Compare ///
+//////////////
+/// 
+/// @brief method that will result in a 3-way comparison
+template< typename T, typename U >
+struct Compare;
+
+template< >
+struct IsCompoundOperation< Compare >: std::true_type { };
+
+template< typename T, typename U >
+struct Compare: Compound< Compare< T, U >>
+{
+    static constexpr auto
+    value( T const& t, U const& u )
+    { return t <=> u; }
+
+    using Compound< Compare< T, U >>::Compound;
+};
+
+template< typename T, expression U >
+Compare< T, U > operator <=>( T const& t, U const& u )
+{ return { t, u }; }
+
+
 ///////////////////
 /// EqualsZero ///
 /////////////////

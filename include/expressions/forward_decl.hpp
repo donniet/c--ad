@@ -194,14 +194,16 @@ template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> )
 struct Result< Op< Args... >>
 { using type = std::remove_cvref_t< decltype(
-    Op< typename Result< Args >::type... >{}() )>; };
+    Op< typename Result< Args >::type... >::value( 
+        typename Result< Args >::type{}... ))>; };
 
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 requires( compound_expression< Op< Discriminator, Args... >> )
 struct Result< Op< Discriminator, Args... >>
 { using type = std::remove_cvref_t< decltype(
-    Op< Discriminator, typename Result< Args >::type... >{}() )>; };
+    Op< Discriminator, typename Result< Args >::type... >::value(
+        typename Result< Args >::type{}... ))>; };
 
 /// @brief trait to resolve the result type of an expression
 template< typename T >
@@ -211,7 +213,8 @@ using result_t = Result< T >::type;
 /// Reconstituter ///
 ////////////////////
 ///
-/// Creates a new compound expression using provided subs as arguments
+/// Creates a new compound expression using provided subs as arguments in place
+/// of the original argument types.
 ///
 namespace detail {
 

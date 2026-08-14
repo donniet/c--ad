@@ -15,7 +15,9 @@ Sub<
                     Var<0, float>, Constant<0>>>, 
             Constant<1.000000e+00>>, 
         Var<0, float>>, 
-    StaticValue<int>>') and 'int')
+    StaticValue<int>>
+
+    ') and 'int')
 
 
 Substitution< 

@@ -1,5 +1,6 @@
 // unit tests for include/expressions/calculus.hpp
 
+#include "expressions/comparison.hpp"
 #include "expressions/calculus.hpp"
 
 #include <print>
@@ -21,71 +22,63 @@ int main( int ac, char* av[] )
     Var< 0, float > x;
     Var< 1, float > y;
 
-    // --- base cases: constant rule ---
+    // base cases: constant rule
     assert( d( 5, x )( 1 ) == 0 );                // derivative of a raw (non-expression) value is 0
     assert(( d( y, x )( 1 )) == 0 );               // derivative of an unrelated variable is 0
 
-    // --- variable rule ---
+    // variable rule
     assert( d( x, x )( 1 ) == 1 );                 // d(x)/dx == 1
+    assert( d( x, x ) == 1 );
 
-    // --- Negation ---
+    // Negation
     assert( d( -x, x )( 2 ) == -1 );               // d(-x)/dx == -1
+    assert( d( -x, x ) == -1 ); // should auto-eval
+    assert( d( -x, x )() == -1 );
 
-    // --- Sum ---
+    // Sum
     assert( d( x + 3.f, x )( 5 ) == 1 );           // constant term drops out
     assert( d( x + y, x )( 1 ) == 1 );             // unrelated term (y) drops out
 
-    // --- Difference ---
+    // Difference
     assert( d( x - 3.f, x )( 5 ) == 1 );           // d(x-3)/dx == 1
     assert( d( 3.f - x, x )( 5 ) == -1 );          // d(3-x)/dx == -1
 
-    // --- Product (product rule) ---
+    // Product (product rule)
     assert( d( x * 3.f, x )( 2 ) == 3 );           // d(3x)/dx == 3
     assert( d( x * x, x )( 3 ) == 6 );             // d(x^2)/dx == 2x, at x=3 -> 6
 
-    // --- Quotient (quotient rule) ---
+    // Quotient (quotient rule)
     assert( d( x / 4.f, x )( 2 ) == 0.25f );       // d(x/4)/dx == 1/4
 
-    // --- SquareRoot ---
+    // SquareRoot
     // d(sqrt(x))/dx == 1/(2*sqrt(x)); at x=4 -> 0.25
-    // KNOWN BUG: calculus.hpp's SquareRoot derivative (Derivative<Id,SquareRoot<T>>,
-    // ~line 273) uses coefficient Constant<-0.5> instead of +0.5, so this assert
-    // documents the mathematically correct value and is expected to FAIL at
-    // runtime until that sign is fixed.
     assert( d( sqrt(x), x )( 4 ) == 0.25f );
 
-    // --- Pow (only constant-exponent Pow<T,Constant<N>> has a derivative rule) ---
+    // Pow (only constant-exponent Pow<T,Constant<N>> has a derivative rule)
     assert( d( pow( x, Constant< 3 >{}), x )( 2 ) == 12 );  // d(x^3)/dx == 3x^2, at x=2 -> 12
 
-    // --- Sine / Cosine ---
+    // Sine / Cosine
     assert( d( sin(x), x )( 0 ) == 1 );            // d(sin(x))/dx == cos(x), at x=0 -> 1
     assert( d( sin(y), x )( 1 ) == 0 );             // unrelated variable drops out
     assert( d( cos(x), x )( 0 ) == 0 );            // d(cos(x))/dx == -sin(x), at x=0 -> 0
 
-    // --- Tangent ---
+    // Tangent
     assert( d( tan(x), x )( 0 ) == 1 );            // d(tan(x))/dx == 1/cos(x)^2, at x=0 -> 1
 
-    // --- Arcsine / Arccosine ---
+    // Arcsine / Arccosine
     assert( d( asin(x), x )( 0 ) == 1 );           // d(asin(x))/dx == 1/sqrt(1-x^2), at x=0 -> 1
     assert( d( acos(x), x )( 0 ) == -1 );          // d(acos(x))/dx == -1/sqrt(1-x^2), at x=0 -> -1
 
-    // --- Arctangent / Arctangent2 (atan2) ---
+    // Arctangent / Arctangent2 (atan2)
     // d(atan(x))/dx == 1/(1+x^2); at x=0 -> 1
-    // KNOWN BUG: calculus.hpp's Arctangent derivative (Derivative<Id,Arctangent<T>>,
-    // ~lines 418-438) forwards the wrong argument in value() -- it passes the whole
-    // atan(x) expression instead of x itself into the inner Derivative<Id,T>::value
-    // call -- and its `type` alias wraps an erroneous extra SquareRoot around the
-    // (1+x^2) denominator. This is expected to fail to COMPILE (not just assert)
-    // until calculus.hpp is fixed. Comment out these two asserts if you need the
-    // rest of this file to build in the meantime.
-    assert( d( atan(x), x )( 0 ) == 1 );
+        assert( d( atan(x), x )( 0 ) == 1 );
     assert( d( atan2(x, 2.f), x )( 0 ) == 0.5f );  // atan2(x,2) == atan(x/2); shares the bug above
 
-    // --- Log / Exp ---
+    // Log / Exp
     assert( d( log(x), x )( 2 ) == 0.5f );         // d(log(x))/dx == 1/|x|, at x=2 -> 0.5
     assert( d( exp(x), x )( 0 ) == 1 );            // d(exp(x))/dx == exp(x), at x=0 -> 1
 
-    // --- second derivative (nested application of derivative()) ---
+    // second derivative (nested application of derivative())
     assert( d( d( sin(y), x ), x )( 0 ) == 0 );    // unrelated variable stays 0
     assert( d( d( x * x, x ), x )( 3 ) == 2 );     // d^2(x^2)/dx^2 == 2
 

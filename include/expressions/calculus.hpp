@@ -131,8 +131,9 @@ struct Derive< Id, Negation< ArgT >>
     static constexpr auto
     value( Negation< ArgT > const& expr )
     {
-        auto [ arg ] = expr.args();
-        return -Derive< Id, ArgT >::value( arg ) / dx ; 
+        auto [ t ] = expr.args();
+        auto dt = Derive< Id, ArgT >::value( t );
+        return - dt / dx ; 
     }
 };
 

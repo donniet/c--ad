@@ -2,52 +2,11 @@
 /// Expressions Library ///
 //////////////////////////
 ///
-/// Lazily evaluated arithmetic expressions with autodifferentiation.
-///
-/// # Concepts
-/// - expression< T >: must be true for types that can be composed into
-///   expressions in this library.
-/// - compound_expression< T >: is an expression with arguments
-/// - variable< V >: is a Var< I, T > expression placeholder
-/// - derivation< D >: a manipulator that obeys the product and chain rules
-///   of differentiation.
-///
-/// # Base Types
-/// - Constant< value > is a template-aware constant expression
-/// - StaticValue< T > is a typed expression with an unchanging value
-/// - Var< I, T > is a placeholder uniquely identified by the size_t 
-///   template argument I exposed as Var< I, T >::index
-/// - Scope< Vars... > is a tuple-like object that stores names and values
-///   of Var< I, T > placeholder types and acts as a manipulator
-///   such that the application of a Scope<> to an expression evaluates the 
-///   placeholders against the scoped values.
-/// - Arguments< Op, Args... > is the base class for compound expressions
-/// - Scope< Vars... > is an example of a scope-type class, having 
-///   get_value< VarT >() and set_value< VarT >( ValueT ) methods and an
-///   invocation operator `ScopeT::operator ()( Exprs... )` that evaluates
-///   the expressions against the scoped values.
-/// - Solver: `Solver< ExprT >{ expr }( ScopeT, Params... )` is the template
-///   for all solver classes. A solver class must accept an ExprT instance as a 
-///   construction parameter, and overload the invocation operator() to accept
-///   a scope-type object and may accept an aribitrary number of ...Params.  
-///
-/// # Key Operations
-/// - Sub: `new_expr = expr( args... ); // ExprU ExprT::operator ()( Subs... )`
-///   Overloaded by Arguments< Op, Args... > which is inherited by all expressions. 
-///   ...Subs are substituted for the dependent variables and a new expression is 
-///   returned
-/// - Manipulation: `expr | manipulator; // auto operator |( ExprT, ManipulatorT )`
-///   applies a Manipulator to an expression. A ScopeT is a type of manipulator.
-///   Manipulation by a scope is a dual-recursion between this operator and 
-///   `ScopeT::operator ()( Exprs... )` until the expression is parsed.
-/// - Evaluation: `scope( exprs... ); // ScopeT::operator ()( Exprs... )` 
-///   evaluates the ...Exprs expressions against the scope_type instance.  The 
-///   default implementation uses the expressions::operator |( ExprT, ScopeT ) 
-///   operators, creating a dual recursion that parses the expression.  The 
-///   ScopeT class must, therefore, only directly handle the leaves of the 
-///   expression (Constant, StaticValue, and Var types).  
-/// - Solving: `expr | solve_for( vars... )[ Params... ];` returns a scope-type object
-///   which, when invoked against `expr` results in a true value. 
+/// Lazily evaluated general-purpose expressions using templates as the abstract
+/// syntax tree. The goal is to keep an expression unevaluated as long as
+/// possible to allow for parsing, manipulation/transformation, substitution, 
+/// auto-differentiation, solving, and other operations as standard library 
+/// methods.
 ///
 /// # Expression Type Requirements
 ///   (i) Expressions MUST be literal types.
@@ -56,8 +15,9 @@
 ///       it's arguments.
 ///  (iv) Expressions MUST implement a static constexpr value method that 
 ///       calculates the result of the expression from it's arguments
-///   (v) IsExpression< E< Ts... >> or IsExpressionOperation< E > must evaluate
-///       to a true_type without the expression class being defined.
+///   (v) IsExpression< E< Ts... >>, IsCompoundOperation< E >, or 
+///       IsDiscriminatedOperation< E > must evaluate to a true_type before the
+///       expression class itself is instantiated.
 ///   
 /// # Example of an Expression Class
 /// ```
@@ -65,26 +25,46 @@
 /// class Sum;
 ///
 /// template< >
-/// struct IsExpressionOperation< Sum >: 
+/// struct IsCompoundOperation< Sum >: 
 ///     std::true_type { };                 // requirement (v)
 ///
 /// template< typename... Args >
-/// struct Sum: Arguments< Sum, Args... >   // requirement (ii) 
+/// struct Sum: Compound< Sum< Args... >>   // requirement (ii) 
 /// {
 ///     static constexpr auto 
 ///     value( Args... args ) 
 ///     { return ( args + ... + 0 ); }      // requirement (iv) 
 ///
-///     using Arguments< Sum, Args... >::
-///         Arguments;                      // requirements (i),(iii)
+///     using Compound< Sum, Args... >::
+///         Compound;                       // requirements (i),(iii)
 /// };
+///
+/// # Concepts
+/// - expression< T >: must be true for types that can be composed into
+///   expressions in this library.
+/// - compound_expression< T >: is an expression with arguments
+/// - variable< V >: is a Var< I, T > expression placeholder
+/// - open_expression< E > is true of E is an expression containing at least one
+///   free variable
+/// - closed_expression< E > is an expression with no free variables (not open)
+///
+/// # Key Operations
+///
+/// - Evaluation via operator(): 
+///     auto value = expr();
+/// - Evaluation via conversion operator: 
+///     if( expr ) { /*...*/ }
+/// - Substitution via operator(): 
+///     auto new_expr = expr( args... );
+/// - Manipulation/Transformation via operator|: 
+///     auto new_expr = expr | manipulator; 
+///     auto value = expr | scope;
+/// - Evaluation by a scope: 
+///     auto [ ...values ] = scope( exprs... );
+/// - Solving via manipulation/transformation: 
+///     auto scope = expr | solve()[ params... ]; 
+///     auto scope = expr | solve_for( Vars... )[ params... ];
 /// ```
-/// - The Arguments base template is tuple-like object of the ...Args
-/// - Arguments imbues parent class ExprT with:
-///     ExprT::operator()( subs&&... );  // substitution with evaluation
-///     ExprT::operator();               // evaluation (for closed or static
-///                                      // expressions)
-///   
 ///
 /// # Expression Evaluation [IN PROGRESS]
 ///
@@ -95,7 +75,7 @@
 /// 
 /// Constant and StaticValue classes simply evaluate to their compile-time or
 /// run time values respectively.  Compound expressions are evaluated using the
-/// Arguments base class and the provided operator| in the following manner:
+/// Compound base class and the provided operator| in the following manner:
 ///
 /// 1. Each argument of the compound expression is evaluated
 /// 2. The evaluated arguments are passed to the static value method of the
@@ -216,54 +196,40 @@ namespace expressions {
 /// evaluated to prevent this. One may still construct pairwise infinite 
 /// recursions or other more complex infinite loops though.
 ///
-template< typename Op, typename... Subs >
+template< typename Op > /* , typename... Results > */ // TODO: consider Results
 struct Compound;
 
 ///////////////////////
 /// CompoundCommon ///
 /////////////////////
 /// 
-/// Base class for compound and discriminated expressions
+/// @brief Base class for compound and discriminated expressions
+///
+/// This is necessary to provide a terminal case for template instantiation of
+/// compound expressions and prevent circular dependencies during compilation.
 ///
 template< typename ExprT, typename... Args >
-struct CompoundCommon: tuple< Args... >
+struct CompoundCommon 
 {
+    // we keep the static members and typedefs 
     using expression_type = ExprT;
     using arguments_tuple = tuple< Args... >;
     static constexpr size_t arguments_size = sizeof...( Args );
-    static constexpr make_seq< arguments_size > for_args;
 
-    constexpr arguments_tuple const&
-    args() const
-    { return *this; }
+    // but nothing else will be used because this type of compound expression
+    // (one with no arguments that are themselves expression types) will ever
+    // be instantiated **fingers crossed**
 
-    template< size_t I >
-    constexpr Args...[ I ] const&
-    arg() const
-    { return get< I >( args() ); }
-    
-    constexpr expression_type const&
-    expr() const
-    { return *static_cast< expression_type const* >( this ); }
-
-    constexpr auto
-    operator ()() const
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        { return expression_type::value( arg< Is >()... ); };
-
-        return helper( for_args );
-    }
-
-    constexpr CompoundCommon( Args const&... args ): 
-        tuple< Args... >{ args... } { }
-    constexpr CompoundCommon( CompoundCommon const& ) = default;
-    constexpr CompoundCommon() = default;
+    constexpr CompoundCommon()
+    { static_assert( false, 
+        "implementation of compound expression with no expression arguments "
+        "should not be instantiated" ); }
+    constexpr CompoundCommon( Args const&... ): CompoundCommon() { };
 };
 
 /// specialization for a compound with at least one expression as an argument
 template< typename ExprT, typename... Args >
-requires(( expression< Args > or ... or false ))
+requires(( expression< Args > or ... or false )) 
 struct CompoundCommon< ExprT, Args... >: tuple< Args... >
 {
     using expression_type = ExprT;
@@ -295,7 +261,7 @@ private:
         { return std::get< I >( tup ); }
     };
 
-    // NOTE: this does not guard against open expression idempotency on 
+    // NOTE: this does not guard against terminal expression idempotency on 
     //       Args...[I]::operator()** because Compound< Op, Args... >::
     //       operator()*** guards itself so there be no circular logic.
     template< size_t I >
@@ -314,6 +280,9 @@ private:
     template< size_t... Is >
     struct ResultHelper< seq< Is... >>
     {
+        // the result type of this expression will be the decltype of the
+        // return value of the static value method of the parent class when
+        // called on the result types of the arguments
         using type = std::remove_cvref_t< decltype( 
             reconstitute_t< expression_type, typename ArgEvaluator< Is >::
                 type... >::value( typename ArgEvaluator< Is >::type{}... ))>;
@@ -325,19 +294,29 @@ private:
     };
 
 public:
+    // result type of this expression if closed and evaluated.
     using result_type = ResultHelper< for_args >::type;
+
+    // conversion operator to the result type in the case that it is closed
+    constexpr operator result_type() const
+    requires(( closed_expression< Args > and ... and true ))
+    { return ResultHelper< for_args >::value( args() ); }
     
+    // invocation operator also returns the result if this expression is closed
     constexpr result_type 
     operator ()() const 
     requires(( closed_expression< Args > and ... and true ))
     { return ResultHelper< for_args >::value( args() ); }
 
+    // if the expression is open the invocation operator is idempotent, 
+    // which signals that this is a terminal expression (one whose evaluation
+    // results in the same type)
     constexpr expression_type const&
     operator ()() const
     requires(( open_expression< Args > or ...  or false ))
     { return expr(); }
 
-    /// @brief Sub via invocation operator
+    // substitution into this expression's free variables.
     template< typename First, typename... Rest >
     requires( is_compatible_substitution_v< expression_type, First, Rest... > )
     constexpr substitute_t< expression_type, make_expression_t< First >, 
@@ -346,8 +325,11 @@ public:
     { return substitute( expr(), make_expression( first ), 
         make_expression( rest )... ); }
 
+    // construction via arguments (required by expression semantics)
     constexpr CompoundCommon( Args const&... args ): 
         tuple< Args... >{ args... } { }
+
+    // copy and default constructors are default implemented
     constexpr CompoundCommon( CompoundCommon const& ) = default;
     constexpr CompoundCommon() = default;
 
@@ -355,14 +337,15 @@ public:
 
 // Compound Expression Base Class
 template< template< typename... > class Op, typename... Args >
-struct Compound< Op< Args... >>: CompoundCommon< Op< Args... >, Args... >
+struct Compound< Op< Args... >>: 
+    CompoundCommon< Op< Args... >, Args... >
 { using CompoundCommon< Op< Args... >, Args... >::CompoundCommon; };
 
 // Discriminated Expression Bae Class
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 struct Compound< Op< Discriminator, Args... >>: 
-    CompoundCommon< Op< Discriminator, Args... >, Args... >
+    CompoundCommon< Op< Discriminator, Args... >, Args... > 
 { using CompoundCommon< Op< Discriminator, Args... >, Args... >::
     CompoundCommon; };
 
