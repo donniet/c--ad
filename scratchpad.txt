@@ -1,24 +1,10 @@
+// we need a conditional for iterations, union?
+
+
+
 g( x * x, 3.f )
 
 sub( f(x), x*x, 3.f )
-error: invalid operands to binary expression ('typename VarsSub<make_expression_t<int>>::type' (aka '
-
-assert( d( x * 3.f, x )( 2 ) == 3 );
-
-Sub< 
-    Func< 
-        Quotient< 
-            Sum< 
-                Product< 
-                    Constant<1>, StaticValue<float>>, 
-                Product<
-                    Var<0, float>, Constant<0>>>, 
-            Constant<1.000000e+00>>, 
-        Var<0, float>>, 
-    StaticValue<int>>
-
-    ') and 'int')
-
 
 Substitution< 
     Variable<12, Variable<2, float>>, 

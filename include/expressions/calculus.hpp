@@ -64,7 +64,6 @@ struct Derive
     value( ExprT const& )
     { return Constant< 0 >{}; }
 };
-
 //////////////////////
 /// derive method ///
 ////////////////////
@@ -85,10 +84,6 @@ struct Derivative;
 template< >
 struct IsDiscriminatedOperation< Derivative >: true_type { };
 
-template< size_t Id, typename ExprT >
-using var_unit_of = Constant< result_t< typename free_variables_t< ExprT >::
-    template variable_t< Id >>{ 1 }>;
-
 //////////////////////////////
 /// Derivative expression ///
 ////////////////////////////
@@ -103,13 +98,17 @@ struct Derivative: Compound< Derivative< Id, ExprT >>
     using Compound< Derivative< Id, ExprT >>::Compound;
 };
 
+///////////////////////////////
+/// Derive specializations ///
+/////////////////////////////
+///
 template< size_t Id, variable X >
 requires( var_id_v< X > == Id and var_order_v< X > == 1 )
 struct Derive< Id, X >
 {
     static constexpr auto
     value( X const& )
-    { return Constant< 1 >{}; }
+    { return Constant< result_t< X >{ 1 }>{}; }
 };
 
 // derivative of a higher order variable is terminal
@@ -126,14 +125,12 @@ template< size_t Id, expression ArgT >
 requires( free_variables_t< ArgT >::contains_id( Id ))
 struct Derive< Id, Negation< ArgT >>
 {
-    static constexpr var_unit_of< Id, ArgT > dx;
-
     static constexpr auto
     value( Negation< ArgT > const& expr )
     {
         auto [ t ] = expr.args();
         auto dt = Derive< Id, ArgT >::value( t );
-        return - dt / dx ; 
+        return - dt; 
     }
 };
 
@@ -141,8 +138,6 @@ template< size_t Id, typename... Ts >
 requires( free_variables_t< Sum< Ts... >>::contains_id( Id ) )
 struct Derive< Id, Sum< Ts... >>
 {
-    static constexpr var_unit_of< Id, Sum< Ts... >> dx;
-
     static constexpr auto
     value( Sum< Ts... > const& expr )
     { 
@@ -150,7 +145,7 @@ struct Derive< Id, Sum< Ts... >>
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
         { return ( Derive< Id, Ts...[ Is ]>::value( 
-            get_argument< Is >( expr )) + ... + 0 ) / dx; };
+            get_argument< Is >( expr )) + ... ); };
 
         return helper( for_args );
     }
@@ -160,13 +155,11 @@ template< size_t Id, typename... Ts >
 requires( free_variables_t< Difference< Ts... >>::contains_id( Id ) )
 struct Derive< Id, Difference< Ts... > >
 {
-    static constexpr var_unit_of< Id, Difference< Ts... >> dx;
-
     static constexpr auto
     value( Difference< Ts... > const& expr )
     { 
         auto [ ...args ] = expr.args();
-        return ( derive< Id >( args ) - ... - 0 ) / dx;
+        return ( derive< Id >( args ) - ... );
     }
 };
 
@@ -224,22 +217,19 @@ private:
         { return ( Term< Js, for_args >::value( expr ) + ... + 0 ); }
     };
 
-    static constexpr var_unit_of< Id, Product< Ts... >> dx;
-
 public:
 
     // the final result is the result of our helper divided by the unit of the
     // variable being referenced by this differential
     static constexpr auto
     value( Product< Ts... > const& expr )
-    { return Helper< for_args >::value( expr ) / dx; }
+    { return Helper< for_args >::value( expr ); }
 };
 
 template< size_t Id, typename T, typename... Ts >
 requires( free_variables_t< Quotient< T, Ts... >>::contains_id( Id ) )
 struct Derive< Id, Quotient< T, Ts... > >
 {
-    static constexpr var_unit_of< Id, Quotient< T, Ts... >> dx; 
     typedef make_seq< sizeof...( Ts )> for_rest;
 
     template< typename Seq >
@@ -267,7 +257,7 @@ struct Derive< Id, Quotient< T, Ts... > >
             value( bot );
 
         // quotient rule
-        return ( dtop * bot - top * dbot ) / ( bot * bot ) / dx;
+        return ( dtop * bot - top * dbot ) / ( bot * bot );
     }
 };
 
@@ -275,8 +265,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, SquareRoot< T > > 
 {
-    static constexpr var_unit_of< Id, SquareRoot< T >> dx;
-
     static constexpr auto
     value( SquareRoot< T > const& expr )
     {
@@ -284,7 +272,7 @@ struct Derive< Id, SquareRoot< T > >
         auto dt = Derive< Id, T >::value( t );
 
         // power rule for sqrt
-        return ( 0.5 / sqrt( t )) * dt / dx;
+        return ( 0.5 / sqrt( t )) * dt;
     }
 };
 
@@ -295,8 +283,6 @@ requires( free_variables_t< T >::contains_id( Id ) and
     not free_variables_t< U >::contains_id( Id )) 
 struct Derive< Id, Pow< T, U >>
 {
-    static constexpr var_unit_of< Id, Pow< T, U >> dx;
-
     static constexpr auto
     value( Pow< T, U > const& expr )
     { 
@@ -304,7 +290,7 @@ struct Derive< Id, Pow< T, U >>
         auto dt = Derive< Id, T >::value( t );
 
         // power rule
-        return u * pow( t, u - 1 ) * dt / dx;
+        return u * pow( t, u - 1 ) * dt;
     }
 };
 
@@ -313,8 +299,6 @@ template< size_t Id, typename T, auto N >
 requires( free_variables_t< T >::contains_id( Id ))
 struct Derive< Id, Pow< T, Constant< N >>>
 {
-    static constexpr var_unit_of< Id, Pow< T, Constant< N >>> dx;
-
     static constexpr auto
     value( Pow< T, Constant< N >> const& expr )
     { 
@@ -322,7 +306,35 @@ struct Derive< Id, Pow< T, Constant< N >>>
         auto dt = Derive< Id, T >::value( t );
 
         // power rule
-        return n * pow( t, Constant< N - 1 >{} ) * dt / dx;
+        return n * pow( t, Constant< N - 1 >{} ) * dt;
+    }
+};
+
+template< size_t Id, integral auto N, typename T >
+requires( free_variables_t< T >::contains_id( Id ) and N != 0 )
+struct Derive< Id, PowN< N, T >>
+{
+    static constexpr auto
+    value( PowN< N, T > const& expr )
+    requires( N != 1 )
+    {
+        auto [ t ] = expr.args();
+        auto dt = Derive< Id, T >::value( t );
+        Constant< N > n;
+
+        // power rule
+        return n * pow< N - 1 >( t ) * dt;
+    }
+
+    static constexpr auto
+    value( PowN< N, T > const& expr )
+    requires( N == 1 )
+    {
+        auto [ t ] = expr.args();
+        auto dt = Derive< Id, T >::value( t );
+
+        // derivative of a linear expression ( t(x) )^1
+        return dt;
     }
 };
 
@@ -330,8 +342,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Sine< T > >
 {
-    static constexpr var_unit_of< Id, Sine< T >> dx;
-
     static constexpr auto
     value( Sine< T > const& expr )
     { 
@@ -339,7 +349,7 @@ struct Derive< Id, Sine< T > >
         auto dt = Derive< Id, T >::value( t );
 
         // dsin = cos
-        return cos( t ) * dt / dx;
+        return cos( t ) * dt;
     }
 };
 
@@ -347,8 +357,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Cosine< T > > 
 {
-    static constexpr var_unit_of< Id, Cosine< T >> dx;
-
     static constexpr auto
     value( Cosine< T > const& expr )
     { 
@@ -356,7 +364,7 @@ struct Derive< Id, Cosine< T > >
         auto dt = Derive< Id, T >::value( t );
 
         // dcos = -sin
-        return -sin( t ) * dt / dx;
+        return -sin( t ) * dt;
     }
 };
 
@@ -364,8 +372,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Tangent< T > > 
 {
-    static constexpr var_unit_of< Id, Tangent< T >> dx;
-
     static constexpr auto
     value( Tangent< T > const& expr )
     { 
@@ -373,7 +379,7 @@ struct Derive< Id, Tangent< T > >
         auto dt = Derive< Id, T >::value( t );
 
         // dtan = sec^2
-        return dt / dx / cos( t ) / cos( t );
+        return dt/ cos( t ) / cos( t );
     }
 };
 
@@ -381,8 +387,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Arcsine< T > > 
 {
-    static constexpr var_unit_of< Id, Arcsine< T >> dx;
-
     static constexpr auto
     value( Arcsine< T > const& expr )
     { 
@@ -391,7 +395,7 @@ struct Derive< Id, Arcsine< T > >
         auto one = Constant< 1 >{};
 
         // dasin(t) = dt/sqrt(1-t^2)
-        return dt / dx / sqrt( one - t * t );
+        return dt/ sqrt( one - t * t );
     }
 };
 
@@ -399,8 +403,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Arccosine< T > > 
 {
-    static constexpr var_unit_of< Id, Arccosine< T >> dx;
-
     static constexpr auto
     value( Arccosine< T > const& expr )
     { 
@@ -409,7 +411,7 @@ struct Derive< Id, Arccosine< T > >
         auto one = Constant< 1 >{};
 
         // dacos(t) = -dt/sqrt(1-t^2)
-        return -dt / dx / sqrt( one - t * t );
+        return -dt/ sqrt( one - t * t );
     }
 };
 
@@ -417,8 +419,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Arctangent< T > > 
 {
-    static constexpr var_unit_of< Id, Arctangent< T >> dx;
-
     static constexpr auto
     value( Arctangent< T > const& expr )
     { 
@@ -427,7 +427,7 @@ struct Derive< Id, Arctangent< T > >
         auto one = Constant< 1 >{};
 
         // datan = dt/(1 + t^2)
-        return dt / dx / ( one + t * t );
+        return dt/ ( one + t * t );
     }
 };
 
@@ -436,8 +436,6 @@ requires( free_variables_t< T >::contains_id( Id ) or
     free_variables_t< U >::contains_id( Id ) )
 struct Derive< Id, Arctangent2< T, U > > 
 {
-    static constexpr var_unit_of< Id, Arctangent2< T, U >> dx;
-
     static constexpr auto
     value( Arctangent2< T, U > const& expr )
     { 
@@ -452,8 +450,6 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Log< T > >
 {
-    static constexpr var_unit_of< Id, Log< T >> dx;
-
     static constexpr auto
     value( Log< T > const& expr )
     { 
@@ -461,7 +457,7 @@ struct Derive< Id, Log< T > >
         auto dt = Derive< Id, T >::value( t );
 
         // dlog(t) = dt/abs(t)
-        return dt / dx / abs( t );
+        return dt/ abs( t );
     }
 };
 
@@ -469,15 +465,13 @@ template< size_t Id, typename T >
 requires( free_variables_t< T >::contains_id( Id ) )
 struct Derive< Id, Exp< T >>
 {
-    static constexpr var_unit_of< Id, Exp< T >> dx;
-
     static constexpr auto
     value( Exp< T > const& expr )
     {
         auto [ t ] = expr.args();
         auto dt = Derive< Id, T >::value( t );
 
-        return exp( t ) * dt / dx;
+        return exp( t ) * dt;
     }
 };
 
@@ -583,12 +577,12 @@ struct Gradient: Compound< Gradient< T >>
     };
 
     static constexpr typename FuncHelper< free_variables_t< T >>::type
-    func( T const& t )
+    function( T const& t )
     { return FuncHelper< free_variables_t< T >>::value( t ); }
 
     static constexpr auto
     value( T const& t )
-    { return grad( func( t )); }
+    { return grad( function( t )); }
 
     using Compound< Gradient< T >>::Compound;
 };

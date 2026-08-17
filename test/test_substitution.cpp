@@ -1,12 +1,16 @@
 #include "testing.hpp"
 
+#include "units.hpp"
 #include "expressions/expressions.hpp"
 #include "expressions/predicate.hpp"
 #include "expressions/arithmetic.hpp"
+#include "expressions/logical.hpp"
+#include "expressions/comparison.hpp"
 
 using test::ensure;
 
 using namespace expressions;
+using namespace units;
 
 struct SubTests
 {
@@ -87,6 +91,17 @@ struct SubTests
                 Constant<1.000000e+00>>,
             Var<0,float>>,
         StaticValue<int>>>> );
+
+//    static_assert( is_compatible_substitution_v< 
+//        Func<Var<4UL, Var<4UL, Length>>, Var<2, Length>, Var<3, Length>>,
+//        Sum< Sum< PowN< 2, Difference< Var< 2, Length >, StaticValue< Length >>>, 
+//            PowN< 2, Difference< Var< 3, Length >, StaticValue< Length >>>>, 
+//                StaticValue<Area>>
+//    >);
+
+    static_assert( free_variables_t< Element< 0, tuple< Var< 1, int >>>>::size == 1 );
+    static_assert( free_variables_t< PowN< 2, Var< 1, int >>>::size == 1 );
+    static_assert( free_variables_t< Quotient< Product< Product< Constant< 3L >, PowN< 2, Var< 0, float >>>, Constant< 1 >>, Constant< 1.000000e+00 >>>::size == 1 );
 };
 
 bool test_eval() 

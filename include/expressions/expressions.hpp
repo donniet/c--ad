@@ -209,7 +209,7 @@ struct Compound;
 /// compound expressions and prevent circular dependencies during compilation.
 ///
 template< typename ExprT, typename... Args >
-struct CompoundCommon 
+struct CompoundCommon: tuple< Args... > 
 {
     // we keep the static members and typedefs 
     using expression_type = ExprT;
@@ -661,6 +661,18 @@ requires( not std::invocable< ManipulatorT, ExprT > )
 constexpr typename Applier< ExprT, ManipulatorT >::type
 operator |( ExprT const& expr, ManipulatorT&& f )
 { return Applier< ExprT, ManipulatorT >::value( expr, f ); }
+
+// HACK: temporary way to get iterations to work, switch iteration to support
+// the substitution mechanism
+//template< expression ExprT, typename ManipulatorT >
+//requires( not std::invocable< ManipulatorT > and 
+//    not compound_expression< ExprT > )
+//constexpr auto
+//operator |( ExprT const& expr, ManipulatorT&& f )
+//{ 
+//    auto [ ...args ] = expr.args();
+//    return ExprT::value( args... );
+//};
 
 /// @brief applier specialization for constants
 template< auto Value, typename ManipulatorT >

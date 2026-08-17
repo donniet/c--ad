@@ -3,6 +3,10 @@
 
 #include "expressions/expressions.hpp"
 #include "expressions/normalize.hpp"
+#include "expressions/arithmetic.hpp"
+#include "expressions/logical.hpp"
+#include "expressions/comparison.hpp"
+#include "expressions/calculus.hpp"
 #include "expressions/format.hpp"
 
 #include <print>
@@ -1455,7 +1459,6 @@ struct SequenceSolver
     
 };
 
-
 /// @brief Represents an iterative expression. An instance of an iteration is 
 /// created by the builder types IterationInitializer and IterationUpdater
 /// @tparam UntilE is the type of the until expression when the iteration
@@ -1464,192 +1467,204 @@ struct SequenceSolver
 /// responding variables in the VariablesTuple each iteration
 /// @tparam VariablesTuple is a tuple of N variables which will be updated
 /// and whose final values will be returned when the iteration is evaluated
-template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
+template< variable_id_list auto VarList, typename InitsTuple, 
+    typename UpdatesTuple, typename UntilE >
 struct Iteration;
 
-template< expression UntilE, typename UpdatesTuple, typename VariablesTuple >
-struct IsExpression< Iteration< UntilE, UpdatesTuple, VariablesTuple >>: 
-    std::true_type { };
+//template< >
+//struct IsDiscriminatedOperation< Iteration >: true_type { };
+template< variable_id_list auto VarList, typename InitsTuple,
+    typename UpdatesTuple, typename UntilE >
+struct IsExpression< Iteration< VarList, InitsTuple, UpdatesTuple, UntilE >>:
+    true_type { };
 
-/// @brief Helper class to complete the building of an Iteration expression
-template< typename UpdatesTuple, typename VariablesTuple >
+template< variable_id_list auto VarList, typename ExprT, typename... Inits >
+requires( VarList.size == sizeof...( Inits ))
+struct FuncFromVariableIdList
+{
+    static constexpr auto var_list = VarList;
+    typedef make_seq< var_list.size > for_vars;
+
+    template< size_t I >
+    using var_t = Var< var_list.template at< I >(), result_t< Inits...[ I ]>>;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    { using type = Func< ExprT, var_t< Is >... >; };
+
+    using type = Helper< for_vars >::type; 
+};
+
+template< variable_id_list auto VarList, typename ExprT, typename... Inits >
+using func_from_variable_id_list_t = 
+    FuncFromVariableIdList< VarList, ExprT, Inits... >::type;
+
+template< variable_id_list auto VarList, typename... Inits, 
+    typename... Updates, typename UntilE >
+requires( sizeof...( Inits ) == sizeof...( Updates ))
+struct Iteration< VarList, tuple< Inits... >, tuple< Updates... >, UntilE >: 
+    Compound< Iteration< VarList, tuple< Inits... >, tuple< Updates... >, 
+        UntilE >>
+{
+    static constexpr auto var_list = VarList;
+    static constexpr auto var_tuple = make_var_tuple< var_list >(
+        result_t< Inits >{}... );
+
+    template< typename T >
+    struct ArgEvaluator
+    { static constexpr T value( T const& val ) { return val; } };
+
+    template< expression T >
+    struct ArgEvaluator< T >
+    { static constexpr auto value( T const& val ) { return val(); } };
+
+    template< typename T >
+    static constexpr auto eval_arg( T const& arg )
+    { return ArgEvaluator< T >::value( arg ); }
+        
+    static constexpr tuple< result_t< Inits >... > 
+    value( tuple< Inits... > init_tuple, tuple< Updates... > const& updates,
+        UntilE const& until )
+    {
+        // collect the initial values and enumerate variables
+        tuple< result_t< Inits >... > values = eval_arg( init_tuple );
+        auto [ ...vars ] = var_tuple;
+
+        for( ;; )
+        {
+            // enumerate the current values
+            auto [ ...vals ] = values;
+                
+            // if our until expression is met, return the values
+            if( func( until, vars... )( vals... ))
+                return values;
+    
+            // otherwise update the values by the update expression
+            values = func( updates, vars... )( vals... );
+        }
+    }
+
+    using Compound< Iteration< VarList, tuple< Inits... >, 
+        tuple< Updates... >, UntilE >>::Compound;
+};
+
+template< variable... Vars >
+struct IterationVariables;
+
+template< variable_id_list auto VarList, typename... Inits >
+struct IterationInitializer;
+
+template< variable_id_list auto VarList, typename InitsTuple, 
+    typename... Updates >
 struct IterationUpdater;
 
 /// @brief Helper class to begin building an Iteration expression
 template< variable... Vars >
-struct IterationInitializer;
-
-/// @brief this is the function used to begin building an iteration. The
-/// update( exprs... ) must be called with the same number of expressions 
-/// as variables. Finally the until( expr ) must be called on the builder 
-/// object returned from the update method to complete the construction.
-/// You may also initialize the variables before the iteration begins by 
-/// calling the initial_values( values... ) method before calling update.
-/// @tparam ...Vars are the variables this iteration will update
-template< typename... Vars >
-requires(( variable_traits< Vars >::value and ... ))
-constexpr IterationInitializer< typename 
-    variable_traits< Vars >::variable_type... > 
-iteration( Vars... );
-
-template< variable... Vars >
-struct IterationInitializer
-{
-    IterationInitializer& initial_values( result_t< Vars >... inits )
-    { 
-        _inits = make_tuple( inits... ); 
-        return *this;
-    }
-
-    template< expression... Updates >
-    IterationUpdater< tuple< Updates... >, tuple< Vars... >> update( 
-        Updates const&... updates );
-
-    IterationInitializer( Vars... vars ): _vars{ vars... } { }
-
-    tuple< Vars... > _vars;
-    tuple< result_t< Vars >... > _inits;
+struct IterationVariables
+{ 
+    static constexpr auto var_list = make_var_id_list< Vars... >();
+    
+    template< typename... Inits >
+    constexpr IterationInitializer< var_list, Inits... >
+    initial_values( Inits const&... inits ) const
+    { return { inits... }; }
 };
 
-template< expression... Updates, variable... Vars >
-struct IterationUpdater< tuple< Updates... >, tuple< Vars... >>: 
-    IterationInitializer< Vars... >
-{
-    template< expression UntilE >
-    Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> until( 
-        UntilE const& until_expr ) const;
+/////////////////////////
+/// iteration method ///
+///////////////////////
+///
+template< variable... Vars >
+constexpr IterationVariables< Vars... >
+iteration( Vars const&... vars )
+{ return {}; }
 
-    IterationUpdater( IterationInitializer< Vars... > const& init, 
-        Updates const&... updates ): 
-            IterationInitializer< Vars... >{ init }, 
-            _updates{ updates... }
+template< variable_id_list auto VarList, typename... Inits >
+struct IterationInitializer: tuple< Inits... >
+{
+    static constexpr auto var_list = VarList;
+
+    constexpr tuple< Inits... > const&
+    initial_values() const
+    { return *this; }
+
+    template< typename... Updates >
+    constexpr IterationUpdater< var_list, tuple< Inits... >,
+        Updates... >
+    update( Updates const&... updates ) const
+    { return { *this, updates... }; }
+
+    constexpr IterationInitializer( Inits const&... inits ): 
+        tuple< Inits... >{ inits... }
     { }
-
-    tuple< Updates... > _updates;
+    constexpr IterationInitializer( IterationInitializer const& ) = default;
 };
 
-template< variable... Vars >
-template< expression... Updates >
-IterationUpdater< tuple< Updates... >, tuple< Vars... >> 
-IterationInitializer< Vars... >::update( 
-    Updates const&... updates )
-{ return { *this, updates... }; }
+//template< variable... Vars >
+//template< typename... Inits >
+//constexpr IterationInitializer< make_var_id_list< Vars... >(), Inits... >
+//IterationVariables< Vars... >::initial_values( Inits const&... inits ) const
+//{ return { inits... }; }
 
-template< expression UntilE, expression... Updates, variable... Vars >
-struct Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> 
+template< variable_id_list auto VarList, typename... Inits, typename... Updates > 
+struct IterationUpdater< VarList, tuple< Inits... >, Updates... >: 
+    IterationInitializer< VarList, Inits... >, tuple< Updates... >
 {
-    using argument_types = tuple< UntilE, Updates..., Vars... >;
-    using result_type = tuple< result_t< Vars >... >;
-    using scope_type = Scope< Vars... >;
-    using until_expression_type = UntilE;
-    using updates_tuple = tuple< Updates... >;
-    using variables_tuple = tuple< Vars... >; 
+    using initializer_type = IterationInitializer< VarList, Inits... >;
+    using initializer_type::initial_values;
 
-    static constexpr size_t variables_size = sizeof...( Vars );
-    static constexpr auto for_variables = make_seq< variables_size >{};
+    constexpr tuple< Updates... > const&
+    updates() const
+    { return *this; }
 
-    constexpr until_expression_type until_expr() const { return _until_expr; }
-    constexpr updates_tuple updates() const{ return _updates; }
-    constexpr variables_tuple vars() const { return _vars; }
+    // TODO: replace direct instantiation of VarTuple with parameter passed 
+    // from original iteration call
+    template< expression UntilE >
+    Iteration< VarList, tuple< Inits... >, tuple< Updates... >, 
+        UntilE > 
+    until( UntilE const& until_expr ) const
+    { return { initial_values(), updates(), until_expr }; }
 
-    template< size_t Is >
-    constexpr result_t< Vars...[ Is ]> const&
-    initial_value() const
-    { return std::get< Is >( _inits ); }
-
-    template< size_t Is >
-    constexpr Updates...[ Is ] const& 
-    update_expr() const
-    { return std::get< Is >( _updates ); }
-
-    template< typename ScopeT, size_t... Is >
-    constexpr void initialize( ScopeT& scope, seq< Is... >) const 
-    { ( scope( set_variable< Vars...[ Is ]>( initial_value< Is >() )), 
-        ... ); }
-
-    template< typename ScopeT, typename... Ts, size_t... Is >
-    static constexpr void 
-    initialize( ScopeT& scope, tuple< Ts... > const& inits, 
-        seq< Is... > )
-    { ( scope( set_variable< Vars...[ Is ]>( std::get< Is >( inits ))),
-        ... ); }
-
-    template< typename ScopeT, size_t... Is >
-    constexpr void 
-    update( ScopeT& scope, seq< Is... > ) const
-    { ( scope( set_variable< Vars...[ Is ]>( update_expr< Is >() | scope )), 
-        ... ); }
-
-    template< typename ScopeT, typename... Ts, size_t... Is >
-    static constexpr void update( ScopeT& scope, tuple< Ts... > const& updates,
-        seq< Is... > )
-    { ( scope( set_variable< Vars...[ Is ]>( std::get< Is >( updates ))),
-        ... ); }
-
-    // a static method cannot read the values of static_expr inside the
-    // updates and until expressions. 
-    // is there a static way to do an iteration so that it can be a full
-    // citizen of the expressions?  Maybe only with Constant<...> and no
-    // StaticValues.
-    //template< typename... InitialValues >
-    //requires( sizeof...( InitialValues ) == sizeof...( Vars ))
-    //static auto value( InitialValues... inits )
-    //{ }
-
-    // TODO: should this be re-wrtten as the value method which would let
-    // manipulator do it's thing?
-    template< typename ManipulatorT >
-    constexpr auto 
-    apply( ManipulatorT& manipulator ) const
-    {
-        scope_type scope;
-
-        initialize( scope, for_variables );
-
-        while( not ( until_expr() | scope ))
-            update( scope, for_variables );
-
-        return make_tuple(( scope( Vars{} ) | manipulator )... );
-    }
-
-    constexpr Iteration() = default;
-    constexpr Iteration( UntilE until_expr, tuple< Updates... > updates, 
-        tuple< Vars... > vars, tuple< result_t< Vars >... > inits ): 
-            _until_expr{ until_expr }, _updates{ updates }, 
-            _vars{ vars }, _inits{ inits } { }
-
-    UntilE _until_expr;
-    tuple< Updates... > _updates;
-    tuple< Vars... > _vars;
-    tuple< result_t< Vars >... > _inits;
+    constexpr IterationUpdater( initializer_type const& init, 
+        Updates const&... updates ): initializer_type{ init }, 
+            tuple< Updates... >{ updates... } 
+    { }
+    constexpr IterationUpdater( IterationUpdater const& ) = default;
 };
 
-template< expression... Updates, variable... Vars >
-template< expression UntilE >
-Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> 
-IterationUpdater< tuple< Updates... >, tuple< Vars... >>::
-    until( UntilE const& until_expr ) const
-{ return { until_expr, _updates, IterationInitializer< Vars... >::_vars, 
-    IterationInitializer< Vars... >::_inits }; }
+//template< variable... Vars, typename... Inits >
+//template< typename... Updates >
+//constexpr IterationUpdater< tuple< Vars... >, tuple< Inits... >,
+//    Updates... >
+//IterationInitializer< tuple< Vars... >, Inits... >::
+//    update( Updates const&... updates ) const
+//{ return { *this, updates... }; }
 
-template< typename... Vars >
-requires(( variable_traits< Vars >::value and ... ))
-constexpr IterationInitializer< typename 
-    variable_traits< Vars >::variable_type... > 
-iteration( Vars... )
-{ return { variable_traits< Vars >::variable()... }; }
+// TODO: replace direct instantiation of VarTuple with parameter passed 
+// from original iteration call
+//template< variable... Vars, typename... Inits, typename... Updates >
+//template< expression UntilE >
+//constexpr Iteration< make_var_id_list( Vars{}... ), tuple< Inits... >, 
+//    tuple< Updates... >, UntilE > 
+//IterationUpdater< tuple< Vars... >, tuple< Inits... >, Updates... >::
+//    until( UntilE const& until_expr ) const
+//{ return { initial_values(), updates(), until_expr }; }
 
-// HACK: overload application operator until Iteration can be formalized as a 
-// compound expression properly
-template< typename UntilE, typename... Updates, variable... Vars, 
-    typename ManipulatorT >
-constexpr auto 
-operator |( Iteration< UntilE, tuple< Updates... >, tuple< Vars... >> const& iteration,
-    ManipulatorT& applicand )
-{ return iteration.apply( applicand ); }
+//template< variable... Vars, typename... Inits, typename... Updates, 
+//    expression UntilE >
+//constexpr Iteration< tuple< Vars... >, tuple< Inits... >, tuple< Updates... >, 
+//    UntilE > 
+//iteration( tuple< Vars... > const& vars, tuple< Inits... > const& inits,
+//    tuple< Updates... > const& updates, UntilE const& until_expr )
+//{ return { vars, inits, updates, until_expr }; }
 
-
-
+////////////////////////
+/// ArgumentMinimum ///
+//////////////////////
+///
 template< expression ExprT, variable... Vars >
 struct ArgumentMinimum: Compound< ArgumentMinimum< ExprT >>
 {

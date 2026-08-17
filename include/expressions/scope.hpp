@@ -18,10 +18,11 @@ namespace expressions {
 template< variable... Vars >
 struct Scope: tuple< Vars... > 
 {
-    using values_tuple_type = 
-        tuple< var_value_t< Vars >... >;
+    using values_tuple_type = tuple< var_value_t< Vars >... >;
     using dirty_tuple_type = std::array< bool, sizeof...( Vars )>;
     using variables_tuple_type = tuple< Vars... >;
+    
+    using variables_set_type = make_unique_variables_t< Vars... >;
     static constexpr size_t size = sizeof...( Vars );
 
 protected:
@@ -33,16 +34,19 @@ protected:
         1 == var_order_v< Vars...[ J ]> )
     struct Helper< I, seq< J, Js... >>
     { 
+        using variable_type = Vars...[ J ];
+
         static constexpr tuple_element_t< J, values_tuple_type > 
         get( values_tuple_type const& vals )
         { return std::get< J >( vals ); }
 
-        static constexpr void 
+        static constexpr tuple_element_t< J, values_tuple_type >
         set( values_tuple_type& vals, dirty_tuple_type& flags, 
             tuple_element_t< J, values_tuple_type > const& val )
         { 
             std::get< J >( vals ) = val; 
             std::get< J >( flags ) = true;
+            return val;
         }
 
         static constexpr bool
@@ -60,7 +64,13 @@ protected:
     requires( I == var_id_v< Vars...[ J ]> and
         1 != var_order_v< Vars...[ J ]> )
     struct Helper< I, seq< J, Js... >>
-    { static constexpr bool has_value = false; };
+    { 
+        // should never be instantiated
+        using variable_type = void;
+
+        static constexpr bool 
+        has_value = false; 
+    };
 
     template< size_t I, size_t J, size_t... Js >
     requires( I != var_id_v< Vars...[ J ]> )
@@ -70,16 +80,27 @@ protected:
 
     template< size_t I >
     struct Helper< I, seq<>>
-    { static constexpr bool has_value = false; };
+    { static constexpr bool 
+        has_value = false; };
 
     template< variable Var >
     using helper_for = Helper< var_id_v< Var >, make_seq< size >>;
+
+    template< size_t Id >
+    using helper_for_id = Helper< Id, make_seq< size >>;
 
     template< size_t... Js >
     constexpr void initialize_flags( seq< Js... > )
     {(( std::get< Js >( _flags ) = false ), ... ); }
 
 public:
+    static consteval bool
+    contains_id( size_t Id )
+    { return variables_set_type::contains_id( Id ); }
+
+    template< size_t Id >
+    using variable_t = helper_for_id< Id >::variable_type;
+
     /// @brief determines if the scope has a value for variable I
     template< variable Var >
     static constexpr bool 
@@ -98,10 +119,11 @@ public:
     { return helper_for< Var >::get( _values ); }
 
     /// @brief assigns other to the scoped value of Var
+    /// TODO: should we use result_type here instead of value_type?
     template< variable Var >
-    constexpr void 
+    constexpr typename Var::value_type 
     set_value( typename Var::value_type const& other, Var var = {} ) 
-    { helper_for< Var >::set( _values, _flags, other ); }
+    { return helper_for< Var >::set( _values, _flags, other ); }
 
     /// @brief has a variable's value been assigned by set_value?
     template< variable Var >
@@ -136,12 +158,14 @@ public:
 
     /// @brief invocation against a constant will return the constant's value
     template< auto Value > 
-    constexpr decltype( Value ) operator ()( Constant< Value > ) const
+    constexpr decltype( Value ) 
+    operator ()( Constant< Value > ) const
     { return Value; }
 
     /// @brief invocation against a static will return the static's value
     template< typename T >
-    constexpr T operator ()( StaticValue< T > const& static_value ) const
+    constexpr T 
+    operator ()( StaticValue< T > const& static_value ) const
     { return static_cast< T >( static_value ); }
 
     template< typename T >
@@ -151,11 +175,25 @@ public:
     { return value; }
 
     // @brief sets the value of a variable in this scope
-    template< variable Var >
-    requires( has_value_v< Var >)
-    constexpr void 
-    operator ()( SetVarValue< Var > const& setter )
-    { set_value< Var >( setter.value() ); }
+    // TODO: update this for a more generic SetVar
+    template< size_t Id, auto Value >
+    requires( contains_id( Id ))
+    constexpr var_value_t< variable_t< Id >>
+    operator ()( SetVar< Id, Constant< Value >> const& setter )
+    { return set_value< variable_t< Id >>( Value ); }
+
+    template< size_t Id, typename T >
+    requires( contains_id( Id ))
+    constexpr var_value_t< variable_t< Id >>
+    operator ()( SetVar< Id, StaticValue< T >> const& setter )
+    { return set_value< variable_t< Id >>( 
+        std::get< 0 >( setter ).get_value() ); }
+
+    template< size_t Id, typename T >
+    requires( contains_id( Id ) and not expression< T > )
+    constexpr var_value_t< variable_t< Id >>
+    operator ()( SetVar< Id, T > const& setter )
+    { return set_value< variable_t< Id >>( std::get< 0 >( setter )); }
 
     // @brief invoking with a parameter list will evaluate
     // the comma operator on the invocation of each argument

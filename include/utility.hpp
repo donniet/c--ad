@@ -27,6 +27,25 @@ using std::isspace;
 using std::array;
 using std::function;
 using std::any, std::make_any, std::any_cast;
+using std::is_arithmetic_v;
+
+template< typename T >
+concept arithmetic = is_arithmetic_v< T >;
+
+
+//////////////////
+/// ExactZero ///
+////////////////
+/// 
+/// Represents a unitless numerical zero value
+///
+struct exact_zero 
+{
+    template< typename T >
+    requires( std::is_arithmetic_v< T > )
+    consteval exact_zero( T n ) 
+    { if( n != 0 ) throw "only zero may be added to a value with units"; }
+};
 
 constexpr auto is_greater( auto left, auto right )
 { return left > right; }

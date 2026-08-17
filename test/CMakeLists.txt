@@ -22,6 +22,7 @@ add_executable(test_substitution test_substitution.cpp)
 #add_executable(test_geometry_v1.2 test_geometry.v1.2.cpp)
 add_executable(test_normalize test_normalize.cpp)
 add_executable(test_calculus test_calculus.cpp)
+add_executable(test_solvers test_solvers.cpp)
 
 add_test(NAME test_units COMMAND test_units)
 add_test(NAME test_substitution COMMAND test_substitution)
@@ -29,6 +30,7 @@ add_test(NAME test_expressions COMMAND test_expressions)
 add_test(NAME test_tensors COMMAND test_tensors)
 add_test(NAME test_normalize COMMAND test_normalize)
 add_test(NAME test_calculus COMMAND test_calculus)
+add_test(NAME test_solvers COMMAND test_solvers)
 
 # message("source dir ${CMAKE_SOURCE_DIR}")
 

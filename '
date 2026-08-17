@@ -391,6 +391,8 @@ struct base_unit< scalar_unit_id, T >
     constexpr base_unit& operator=( scalar_type const& other )
     { value = other; return *this; }
     // implicit cast operator
+    constexpr operator scalar_type() const
+    { return value; }
     constexpr operator bool() const
     { return value != 0; }
     constexpr base_unit() : value{ static_cast< scalar_type >( 0 )} { }
@@ -422,7 +424,7 @@ struct base_unit< zero_unit_id, T >
     { return *this; }
 
     template< unit_id_type Id, arithmetic U >
-    consteval operator base_unit< Id, U >() const
+    explicit consteval operator base_unit< Id, U >() const
     { return base_unit< Id, T >{ U{ 0 }}; }
 
     consteval operator scalar_type() const
@@ -907,14 +909,12 @@ constexpr LeftU operator <<( LeftU const& left, RightU const& right )
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id and
     not is_same_v< typename unit_traits< LeftU >::scalar_type, long double >)
-constexpr bool 
-operator ==( LeftU const& left, RightU const& right )
+bool operator ==( LeftU const& left, RightU const& right )
 { return left.get_value() == right.get_value(); }
 
 template< typename U, typename RightT >
 requires( not unit< RightT > and requires( U l, RightT r) { l == r; } )
-constexpr bool 
-operator ==( base_unit< scalar_unit_id, U > const& left, RightT const& right )
+bool operator ==( base_unit< scalar_unit_id, U > const& left, RightT const& right )
 { return left.get_value() == right; }
 
 // DT: if we are using long doubles, then equality is when the square
@@ -934,31 +934,31 @@ operator ==( LeftU const& left, RightU const& right )
 /// not equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-constexpr bool operator !=( LeftU const& left, RightU const& right )
+bool operator !=( LeftU const& left, RightU const& right )
 { return left.get_value() != right.get_value(); }
 
 /// less than
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-constexpr bool operator <( LeftU const& left, RightU const& right )
+bool operator <( LeftU const& left, RightU const& right )
 { return left.get_value() < right.get_value(); }
 
 /// less than or equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-constexpr bool operator <=( LeftU const& left, RightU const& right )
+bool operator <=( LeftU const& left, RightU const& right )
 { return left.get_value() <= right.get_value(); }
 
 /// greater than
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-constexpr bool operator >( LeftU const& left, RightU const& right )
+bool operator >( LeftU const& left, RightU const& right )
 { return left.get_value() > right.get_value(); }
 
 /// greater than or equal
 template< unit LeftU, unit RightU >
 requires( unit_traits< LeftU >::unit_id == unit_traits< RightU >::unit_id )
-constexpr bool operator >=( LeftU const& left, RightU const& right )
+bool operator >=( LeftU const& left, RightU const& right )
 { return left.get_value() >= right.get_value(); }
 
 // abs

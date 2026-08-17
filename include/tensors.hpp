@@ -816,6 +816,7 @@ template< >
 struct Tensor< Shape< 0 >>
 {
     using shape_type = Shape<>;
+    using elements_tuple_type = tuple< >;
     static constexpr size_t size() { return 0; }
     static constexpr Tensor zero() { return {}; }
 };
@@ -845,7 +846,11 @@ requires( S::size() == 1 + sizeof...( Ts ) and
 struct Tensor< S, T, Ts... > : tuple< T, Ts... >
 {
     using shape_type = S;
+    using elements_tuple_type = tuple< T, Ts... >;
+    using this_type = Tensor< S, T, Ts... >;
     static consteval size_t size() { return 1 + sizeof...( Ts ); }
+    typedef make_seq< size() > for_elements;
+
     // static consteval shape_type shape() { return {}; }
     // TODO: get rid of the static_cast
     template< typename... Indices >
@@ -867,6 +872,13 @@ struct Tensor< S, T, Ts... > : tuple< T, Ts... >
     static constexpr Tensor zero()
     { return zero_helper( make_seq< size() >{} ); }
 
+    constexpr elements_tuple_type const&
+    elements() const
+    { return *this; }
+
+    constexpr operator elements_tuple_type const&() const
+    { return elements(); }
+
     template< typename... Us >
     constexpr Tensor& operator=( Tensor< shape_type, Us... > const& other )
     {
@@ -884,6 +896,24 @@ struct Tensor< S, T, Ts... > : tuple< T, Ts... >
     }
 
 private:
+    template< size_t I >
+    struct Element
+    { using type = Ts...[ I - 1 ]; };
+
+    template< >
+    struct Element< 0 >
+    { using type = T; };
+
+public:
+    template< size_t I >
+    using element_t = Element< I >::type;
+
+    template< size_t I >
+    constexpr element_t< I >
+    at() const
+    { return std::get< I >( elements() ); }
+
+private:
     template< typename U, size_t I, size_t... Is >
     void set_elements_helper( U value, seq< I, Is... > )
     { 
@@ -891,7 +921,43 @@ private:
         (( get< Is >( *this ) = static_cast< Ts >( value )), ... );
     }
 
+    template< size_t I, typename... Args >
+    struct Invoker
+    {
+        using type = element_t< I >;
+        static constexpr type
+        value( this_type const& ten, Args const&... )
+        { return std::get< I >( ten.elements() ); }
+    };
+
+    template< size_t I, typename... Args >
+    requires( std::is_invocable_v< element_t< I >, Args... > )
+    struct Invoker< I, Args... >
+    {
+        using type = std::invoke_result_t< element_t< I >, Args... >;
+        static constexpr type
+        value( this_type const& ten, Args const&... args )
+        { return std::invoke( ten.template at< I >(), args... ); }
+    };
+
+    template< typename Seq, typename... Args >
+    struct InvokeHelper;
+
+    template< size_t... Is, typename... Args >
+    struct InvokeHelper< seq< Is... >, Args... >
+    {
+        using type = Tensor< S, typename Invoker< Is, Args... >::type... >;
+        static constexpr type
+        value( this_type const& ten, Args const&... args )
+        { return { Invoker< Is, Args... >::value( ten, args... )... }; }
+    };
+
 public:
+    template< typename... Args >
+    constexpr typename InvokeHelper< for_elements, Args... >::type
+    operator ()( Args const&... args ) const
+    { return InvokeHelper< for_elements, Args... >::value( *this, args... ); }
+
     constexpr Tensor( ) = default;
     constexpr Tensor( int val )
     { set_elements_helper( val, make_seq< shape_type::size() >{} ); }
@@ -1803,7 +1869,7 @@ struct TensorNorm< 2, TensorT >
     { 
         auto ten2 = make_tensor< tensor_shape_t< TensorT >>(
             ( tensor_get< Is >( ten ) * tensor_get< Is >( ten ) )... );
-        return std::sqrt( sum( ten2 ));
+        return sqrt( sum( ten2 ));
     }
 };
 } // namespace detail
@@ -2267,5 +2333,13 @@ rotate_plane_matrix( AngleT angle )
 // };
 
 } // namespace tensors
+
+namespace std {
+
+template< size_t I, tensors::shape S, typename... Ts >
+struct tuple_element< I, tensors::Tensor< S, Ts... >>
+{ using type = Ts...[ I ]; }; 
+
+};
 
 #endif

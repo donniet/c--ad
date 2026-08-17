@@ -2,6 +2,7 @@
 #define __EXPRESSIONS_STATIC_VALUE_HPP__
 
 #include "expressions/forward_decl.hpp"
+#include "expressions/constant.hpp"
 
 #include <type_traits>
 
@@ -57,6 +58,34 @@ private:
     value_type _value;
 };
 
+template< typename T >
+struct MakeStaticExpr
+{ 
+    using type = StaticValue< T >;
+    static constexpr type
+    value( T const& val )
+    { return { val }; }
+};
+
+template< arithmetic auto X >
+requires( X == 0 )
+struct MakeStaticExpr< Constant< X >>
+{
+    using type = Constant< 0 >;
+    static consteval type
+    value( Constant< X > )
+    { return {}; }
+};
+
+template< >
+struct MakeStaticExpr< exact_zero >
+{
+    using type = Constant< 0 >;
+    static consteval type
+    value( exact_zero )
+    { return {}; }
+};
+
 /// @brief helper to create expressions with unchanging values
 /// @tparam T the type of this expression
 /// @param value the value of this expression
@@ -64,8 +93,20 @@ private:
 ///
 template< typename T >
 requires( not is_expression_v< T > )
-constexpr StaticValue< T > static_expr( T const& value )
-{ return StaticValue< T >{ value }; }
+constexpr typename MakeStaticExpr< T >::type 
+static_expr( T const& val )
+{ return MakeStaticExpr< T >::value( val ); }
+
+/// we return a Constant< 0 > if the value is exactly zero
+//template< > 
+//consteval Constant< 0 >
+//static_expr( exact_zero )
+//{ return {}; }
+//
+//template< auto N >
+//consteval Constant< N >
+//static_expr( Constant< N > )
+//{ return {}; }
 
 // results in a static expression unless T is already an expression type
 template< typename T >
@@ -75,6 +116,15 @@ struct MakeExpression
     static constexpr type 
     value( T const& value )
     { return type{ value }; }
+};
+
+template< >
+struct MakeExpression< exact_zero >
+{
+    using type = Constant< 0 >;
+    static consteval type
+    value( exact_zero )
+    { return {}; }
 };
 
 template< expression T >

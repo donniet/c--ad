@@ -71,6 +71,9 @@ struct IsDiscriminatedOperation: std::false_type { };
 template< typename T >
 struct IsCompoundExpression: std::false_type { };
 
+//template< template< typename... > typename Op >
+//struct IsUnionOperation: std::false_type { };
+
 // all compound expressions are expressions
 template< typename T >
 requires( IsCompoundExpression< T >::value )
@@ -98,8 +101,28 @@ template< template< auto, typename... > class Op, auto Discriminator,
 struct IsCompoundExpression< Op< Discriminator, Args... >>:
     IsDiscriminatedOperation< Op > { };
 
+//template< template< typename, typename... > typename Op, typename First,
+//    typename... Rest >
+//struct IsCompoundExpression< Op< First, Rest... >>:
+//    IsUnionOperation< Op >
+//{ };
+
 template< typename T >
 constexpr bool is_compound_expression_v = IsCompoundExpression< T >::value;
+
+//template< typename T >
+//struct IsUnionExpression: std::false_type { };
+//
+//template< template< typename, typename... > typename Op, typename First,
+//    typename... Rest >
+//struct IsUnionExpression< Op< First, Rest... >>: IsUnionOperation< Op > { };
+//
+//template< typename T >
+//constexpr bool is_union_expression_v = IsUnionExpression< T >::value;
+//
+//template< typename T >
+//concept union_expression = is_union_expression_v< T >;
+
 
 /// @brief is true if T is an expression type
 /// @tparam T is the type to be checked
@@ -145,20 +168,42 @@ private:
 template< size_t I, typename ExprT >
 struct GetArgument;
 
-template< size_t I, template< typename... > class Op, typename... Args >
-struct GetArgument< I, Op< Args... >>
+//
+//template< size_t I, template< typename... > class Op, typename... Args >
+//struct GetArgument< I, Op< Args... >>
+//{
+//    using type = Args...[ I ];
+//    static constexpr type const&
+//    value( Op< Args... > const& expr )
+//    { return std::get< I >( expr ); }
+//};
+//
+//template< size_t I, template< auto, typename... > class Op, auto Discriminator,
+//    typename... Args >
+//struct GetArgument< I, Op< Discriminator, Args... >>
+//{
+//    using type = Args...[ I ];
+//    static constexpr type const&
+//    value( Op< Discriminator, Args... > const& expr )
+//    { return std::get< I >( expr ); }
+//};
+
+template< size_t I, compound_expression CompoundT >
+struct GetArgument< I, CompoundT >
 {
-    using type = Args...[ I ];
-    static constexpr type const&
-    value( Op< Args... > const& expr )
-    { return std::get< I >( expr ); }
+    using type = std::remove_cvref_t< 
+        std::tuple_element_t< I, typename CompoundT::arguments_tuple >>;
+
+    static constexpr type
+    value( CompoundT const& expr )
+    { return std::get< I >( expr.args() ); }
 };
 
 template< size_t I, typename ExprT >
 using expression_argument_t = GetArgument< I, ExprT >::type;
 
 template< size_t I, typename ExprT >
-constexpr expression_argument_t< I, ExprT > const& 
+constexpr expression_argument_t< I, ExprT > 
 get_argument( ExprT const& expr )
 { return GetArgument< I, ExprT >::value( expr ); }
 
@@ -455,6 +500,88 @@ template< typename Var, typename T >
 concept variable_of = is_variable_v< Var > and 
     is_same_v< typename Var::value_type, T >;
 
+/////////////////////////
+/// Variable Id List ///
+///////////////////////
+///
+/// An array of the ids of the given variables in the given order
+
+template< size_t... Ids >
+struct VariableIdList
+{
+    static constexpr size_t
+    size = sizeof...( Ids );
+
+    constexpr std::array< size_t, size >
+    as_array() const
+    { return { Ids... }; }
+
+    constexpr operator std::array< size_t, size >() const
+    { return as_array(); }
+
+    consteval size_t 
+    at( size_t index ) const
+    { return as_array()[ index ]; }
+};
+
+template< variable... Vars >
+consteval VariableIdList< var_id_v< Vars >... >
+make_var_id_list( Vars const&... )
+{ return {}; }
+
+template< variable... Vars >
+consteval VariableIdList< var_id_v< Vars >... >
+make_var_id_list()
+{ return {}; }
+
+template< typename T >
+struct IsVariableIdList: false_type { };
+
+template< size_t... Ids >
+struct IsVariableIdList< VariableIdList< Ids... >>: true_type { };
+
+template< typename T >
+concept variable_id_list = IsVariableIdList< T >::value; 
+
+template< variable_id_list auto VarList, typename... Ts >
+requires( VarList.size == sizeof...( Ts ))
+struct MakeVarTuple
+{
+    typedef make_seq< VarList.size > for_ids;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        using type = tuple< Var< VarList.at( Is ), Ts...[ Is ] >... >;
+        static constexpr type
+        value()
+        { return {}; }
+
+        static constexpr type
+        value( Ts const&... ts )
+        { return { ts... }; }
+    };
+
+    using type = Helper< for_ids >::type;
+    static constexpr type
+    value()
+    { return Helper< for_ids >::value(); }
+
+    static constexpr type
+    value( Ts const&... ts )
+    { return Helper< for_ids >::value( ts... ); }
+};
+
+// TODO: implement value-taking version with an Element< I > helper for vars
+// that don't take constructor params
+template< variable_id_list auto VarList, typename... Ts >
+consteval MakeVarTuple< VarList, Ts... >::type
+make_var_tuple( Ts const&... )
+{ return MakeVarTuple< VarList, Ts... >::value(); }
+
 ////////////////////////////////////////////
 /// Increasing and Decreasing Var Order ///
 //////////////////////////////////////////
@@ -511,6 +638,95 @@ struct IsSecondOrderVar< Var< I, Var< I, T >>>: std::true_type
 template< typename T >
 concept second_order_variable = IsSecondOrderVar< T >::value;
 
+///////////////
+/// SetVar ///
+/////////////
+///
+template< size_t Id, typename ExprT >
+struct SetVar;
+
+//template< >
+//struct IsDiscriminatedOperation< SetVar >: true_type { };
+template< size_t Id, typename ExprT >
+struct IsExpression< SetVar< Id, ExprT >>: true_type { };
+
+template< typename T >
+struct IsSetExpression: false_type { };
+
+template< size_t Id, typename ExprT >
+struct IsSetExpression< SetVar< Id, ExprT >>: true_type { };
+
+template< typename T >
+constexpr bool is_set_expression_v = IsSetExpression< T >::value;
+
+template< typename T >
+concept set_expression = is_set_expression_v< T >;
+
+///////////////////////
+/// Set Expression ///
+/////////////////////
+///
+/// @brief an operation which sets the value of a variable
+/// in a given scope
+///
+/// NOTE: we have to bootstrap this because otherwise we get circular 
+/// definitions of Var due to C++ stdlib constraint checking of tuple
+///
+/// TODO: should we define our own tuple?!
+template< size_t Id, typename ExprT >
+struct SetVar
+{
+    using arguments_tuple = tuple< ExprT >;
+    static constexpr size_t arguments_size = 1;
+
+    static constexpr ExprT const&
+    value( ExprT const& expr )
+    { return expr; }
+
+    constexpr arguments_tuple const&
+    args() const
+    { return { expr() }; }
+
+    template< size_t I >
+    requires( I == 0 )
+    constexpr ExprT const&
+    arg() const
+    { return expr(); }
+
+    constexpr ExprT const& 
+    expr() const
+    { return _expr; }
+
+    constexpr SetVar( ExprT const& expr ): _expr{ expr } { }
+    constexpr SetVar( SetVar const& ) = default;
+    constexpr SetVar() = default;
+
+private:
+    ExprT _expr;
+};
+
+}; // namespace expressions
+
+// HACK
+namespace std {
+
+template< size_t I, size_t Id, typename ExprT >
+struct tuple_element< I, expressions::SetVar< Id, ExprT >>: 
+    tuple_element< I, tuple< ExprT >> { };
+
+template< size_t Id, typename ExprT >
+struct tuple_size< expressions::SetVar< Id, ExprT >>: 
+    tuple_size< tuple< ExprT >> { };
+
+template< size_t I, size_t Id, typename ExprT >
+requires( I == 0 )
+constexpr ExprT const& 
+get( expressions::SetVar< Id, ExprT > const& expr )
+{ return expr.expr(); }
+
+} // namespace std
+
+namespace expressions {
 /////////////
 /// Func ///
 ///////////
@@ -538,6 +754,7 @@ struct IsExpression< Func< FormulaT, Vars... >>: std::true_type { };
 template< typename T, typename... Vars >
 struct Result< Func< T, Vars... >>: Result< T > { };
 
+
 //////////////
 /// Scope ///
 ////////////
@@ -556,6 +773,9 @@ struct IsScope< Scope< Vars... >>: integral_constant< bool, true > { };
 
 template< typename T >
 constexpr bool is_scope_v = IsScope< T >::value;
+
+template< typename T >
+concept scope = is_scope_v< T >;
 
 // scope contains details
 namespace detail {
@@ -595,42 +815,6 @@ get_value( ScopeT const& scope )
 //template< variable Var, typename ScopeT >
 //constexpr string get_name( ScopeT const& scope )
 //{ scope.template get_name< Var >(); }
-
-///////////////////////
-/// Set Expression ///
-/////////////////////
-///
-/// @brief an operation which sets the value of a variable
-/// in a given scope
-template< variable Var >
-struct SetVarValue
-{
-    using variable_type = Var;
-    using value_type = variable_type::value_type;
-    using arguments_tuple = tuple< variable_type >;
-
-    // setting a variable does not result in a value, unlike in C.
-    // this effectively forbids composing a set expression in any other 
-    // expressions
-    using result_type = void;
-
-    constexpr value_type const& value() const
-    { return _value; }
-
-    constexpr SetVarValue( Var const& var, value_type const& value ):
-        _var{ var }, _value{ value }
-    { }
-
-private:
-    Var _var;
-    value_type _value;
-};
-
-/// @brief helper function to construct SetVarValue expressions
-template< variable Var >
-constexpr SetVarValue< Var > 
-set_variable( typename Var::value_type const& value, Var var = {} )
-{ return { var, value }; }
 
 /// @brief type of a variable given the index, order, and base type
 template< size_t I, typename T, size_t Order >
@@ -686,7 +870,6 @@ struct SequentialVars
 
 template< size_t Start, typename... Ts >
 using sequential_variables_t = SequentialVars< Start, Ts... >::type;
-
 
 } // namespace expressions
 

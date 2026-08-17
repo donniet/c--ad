@@ -5,7 +5,7 @@
 #include "units.hpp"
 
 using std::true_type, std::false_type, std::integral_constant;
-using std::is_arithmetic_v;
+using std::is_arithmetic_v, std::is_integral_v;
 
 namespace expressions {
 
@@ -21,6 +21,17 @@ using units::asin, units::acos, units::atan, units::atan2;
 using units::sqrt, units::pow, units::exp, units::log;
 
 } // namespace impl
+
+using units::abs;
+using units::sin, units::cos, units::tan;
+using units::asin, units::acos, units::atan, units::atan2;
+using units::sqrt, units::pow, units::exp, units::log;
+
+template< typename T >
+concept integral = is_integral_v< T >;
+
+template< typename T >
+concept arithmetic = is_arithmetic_v< T >;
 
 /////////////////
 /// Negation ///
@@ -62,7 +73,7 @@ struct Sum: Compound< Sum< Args... >>
 { 
     static constexpr auto 
     value( Args const&... args )
-    { return ( args + ... + 0 ); }
+    { return ( args + ... ); }
 
     using Compound< Sum< Args... >>::Compound;
 };
@@ -82,7 +93,7 @@ struct Difference: Compound< Difference< Ts... >>
 {
     static constexpr auto
     value( Ts const&... ts )
-    { return ( ts - ... - 0 ); }
+    { return ( ts - ... ); }
 
     using Compound< Difference< Ts... >>::Compound;
 };
@@ -102,7 +113,7 @@ struct Product: Compound< Product< Args... >>
 {
     static constexpr auto
     value( Args const&... args )
-    { return ( args * ... * 1 ); }
+    { return ( args * ... ); }
 
     using Compound< Product< Args... >>::Compound;
 };
@@ -122,7 +133,7 @@ struct Quotient: Compound< Quotient< Args... >>
 {
     static constexpr auto
     value( Args const&... args )
-    { return ( args / ... / 1 ); }
+    { return ( args / ... ); }
 
     using Compound< Quotient< Args... >>::Compound;
 };
@@ -154,23 +165,93 @@ struct SquareRoot: Compound< SquareRoot< T >>
 template< typename Base, typename Exp >
 struct Pow;
 
+template< integral auto N, typename Base >
+struct PowN;
+
 template< >
 struct IsCompoundOperation< Pow >: true_type { };
 
-// only powers of constants are allowed for unit types
-template< typename Base, int N >
-struct Pow< Base, Constant< N >>: Compound< Pow< Base, Constant< N >>>
+template< >
+struct IsDiscriminatedOperation< PowN >: true_type { };
+
+/// @brief Pow expression selector based on exponent
+template< typename BaseT, typename ExpT >
+struct PowerExpr
+{
+    using type = Pow< BaseT, ExpT >;
+    static constexpr type
+    value( BaseT const& base, ExpT const& ex )
+    { return { base, ex }; }
+};
+
+template< typename BaseT, integral auto N >
+struct PowerExpr< BaseT, Constant< N >>
+{
+    using type = PowN< N, BaseT >;
+    static constexpr type
+    value( BaseT const& base, Constant< N > )
+    { return { base }; }
+};
+
+template< typename BaseT, typename ExpT >
+using power_expr_t = PowerExpr< BaseT, ExpT >::type;
+
+template< typename BaseT, typename ExpT >
+constexpr power_expr_t< BaseT, ExpT >
+power_expr( BaseT const& base, ExpT const& ex )
+{ return PowerExpr< BaseT, ExpT >::value( base, ex ); }
+
+template< integral auto N, typename Base >
+struct PowN: Compound< PowN< N, Base >>
 {
     static constexpr auto
-    value( Base const& base, Constant< N > )
-    { return impl::pow< N >( base ); }
+    value( Base const& base )
+    { return pow< N >( base ); }
 
-    using Compound< Pow< Base, Constant< N >>>::Compound;
+    using Compound< PowN< N, Base >>::Compound;
 };
+
+// only powers of constants are allowed for unit types
+//template< typename Base, auto N >
+//requires( integral< decltype( N )> )
+//struct Pow< Base, Constant< N >>: 
+//    PowN< N, Base >
+//{
+//    // overriding PowN's statics and typedefs
+//    using expression_type = Pow< Base, Constant< N >>;
+//    using arguments_tuple = tuple< Base, Constant< N >>;
+//    static constexpr size_t arguments_size = 2;
+//
+//    constexpr arguments_tuple
+//    args() const
+//    { return { PowN< N, Base >::template arg< 0 >(), Constant< N >{} }; }
+//
+//    template< size_t I >
+//    requires( I == 0 )
+//    constexpr Base const&
+//    arg() const
+//    { return PowN< N, Base >::template arg< 0 >(); }
+//
+//    template< size_t I >
+//    requires( I == 1 )
+//    constexpr Constant< N >
+//    arg() const
+//    { return Constant< N >{}; }
+//
+//    static constexpr auto
+//    value( Base const& base, Constant< N > )
+//    { return PowN< N, Base >::value( base ); }
+//
+//    Pow( Base const& base, Constant< N > ):
+//        PowN< N, Base >{ base } { };
+//    Pow( Pow const& ) = default;
+//    Pow( ) = default;
+//};
 
 // non-unit expressions reduce to the std::pow function
 template< typename Base, typename Ex >
-requires( not units::unit< result_t< Base >> )
+requires( not units::unit< result_t< Base >> and 
+    not is_constant_v< Ex > )
 struct Pow< Base, Ex >: Compound< Pow< Base, Ex >>
 {
     static constexpr auto
@@ -380,6 +461,75 @@ struct Abs: Compound< Abs< T >>
     using Compound< Abs< T >>::Compound;
 };
 
+/////////////////////////
+/// Identically Zero ///
+///////////////////////
+/// 
+/// Concept to determine if an expression will always evaluate to zero
+///
+/// NOTE: this will always likely have gaps since it would depend on things like
+/// is_identically_equal
+template< typename ExprT >
+struct IsIdenticallyZero: false_type { };
+
+template< >
+struct IsIdenticallyZero< exact_zero >: true_type { };
+
+template< arithmetic auto N >
+struct IsIdenticallyZero< Constant< N >>: integral_constant< bool, N == 0 > { };
+
+// use the bool conversion operator
+template< units::unit auto M >
+struct IsIdenticallyZero< Constant< M >>: integral_constant< bool, M > { };
+
+template< typename T, typename U >
+struct IsIdenticallyZero< Sum< T, U >>: integral_constant< bool,
+    IsIdenticallyZero< T >::value and IsIdenticallyZero< U >::value > { };
+
+template< typename T, typename U >
+struct IsIdenticallyZero< Difference< T, U >>: integral_constant< bool,
+    IsIdenticallyZero< T >::value and IsIdenticallyZero< U >::value > { };
+
+template< typename T, typename U >
+struct IsIdenticallyZero< Product< T, U >>: integral_constant< bool,
+    IsIdenticallyZero< T >::value or IsIdenticallyZero< U >::value > { };
+
+template< typename T >
+struct IsIdenticallyZero< Negation< T >>: IsIdenticallyZero< T > { };
+
+template< typename T, typename U >
+struct IsIdenticallyZero< Quotient< T, U >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< SquareRoot< T >>: IsIdenticallyZero< T > { };
+
+template< long N, typename T >
+struct IsIdenticallyZero< PowN< N, T >>: IsIdenticallyZero< T > { };
+
+template< typename T, typename U >
+struct IsIdenticallyZero< Pow< T, U >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< Sine< T >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< Tangent< T >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< Arcsine< T >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< Arctangent< T >>: IsIdenticallyZero< T > { };
+
+template< typename T >
+struct IsIdenticallyZero< Abs< T >>: IsIdenticallyZero< T > { };
+
+template< typename ExprT >
+constexpr bool is_identically_zero_v = IsIdenticallyZero< ExprT >::value;
+
+template< typename T >
+concept identically_zero = is_identically_zero_v< T >;
+
 //////////////////
 /// Operators ///
 ////////////////
@@ -456,36 +606,6 @@ abs( T const& arg )
 { return Abs< T >{ arg }; }
 
 // trig functions
-template< typename T >
-requires( not expression< T > )
-constexpr auto sin( T const& arg )
-{ return impl::sin( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto cos( T const& arg )
-{ return impl::cos( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto tan( T const& arg )
-{ return impl::tan( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto asin( T const& arg )
-{ return impl::asin( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto acos( T const& arg )
-{ return impl::acos( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto atan( T const& arg )
-{ return impl::atan( arg ); }
-
 template< expression T >
 constexpr auto sin( T const& arg )
 { return Sine< T >{ arg }; }
@@ -524,11 +644,6 @@ requires( not expression< U > )
 constexpr auto atan2( T const& num, U const& den )
 { return Arctangent2< T, StaticValue< U >>{ num, static_expr( den ) }; }
 
-template< typename T, typename U >
-requires( not expression< U > and not expression< T > )
-constexpr auto atan2( T const& num, U const& den )
-{ return impl::atan2( num, den ); }
-
 // sqrt
 template< expression T >
 constexpr auto sqrt( T const& arg )
@@ -546,25 +661,27 @@ constexpr auto pow( T const& base, U const& ex )
 { return Pow< T, StaticValue< U >>{ base, static_expr( ex )}; }
 
 template< typename T, expression U >
-requires( not expression< T > )
+requires( not expression< T > and not is_constant_v< U > )
 constexpr auto pow( T const& base, U const& ex )
 { return Pow< StaticValue< T >, U >{ static_expr( base ), ex }; }
 
 template< expression T, expression U >
-constexpr auto pow( T const& base, U const& ex )
+requires( not is_constant_v< U > )
+constexpr auto 
+pow( T const& base, U const& ex )
 { return Pow< T, U >{ base, ex }; }
 
+template< expression T, integral auto N >
+constexpr auto 
+pow( T const& base, Constant< N > )
+{ return PowN< N, T >{ base }; }
+
+template< integral auto N, expression T >
+constexpr auto 
+pow( T const& base )
+{ return PowN< N, T >{ base }; }
+
 // log and exp
-template< typename T >
-requires( not expression< T > )
-constexpr auto log( T const& arg )
-{ return impl::log( arg ); }
-
-template< typename T >
-requires( not expression< T > )
-constexpr auto exp( T const& arg )
-{ return impl::exp( arg ); }
-
 template< expression T >
 constexpr auto log( T const& arg )
 { return Log< T >{ arg }; }

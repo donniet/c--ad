@@ -44,8 +44,6 @@ struct Constant
     template< typename... Ts >
     constexpr value_type operator ()( Ts const&... ) const
     { return value; }
-
-    constexpr Constant() = default;
 };
 
 template< typename T >

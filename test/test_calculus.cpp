@@ -2,6 +2,7 @@
 
 #include "expressions/comparison.hpp"
 #include "expressions/calculus.hpp"
+#include "units.hpp"
 
 #include <print>
 #include <assert.h>
@@ -12,13 +13,28 @@ using namespace expressions;
 static_assert( closed_expression< Func<expressions::Constant<0>, expressions::Var<0, float>>>,
     "empty sub is closed" );
 
+bool test_grad();
+bool test_derivatives();
+
+static auto 
+d = []( auto f, auto x ) constexpr
+{ return derive( f, x ); };
+
+
 int main( int ac, char* av[] )
 {
-    auto d = [&]( auto f, auto x ) constexpr
-    { return derive( f, x ); };
+    println("TESTING EXPRESSION CALCULUS...");
 
-    print("TESTING EXPRESSION CALCULUS...");
+    assert( test_derivatives() );
+    assert( test_grad() );
 
+    println( "SUCCESS." );
+    return EXIT_SUCCESS;
+}
+
+bool test_derivatives()
+{
+    print( "TESTING DERIVATIVES..." );
     Var< 0, float > x;
     Var< 1, float > y;
 
@@ -82,17 +98,47 @@ int main( int ac, char* av[] )
     assert( d( d( sin(y), x ), x )( 0 ) == 0 );    // unrelated variable stays 0
     assert( d( d( x * x, x ), x )( 3 ) == 2 );     // d^2(x^2)/dx^2 == 2
 
-    // NOTE: Abs<T>'s derivative is explicitly unimplemented in calculus.hpp
-    // (static_assert(false, "piece-wise functions are not implemented yet")), and
-    // differentiating a Var with respect to a *different* variable it structurally
-    // depends on (second-order/higher-order variables) is likewise unimplemented
-    // (static_assert(false, "second-order variable derivative not implemented")).
-    // Both are hard compile errors on instantiation, so neither is tested here.
-    //
-    // NOTE: tuple<Ts...> and Tensor<S,Ts...> have element-wise derivative rules,
-    // but aren't separately exercised here -- their correctness follows directly
-    // from the scalar rules already tested above, applied element-by-element.
-
     println( "SUCCESS." );
-    return EXIT_SUCCESS;
+    return true;
 }
+
+bool test_grad()
+{
+    print( "TESTING GRADIANT..." );
+    Var< 0, Length > x;
+    Var< 1, Length > y;
+
+    auto bin1 = pow< 2 >( x - 2_ft ); //, 2_c );
+    auto bin2 = pow( y - 3_ft, 2_c );
+
+    static_assert( std::is_same_v< std::remove_cv_t< decltype( bin1 )>,
+        PowN< 2, Difference< Var< 0, Length >, StaticValue< Length >>>> );
+
+    Length l0 = 5_ft - 2_ft;
+    Length l1 = StaticValue< Length >{ 3_ft } - 2_ft;
+    Area c0 = pow< 2 >( 3_ft );
+    Area c1 = pow< 2 >( Constant< 3_ft >{} );
+    Area c2 = pow< 2 >( StaticValue< Length >{ 3_ft } );
+    Area c3 = pow< 2 >( StaticValue< Length >{ 5_ft } - 2_ft )();
+    
+    assert( c0 == c1 and c1 == c2 and c2 == c3 );
+
+    Area b = bin1( 5_ft );
+
+    auto dbin1_x = derive( bin1, x );
+    auto dbin1_y = derive( bin1, y );
+    auto dbin2_x = derive( bin2, x );
+    auto dbin2_y = derive( bin2, y );
+
+    Length out = dbin1_x( 5_ft );
+
+    println( "d_x((x-2_ft)^2)(5_ft) == {}", out );
+    assert( dbin1_x( 5_ft ) == 6_ft );
+
+//    static_assert( std::is_same_v< std::remove_cv_t< decltype( dbin1_x )>,
+//        std::remove_cv_t< decltype( 2_c * ( x - 2_ft ))>> );
+    println( "SUCCESS." );
+    return true;
+}
+
+

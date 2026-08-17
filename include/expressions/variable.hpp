@@ -526,7 +526,7 @@ struct IsClosedExpression: IsExpression< T > { };
 
 template< expression T >
 struct IsClosedExpression< T >: std::integral_constant< bool,
-    ( free_variables_t< T >::size == 0 )> { };
+    expression< T > and ( free_variables_t< T >::size == 0 )> { };
 
 /// @brief A closed expression contains no free (unbound) variables
 template< typename T >
@@ -534,7 +534,7 @@ concept closed_expression = IsClosedExpression< T >::value;
 
 /// @brief an open expression contains free (unbound) variables.
 template< typename T >
-concept open_expression = not closed_expression< T >;
+concept open_expression = expression< T > and not closed_expression< T >;
 
 ///////////////////////////////////
 /// Substitution Compatibility ///
@@ -564,6 +564,12 @@ struct IsCompatibleVarSub< Id, Var< Id, T >, S >:
 template< size_t Id, expression ExprT, typename S >
 struct IsCompatibleVarSub< Id, Var< Id, ExprT >, S >:
     std::integral_constant< bool, IsCompatibleVarSub< Id, ExprT, S >::value >
+{ };
+
+// compatibility with SetVar
+template< size_t Id, size_t Jd, typename T, typename S >
+struct IsCompatibleVarSub< Id, SetVar< Jd, T >, S >:
+    IsCompatibleVarSub< Id, T, S >
 { };
 
 /// @brief we are compatible to sub into a function if we can sub into the 
@@ -596,6 +602,16 @@ template< size_t Id, template< typename... > class Op, typename... Args,
 requires( compound_expression< Op< Args... >> and not
     is_substitution_expression_v< Op< Args... >> )
 struct IsCompatibleVarSub< Id, Op< Args... >, S >:
+    IsCompatibleVarSub< Id, std::tuple< Args... >, S > 
+{ };
+
+/// @brief we are compatible to sub into a compound expression if we are
+///        compatible with at least one arg (same as tuples)
+template< size_t Id, template< auto, typename... > class Op, auto Discriminator,
+    typename... Args, typename S >
+requires( compound_expression< Op< Discriminator, Args... >> and not
+    is_substitution_expression_v< Op< Discriminator, Args... >> )
+struct IsCompatibleVarSub< Id, Op< Discriminator, Args... >, S >:
     IsCompatibleVarSub< Id, std::tuple< Args... >, S > 
 { };
 
@@ -656,6 +672,17 @@ private:
         static constexpr type
         value( Var const&, referent_type const& sub )
         { return sub; }
+    };
+
+    // we cannot substitute for the variable being assigned in a set expression
+    template< size_t Jd, typename ExprJ >
+    requires( Jd != Id )
+    struct Parser< SetVar< Jd, ExprJ >>
+    {
+        using type = SetVar< Jd, typename Parser< ExprJ >::type >;
+        static constexpr type
+        value( SetVar< Jd, ExprJ > const& expr, referent_type const& sub )
+        { return { Parser< ExprJ >::value( std::get< 0 >( expr ), sub ) }; }
     };
 
     // parser for func expressions
@@ -1316,6 +1343,10 @@ struct Substituter {
 
     typedef make_seq< bound_variables_type::size > for_bindings;
 
+    template< typename T >
+    static constexpr bool open_or_non_expression_v = not expression< T > or 
+        open_expression< T >;
+
     // helper to implement the substitution operation via SubstituteForIdSeq
     template< typename Seq >
     struct Helper;
@@ -1326,8 +1357,8 @@ struct Substituter {
     // case: the resulting expression after the substitution is closed, 
     //       evaluate it.
     template< size_t... Is >
-    requires( closed_expression< substitute_for_id_seq_t< 
-        seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >> )
+    requires( closed_expression< substitute_for_id_seq_t< seq< var_id_of< Is >... >, 
+        formula_type, referent_t< Is >... >> )
     struct Helper< seq< Is... >>
     {
         using type = result_t< substitute_for_id_seq_t< 
@@ -1341,7 +1372,7 @@ struct Substituter {
 
     // case: the resultant expression will be open, return it
     template< size_t... Is >
-    requires( open_expression< substitute_for_id_seq_t< 
+    requires( open_or_non_expression_v< substitute_for_id_seq_t< 
         seq< var_id_of< Is >... >, formula_type, referent_t< Is >... >> )
     struct Helper< seq< Is... >>
     {
@@ -1414,6 +1445,14 @@ requires( compound_expression< Op< Args... >> and
 struct GetFreeVars< Op< Args... >>: GetFreeVars< tuple< Args... >> 
 { };
 
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+requires( compound_expression< Op< Discriminator, Args... >> and 
+    not is_substitution_expression_v< Op< Discriminator, Args... >> )
+struct GetFreeVars< Op< Discriminator, Args... >>: 
+    GetFreeVars< tuple< Args... >>
+{ };
+
 /// @brief variables have a single free variable plus any variables in the
 ///        the nested type T
 template< size_t I, typename T >
@@ -1454,6 +1493,30 @@ struct GetFreeVars< Var< I, T >>
     static constexpr type
     value( Var< I, T > const& var )
     { return { var }; }
+};
+
+// variable Id is not considered free in the expression T
+template< size_t Id, typename T >
+requires( free_variables_t< T >::contains_id( Id ))
+struct GetFreeVars< SetVar< Id, T >> {
+private:
+    using value_variable_set = GetFreeVars< T >::type;
+    using value_type = var_value_t< typename value_variable_set::template 
+        variable_t< Id >>;
+    using this_variables_set = unique_variables< Var< Id, value_type >>;
+
+public:
+    using type = subtract_unique_variables_t< 
+        value_variable_set, this_variables_set >;
+
+    static constexpr type
+    value( SetVar< Id, T > const& expr )
+    {
+        static constexpr this_variables_set this_variable;
+        return subtract_unique_variables(
+            GetFreeVars< T >::value( std::get< 0 >( expr )),
+            this_variable );
+    }
 };
 
 /// @brief trait to identify free variables in an unbound function
@@ -1599,6 +1662,24 @@ public:
     constexpr Func() = default;
 };
 
+template< typename ExprT, variable... Vars >
+constexpr Func< ExprT, Vars... >
+func( ExprT const& expr, Vars const&... vars )
+{ return { expr, vars... }; }
+
+
+/// @brief helper function to construct SetVarValue expressions
+template< variable VarT, typename T >
+constexpr SetVar< var_id_v< VarT >, make_expression_t< T >> 
+set_variable( T const& val, VarT var = {} )
+{ return { var, make_expression( val )}; }
+
+/// @brief implementation of operator= from Var<...>
+//template< size_t I, typename T >
+//template< typename U >
+//constexpr SetVar< I, make_expression_t< U >> 
+//Var< I, T >::operator =( U const& expr ) const
+//{ return { make_expression( expr )}; }
 
 ////////////
 /// Var ///
@@ -1647,9 +1728,12 @@ public:
     /// @brief operator= is overriden to construct a SetVarValue 
     /// expression
     /// HACK: this is not typical of C++ classes and may cause problems
-    constexpr SetVarValue< Var > 
-    operator=( value_type const& other ) const
-    { return { *this, other }; }
+    /// NOTE: it already did, by creating circular definitions with SetVar in 
+    /// stdc++lib
+    template< typename U >
+    constexpr SetVar< I, make_expression_t< U >> 
+    operator =( U const& expr ) const
+    { return { make_expression( expr )}; }
 
     constexpr string const& 
     name() const 

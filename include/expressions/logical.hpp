@@ -216,16 +216,16 @@ template< typename ExprT >
 constexpr bool is_canonical_v = IsCanonical< ExprT >::value;
 
 // logical operations
-template< expression T, expression U >
+template< open_expression T, open_expression U >
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< T, U >{ left, right }; }
 
-template< expression T, typename U >
+template< open_expression T, typename U >
 requires( not expression< U > )
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< T, StaticValue< U >>{ left, static_expr( right )}; }
 
-template< typename T, expression U >
+template< typename T, open_expression U >
 requires( not expression< T > )
 constexpr auto operator and( T const& left, U const& right )
 { return Conjunction< StaticValue< T >, U >{ static_expr( left ), right }; }
