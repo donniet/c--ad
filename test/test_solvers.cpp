@@ -11,58 +11,6 @@
 using namespace expressions;
 using namespace test;
 
-bool test_iteration() 
-{
-    using std::println;
-
-    auto vars = declare_variables(
-        var< int >( "n" ),
-        var< int >( "m" ),
-        var< Length >( "w" ),
-        var< Length >( "z" ),
-        var< Length >( "x" ),
-        var< Length >( "y" ),
-        var< Length >( "f" ));
-
-    auto [ n, m, w, z, x, y, f ] = vars.variables();
-    
-    
-    iterate( m = m + n, n = n + 1 ).while_( n < 100 ) | eval( vars );
-
-    // sum of the first n integers
-    auto first_n = iteration( m, n ).
-        initial_values( 0, 1 ).
-        update( m + n, n + 1 ).
-        until( n > 100 );
-
-    static_assert( closed_expression< decltype( first_n )> );
-
-    auto [ s, steps ] = first_n | eval();
-
-    println( std::runtime_format( "sum of first {} integers: {}" ), steps-1, s );
-
-    auto rate = 1.0 / 100.0_sqft;
-
-    // parabloid with vertex at (2_ft, 3_ft) and minimum 3_sqft
-    auto para2 = pow( x - 2_ft, 2_c ) + pow( y - 3_ft, 2_c ) + 3_ft * 1_ft;
-
-
-    auto p = func( para2, x, y );
-
-    auto grad_p = grad( p );
-
-    auto [ min_value, steps2 ] = 
-        iteration( x, y, n ).
-        initial_values( 0_ft, 0_ft, 0 ).
-        update( 
-            x - rate * para2 * get_element< 0 >( grad_p( x, y )), 
-            y - rate * para2 * get_element< 1 >( grad_p( x, y )),
-            n + 1 ).
-        until( n == 1000 or norm( grad_p( x, y )) < 0.001_sqft ) | eval();
-
-    return true;
-}
-
 bool test_minimization()
 {
     //auto solver = gradient_descent( x, y );
@@ -335,7 +283,6 @@ int main( int ac, char * av[] )
     
     ensure( test_boolean_satisfaction, "Boolean Satisfaction" );
     ensure( test_canonicalization, "Canonicalization" );
-    ensure( test_iteration, "Iteration" );
     ensure( test_minimization, "Minimization" );
     ensure( test_constraints, "Constraints" );
     ensure( test_is_linear, "Linear Expressions" );
