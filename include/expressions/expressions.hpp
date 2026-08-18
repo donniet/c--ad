@@ -209,7 +209,7 @@ struct Compound;
 /// compound expressions and prevent circular dependencies during compilation.
 ///
 template< typename ExprT, typename... Args >
-struct CompoundCommon: tuple< Args... > 
+struct CompoundCommon //: tuple< Args... >
 {
     // we keep the static members and typedefs 
     using expression_type = ExprT;
@@ -479,24 +479,69 @@ struct Evaluator< void >
 /// they care about, and the applier handles the recursion including 
 /// substitutions.
 ///
-/// NOTE: We can rework the applier now that substitutions self-recurse
+
+/// default case is idempotent
 template< typename ExprT, typename ManipulatorT >
 struct Applier
 {
     using type = ExprT;
-    static constexpr type value( ExprT const& expr, ManipulatorT& f )
+    static constexpr type 
+    value( ExprT const& expr, ManipulatorT& f )
     { return expr; }
 };
 
+/// if the manipulator accepts the expression return the result of the
+/// manipulation
 template< typename ExprT, typename ManipulatorT >
 requires( std::is_invocable_v< ManipulatorT, ExprT > )
 struct Applier< ExprT, ManipulatorT >
 {
     using type = std::invoke_result_t< ManipulatorT, ExprT >;
-    static constexpr type value( ExprT const& expr, ManipulatorT& f )
+    static constexpr type 
+    value( ExprT const& expr, ManipulatorT& f )
     { return f( expr ); }
 };
 
+/// if the manipulator does not accept a tuple, apply to the elements
+template< typename... Ts, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, tuple< Ts... >> )
+struct Applier< tuple< Ts... >, ManipulatorT >
+{
+    using type = tuple< typename Applier< Ts, ManipulatorT >::type... >;
+    static constexpr type
+    value( tuple< Ts... > const& expr, ManipulatorT& f )
+    {
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return { Applier< Ts...[ Is ], ManipulatorT >::
+            value( get< Is >( expr ), f )... }; };
+
+        return helper( for_elements );
+    }
+};
+
+/// if the manipulator does not accept a tuple, apply to the elements
+template< shape S, typename... Ts, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, Tensor< S, Ts... >> )
+struct Applier< Tensor< S, Ts... >, ManipulatorT >
+{
+    using type = Tensor< S, typename Applier< Ts, ManipulatorT >::type... >;
+    static constexpr type
+    value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
+    {
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return { Applier< Ts...[ Is ], ManipulatorT >::
+            value( tensor_get< Is >( expr ), f )... }; };
+
+        return helper( for_elements );
+    }
+};
+
+/// if the manipulator does not accept a closed expression evaluate it and 
+/// try again
 template< closed_expression ExprT, typename ManipulatorT >
 requires( not std::is_invocable_v< ManipulatorT, ExprT > )
 struct Applier< ExprT, ManipulatorT >
@@ -510,21 +555,26 @@ struct Applier< ExprT, ManipulatorT >
         ManipulatorT >::value( expr(), f ); }
 };
 
-template< template< typename... > class Op, typename... Args, typename ManipulatorT >
-requires( compound_expression< Op< Args... >> )
-struct Applier< Op< Args... >, ManipulatorT >
+/// if the manipulator does not accept an open expression, parse into the
+/// expression
+template< open_expression ExprT, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, ExprT> and
+    compound_expression< ExprT> )
+struct Applier< ExprT, ManipulatorT >
 {
-    typedef make_seq< sizeof...( Args )> for_args;
+    using arguments_tuple = ExprT::arguments_tuple;
+    typedef make_seq< ExprT::arguments_size > for_args;
 
     template< size_t I >
     using arg_t = make_expression_t< typename 
-        Applier< Args...[ I ], ManipulatorT >::type >;
+        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::type >;
 
     template< size_t I >
     static constexpr arg_t< I >
-    arg( Args...[ I ] const& a, ManipulatorT& f )
+    arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
     { return make_expression( 
-        Applier< Args...[ I ], ManipulatorT >::value( a, f )); }
+        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::
+            value( a, f )); }
 
     template< typename Seq >
     struct Helper;
@@ -532,19 +582,48 @@ struct Applier< Op< Args... >, ManipulatorT >
     template< size_t... Is >
     struct Helper< seq< Is... >>
     { 
-        using type = std::remove_cv_t< decltype( Op< arg_t< Is >... >{}() )>;
+        using reconstituted_type = reconstitute_t< ExprT,
+            arg_t< Is >... >;
+
+        using type = std::remove_cvref_t< decltype( reconstituted_type{}() )>;
         static constexpr type
-        value( Op< Args... > const& expr, ManipulatorT& f )
-        { return Op< arg_t< Is >... >{ 
-            arg< Is >( get_argument< Is >( expr ), f )... }(); }
+        value( ExprT const& expr, ManipulatorT& f )
+        { return reconstitute( expr, 
+            arg< Is >( get_argument< Is >( expr ), f )... )(); }
     };
 
     using type = Helper< for_args >::type;
     static constexpr type
-    value( Op< Args... > const& expr, ManipulatorT& f )
+    value( ExprT const& expr, ManipulatorT& f )
     { return Helper< for_args >::value( expr, f ); }
 };
 
+/////////////////////
+/// apply method ///
+///////////////////
+/// 
+/// Entry point for the Applier class
+template< typename ExprT, typename ManipulatorT >
+constexpr Applier< ExprT, ManipulatorT >::type
+apply( ExprT const& expr, ManipulatorT& f )
+{ return Applier< ExprT, ManipulatorT >::value( expr, f ); }
+
+////////////////////////////////
+/// Manipulation: operator| ///
+//////////////////////////////
+/// 
+/// We commandeer operator| on expression types as the "manipulation" operator
+///
+template< typename T, typename ManipulatorT >
+requires( std::invocable< ManipulatorT, T > or expression< T > )
+constexpr auto
+operator |( T const& value_or_expression, ManipulatorT&& f )
+{ return apply( value_or_expression, f ); }
+
+////////////////////////
+/// Scope Evaluator ///
+//////////////////////
+///
 // TODO: remove the specializations for this, and let the Applier do it
 template< typename ScopeT >
 struct Evaluator
@@ -588,19 +667,6 @@ struct Evaluator
     scope_type const* _scope_ptr;
 };
 
-// TODO: remove the specializations for this, and let the Applier do it
-// TODO: Create a mechanism to determine the return type of applying this
-//       manipulator to an expression
-//       This should be standardized across manipulators
-//
-//       Maybe manipulator_traits?
-//       Or a nested templated struct with a standard name?
-//
-//template< typename FuncT >
-//constexpr detail::ManipulatorFunctor< FuncT > 
-//manipulate( FuncT&& func )
-//{ return { func }; }
-
 template< typename ScopeT >
 constexpr Evaluator< ScopeT > 
 eval( ScopeT const& scope )
@@ -609,175 +675,6 @@ eval( ScopeT const& scope )
 constexpr Evaluator< void > 
 eval()
 { return {}; }
-
-
-////////////////////////////////
-/// Manipulation: operator| ///
-//////////////////////////////
-/// 
-/// We commandeer operator| on expression types as the "manipulation" operator
-///
-/// @brief Application of a temporary manipulator
-///
-/// @tparam ExprT is the type of the expression to be manipulated
-/// @tparam ManipulatorT is the type of the manipulator
-/// @param expr is the expression value
-/// @param manipulator is the manipulator value
-/// @returns the result of calling apply on expr with the manipulator parameter
-
-// TODO: Manipulators may need a rigourous definition as a type manipulator
-
-/// @brief application of a non-expression value against an evaluator yields the 
-/// value
-template< typename T, typename ScopeT >
-requires( not expression< T >)
-constexpr T 
-operator |( T const& value, Evaluator< ScopeT > const& eval )
-{ return value; }
-
-/// @brief application of a non-expression value against a scope that cannot be
-/// invoked on the value yields the value
-template< typename T, typename ScopeT >
-requires( not expression< T > and is_scope_v< ScopeT > and 
-    not std::invocable< const ScopeT, T > )
-constexpr T
-operator |( T const& value, ScopeT const& scope )
-{ return value; }
-
-/// @brief application of a value or expression against a manipulator reference
-/// that has an overloaded invocation operator yields the inovocation of the 
-/// manipulator on the value or expression
-template< typename T, typename ManipulatorT >
-requires std::invocable< ManipulatorT, T >
-constexpr auto
-operator |( T const& value_or_expression, ManipulatorT&& manipulator )
-{ return manipulator( value_or_expression ); }
-
-/// @brief application of a compound expression against a manipulator reference
-/// that does not have an overloaded invocation operator starts a dual recursion
-/// between the compound expression's apply method and the application operator|
-template< compound_expression ExprT, typename ManipulatorT >
-requires( not std::invocable< ManipulatorT, ExprT > )
-constexpr typename Applier< ExprT, ManipulatorT >::type
-operator |( ExprT const& expr, ManipulatorT&& f )
-{ return Applier< ExprT, ManipulatorT >::value( expr, f ); }
-
-// HACK: temporary way to get iterations to work, switch iteration to support
-// the substitution mechanism
-//template< expression ExprT, typename ManipulatorT >
-//requires( not std::invocable< ManipulatorT > and 
-//    not compound_expression< ExprT > )
-//constexpr auto
-//operator |( ExprT const& expr, ManipulatorT&& f )
-//{ 
-//    auto [ ...args ] = expr.args();
-//    return ExprT::value( args... );
-//};
-
-/// @brief applier specialization for constants
-template< auto Value, typename ManipulatorT >
-requires( not std::invocable< ManipulatorT, Constant< Value >> )
-constexpr typename Applier< Constant< Value >, ManipulatorT >::type
-operator |( Constant< Value > const& const_expr, ManipulatorT&& f )
-{ return Applier< Constant< Value >, ManipulatorT >::value( const_expr, f ); }
-
-/// @brief applier specialization for static values
-template< typename T, typename ManipulatorT >
-requires( not std::invocable< ManipulatorT, StaticValue< T >> )
-constexpr typename Applier< StaticValue< T >, ManipulatorT >::type
-operator |( StaticValue< T > const& static_expr, ManipulatorT&& f )
-{ return Applier< StaticValue< T >, ManipulatorT >::value( static_expr, f ); }
-
-/// @brief applier specialization for variables
-template< variable Var, typename ManipulatorT >
-requires( not std::invocable< ManipulatorT, Var > )
-constexpr typename Applier< Var, ManipulatorT >::type
-operator |( Var const& var, ManipulatorT&& f )
-{ return Applier< Var, ManipulatorT >::value( var, f ); }
-
-/// @brief bespoke applier for tuples
-template< typename TupleT, typename ManipulatorT >
-struct TupleApplier;
-
-template< typename... Ts, typename ManipulatorT >
-struct TupleApplier< tuple< Ts... >, ManipulatorT > {
-private:
-    typedef make_seq< sizeof...( Ts )> for_tuple_elements;
-
-    template< typename Seq >
-    struct Helper;
-
-    template< size_t... Is >
-    struct Helper< seq< Is... >>
-    {
-        using type = tuple< typename Applier< Ts...[ Is ], ManipulatorT >::type
-            ... >;
-
-        static constexpr type value( tuple< Ts... > const& tup, ManipulatorT& f )
-        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
-            std::get< Is >( tup ), f )... }; }
-    };
-
-public:
-    using type = Helper< for_tuple_elements >::type;
-
-    static constexpr type value( tuple< Ts... > const& tup, ManipulatorT& f )
-    { return Helper< for_tuple_elements >::value( tup, f ); }
-};
-
-/// @brief bespoke applier for tensors
-template< typename TensorT, typename ManipulatorT >
-struct TensorApplier;
-
-template< shape S, typename... Ts, typename ManipulatorT >
-struct TensorApplier< Tensor< S, Ts... >, ManipulatorT > {
-private:
-    typedef make_seq< sizeof...( Ts )> for_tensor_elements;
-
-    template< typename Seq >
-    struct Helper;
-
-    template< size_t... Is >
-    struct Helper< seq< Is... >>
-    {
-        using type = Tensor< S, typename 
-            Applier< Ts...[ Is ], ManipulatorT >::type... >;
-
-        static constexpr type 
-        value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
-        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
-            tensor_get< Is >( ten ), f )... }; }
-    };
-
-public:
-    using type = Helper< for_tensor_elements >::type;
-
-    static constexpr type 
-    value( Tensor< S, Ts... > const& ten, ManipulatorT& f )
-    { return Helper< for_tensor_elements >::value( ten, f ); }
-};
-
-/// @brief application of a tuple of at least one expression and a manipulator
-/// that is not invocable on the tuple yields a tuple of the result of applying
-/// the manipulator against each element of the tuple.
-template< typename... Ts, typename ManipulatorT >
-requires( expression< tuple< Ts... >> and 
-    not std::invocable< ManipulatorT, tuple< Ts... >> )
-constexpr typename TupleApplier< tuple< Ts... >, ManipulatorT >::type
-operator |( tuple< Ts... > const& expr_tup, ManipulatorT& f )
-{ return TupleApplier< tuple< Ts... >, ManipulatorT >::value( expr_tup, f ); }
-
-/// @brief application of a tensor of at least one expression and a manipulator
-/// that is not invocable on the tensor yields a tensor of the result of 
-/// applying the manipulator against each element of the tensor.
-template< typename ShapeT, typename... Exprs, typename ManipulatorT >
-requires( expression< Tensor< ShapeT, Exprs... >> and
-    not std::invocable< ManipulatorT, Tensor< ShapeT, Exprs... >> )
-constexpr typename TensorApplier< Tensor< ShapeT, Exprs... >, ManipulatorT >::
-    type
-operator |( Tensor< ShapeT, Exprs... > const& expr_ten, ManipulatorT& f )
-{ return TensorApplier< Tensor< ShapeT, Exprs... >, ManipulatorT >::value(
-    expr_ten, f ); }
 
 ///////////////////
 /// Var Traits ///
