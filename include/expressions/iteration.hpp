@@ -31,7 +31,8 @@ struct Iteration: Compound< Iteration< WhileExpr, SetExprs... >>
 
     static constexpr auto
     value( WhileExpr const& cond, SetExprs const&... exprs )
-    { 
+    {
+        // by the time we can evaluate cond, we've lost 
         // if our condition is met, 
     }
 

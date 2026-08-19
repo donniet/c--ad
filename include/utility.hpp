@@ -27,10 +27,13 @@ using std::isspace;
 using std::array;
 using std::function;
 using std::any, std::make_any, std::any_cast;
-using std::is_arithmetic_v;
+using std::is_arithmetic_v, std::is_integral_v;
 
 template< typename T >
 concept arithmetic = is_arithmetic_v< T >;
+
+template< typename T >
+concept integral = is_integral_v< T >;
 
 
 //////////////////
