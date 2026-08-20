@@ -1495,29 +1495,29 @@ struct GetFreeVars< Var< I, T >>
     { return { var }; }
 };
 
-// variable Id is not considered free in the expression T
-template< size_t Id, typename T >
-requires( free_variables_t< T >::contains_id( Id ))
-struct GetFreeVars< SetVar< Id, T >> {
-private:
-    using value_variable_set = GetFreeVars< T >::type;
-    using value_type = var_value_t< typename value_variable_set::template 
-        variable_t< Id >>;
-    using this_variables_set = unique_variables< Var< Id, value_type >>;
-
-public:
-    using type = subtract_unique_variables_t< 
-        value_variable_set, this_variables_set >;
-
-    static constexpr type
-    value( SetVar< Id, T > const& expr )
-    {
-        static constexpr this_variables_set this_variable;
-        return subtract_unique_variables(
-            GetFreeVars< T >::value( std::get< 0 >( expr )),
-            this_variable );
-    }
-};
+//variable Id is not considered free in the expression T
+//template< size_t Id, typename T >
+//requires( free_variables_t< T >::contains_id( Id ))
+//struct GetFreeVars< SetVar< Id, T >> {
+//private:
+//    using value_variable_set = GetFreeVars< T >::type;
+//    using value_type = var_value_t< typename value_variable_set::template 
+//        variable_t< Id >>;
+//    using this_variables_set = unique_variables< Var< Id, value_type >>;
+//
+//public:
+//    using type = subtract_unique_variables_t< 
+//        value_variable_set, this_variables_set >;
+//
+//    static constexpr type
+//    value( SetVar< Id, T > const& expr )
+//    {
+//        static constexpr this_variables_set this_variable;
+//        return subtract_unique_variables(
+//            GetFreeVars< T >::value( std::get< 0 >( expr )),
+//            this_variable );
+//    }
+//};
 
 /// @brief trait to identify free variables in an unbound function
 template< size_t I, typename T, variable... Vars >
@@ -1760,6 +1760,10 @@ public:
     operator ()( First first, Rest... rest ) const
     { return { name(), first, rest... }; }
 
+    template< typename U >
+    constexpr Chain< Var< I, T >, U >
+    operator ,( U const& next ) const;
+
     //constexpr Var( string const& name = "var", value_type const& value ): 
     //    _name{ name }, _value{ value }
     //{ }
@@ -1849,6 +1853,10 @@ public:
     constexpr Func< value_type, First, Rest... >
     operator ()( First first, Rest... rest ) const
     { return { value(), first, rest... }; } 
+
+    template< typename U >
+    constexpr Chain< Var< I, ExprT >, U >
+    operator ,( U const& next ) const;
 
     constexpr Var( string const& name = "var", value_type const& expr = {} ): 
         _name{ name }, _expr{ expr }

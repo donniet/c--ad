@@ -44,6 +44,10 @@ struct Constant
     template< typename... Ts >
     constexpr value_type operator ()( Ts const&... ) const
     { return value; }
+
+    template< typename T >
+    constexpr Chain< Constant< Value >, T >
+    operator ,( T const& next ) const;
 };
 
 template< typename T >

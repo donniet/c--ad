@@ -135,8 +135,118 @@
 #include "expressions/scope.hpp"
 #include "expressions/variable.hpp"
 
-
 namespace expressions {
+
+/////////////////////////
+/// Chain expression ///
+///////////////////////
+///
+/// formed by comma's between other expressions.  We must bootstrap the
+/// implementation since Compound depends on it
+template< typename First, typename... Rest >
+struct Chain: tuple< First, Rest... >
+{
+    using expression_type = Chain< First, Rest... >;
+    using arguments_tuple = tuple< First, Rest... >;
+    static constexpr size_t arguments_size = 1 + sizeof...( Rest );
+    typedef make_seq< arguments_size > for_args;
+
+    constexpr arguments_tuple const&
+    args() const
+    { return *this; }
+
+    template< size_t I >
+    constexpr tuple_element_t< I, arguments_tuple > const&
+    arg() const
+    { return get< I >( args() ); }
+
+private:
+    template< typename T >
+    struct Link
+    { 
+        using type = T;
+        static constexpr type
+        value( T const& link )
+        { return link; }
+    };
+
+    template< expression ExprT >
+    struct Link< ExprT >
+    {
+        using type = result_t< ExprT >;
+        static constexpr type
+        value( ExprT const& expr )
+        { return expr(); }
+    };
+
+    using last_t = tuple_element_t< arguments_size - 1, arguments_tuple >;
+
+    constexpr last_t const&
+    last() const
+    { return get< arguments_size - 1 >( args() ); }
+
+public:
+    using result_type = result_t< last_t >;
+
+    constexpr operator result_type() const
+    requires( closed_expression< First > and ( closed_expression< Rest > and 
+        ... ))
+    { return Link< last_t >::value( last() ); }
+
+    constexpr result_type
+    operator ()() const
+    requires( closed_expression< First > and ( closed_expression< Rest > and 
+        ... ))
+    { return Link< last_t >::value( last() ); }
+
+    template< typename FirstSub, typename... RestSub >
+    requires( is_compatible_substitution_v< expression_type, FirstSub, 
+        RestSub... > )
+    constexpr substitute_t< expression_type, make_expression_t< FirstSub >, 
+        make_expression_t< RestSub >... >
+    operator ()( FirstSub const& first_sub, RestSub const&... rest_sub ) const
+    { return substitute( *this, make_expression( first_sub ), 
+        make_expression( rest_sub )... ); }
+
+    template< typename NextT >
+    constexpr Chain< First, Rest..., NextT >
+    operator ,( NextT const& next ) const
+    { 
+        auto [ ...links ] = args();
+        return { links..., next };
+    }
+
+    constexpr Chain( First const& first, Rest const&... rest ):
+        tuple< First, Rest... >{ first, rest... }
+    { }
+    constexpr Chain( Chain const& ) = default;
+    constexpr Chain( ) = default;
+};
+
+/// Chain implementations
+template< size_t Id, typename ExprT >
+template< typename T >
+constexpr Chain< SetVar< Id, ExprT >, T >
+SetVar< Id, ExprT >::operator ,( T const& next ) const
+{ return { *this, next }; }
+
+template< size_t I, typename T >
+template< typename U >
+constexpr Chain< Var< I, T >, U >
+Var< I, T >::operator ,( U const& next ) const
+{ return { *this, next }; }
+
+template< auto Value >
+template< typename T >
+constexpr Chain< Constant< Value >, T >
+Constant< Value >::operator ,( T const& next ) const
+{ return { *this, next }; }
+
+template< typename T >
+template< typename U >
+constexpr Chain< StaticValue< T >, U >
+StaticValue< T >::operator ,( U const& next ) const
+{ return { *this, next }; }
 
 /////////////////
 /// Compound ///
@@ -209,13 +319,19 @@ struct Compound;
 /// compound expressions and prevent circular dependencies during compilation.
 ///
 template< typename ExprT, typename... Args >
-struct CompoundCommon //: tuple< Args... >
+struct CompoundCommon: tuple< Args... >
 {
     // we keep the static members and typedefs 
     using expression_type = ExprT;
     using arguments_tuple = tuple< Args... >;
     static constexpr size_t arguments_size = sizeof...( Args );
 
+protected:
+    constexpr expression_type const&
+    expr() const
+    { return *static_cast< expression_type const* >( this ); }
+
+public:
     // but nothing else will be used because this type of compound expression
     // (one with no arguments that are themselves expression types) will ever
     // be instantiated **fingers crossed**
@@ -339,15 +455,33 @@ public:
 template< template< typename... > class Op, typename... Args >
 struct Compound< Op< Args... >>: 
     CompoundCommon< Op< Args... >, Args... >
-{ using CompoundCommon< Op< Args... >, Args... >::CompoundCommon; };
+{
+    using CompoundCommon< Op< Args... >, Args... >::expr;
+
+    template< typename NextT >
+    constexpr Chain< Op< Args... >, make_expression_t< NextT >>
+    operator ,( NextT const& next ) const
+    { return { expr(), make_expression( next ) }; }
+
+    using CompoundCommon< Op< Args... >, Args... >::CompoundCommon; 
+};
 
 // Discriminated Expression Base Class
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 struct Compound< Op< Discriminator, Args... >>: 
     CompoundCommon< Op< Discriminator, Args... >, Args... > 
-{ using CompoundCommon< Op< Discriminator, Args... >, Args... >::
-    CompoundCommon; };
+{ 
+    using CompoundCommon< Op< Discriminator, Args... >, Args... >::expr;
+
+    template< typename NextT >
+    constexpr Chain< Op< Discriminator, Args... >, make_expression_t< NextT >>
+    operator ,( NextT const& next ) const
+    { return { expr(), make_expression( next ) }; }
+
+    using CompoundCommon< Op< Discriminator, Args... >, Args... >::
+        CompoundCommon; 
+};
 
 ///////////////////////////
 /// Element expression ///
@@ -503,41 +637,107 @@ struct Applier< ExprT, ManipulatorT >
 };
 
 /// if the manipulator does not accept a tuple, apply to the elements
+/// TODO: check if the applied tuple is accepted by the manipulator and apply
 template< typename... Ts, typename ManipulatorT >
 requires( not std::is_invocable_v< ManipulatorT, tuple< Ts... >> )
-struct Applier< tuple< Ts... >, ManipulatorT >
-{
-    using type = tuple< typename Applier< Ts, ManipulatorT >::type... >;
+struct Applier< tuple< Ts... >, ManipulatorT > {
+private:
+    static constexpr size_t tuple_size = sizeof...( Ts );
+    typedef make_seq< tuple_size > for_elements;
+
+    template< typename Seq >
+    struct Parser;
+
+    template< size_t... Is >
+    struct Parser< seq< Is... >>
+    {
+        using type = tuple< typename Applier< Ts...[ Is ], ManipulatorT >::
+            type... >;
+        static constexpr type
+        value( tuple< Ts... > const& expr, ManipulatorT& f )
+        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
+            std::get< Is >( expr ), f )... }; }
+    };
+
+    template< typename Seq >
+    struct Helper
+    {
+        using type = Parser< Seq >::type;
+        static constexpr type
+        value( tuple< Ts... > const& expr, ManipulatorT& f )
+        { return Parser< Seq >::value( expr, f ); }
+    };
+
+    template< typename Seq >
+    requires( std::is_invocable_v< ManipulatorT, typename 
+        Helper< Seq >::type > )
+    struct Helper< Seq >
+    {
+        using type = Applier< typename Parser< Seq >::type, ManipulatorT >::
+            type;
+        static constexpr type
+        value( tuple< Ts... > const& expr, ManipulatorT& f )
+        { return Applier< typename Parser< Seq >::type, ManipulatorT >::
+            value( Parser< Seq >::value( expr, f ), f ); }
+    };
+
+public:
+    using type = Helper< for_elements >::type;
     static constexpr type
     value( tuple< Ts... > const& expr, ManipulatorT& f )
-    {
-        static constexpr make_seq< sizeof...( Ts )> for_elements;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return { Applier< Ts...[ Is ], ManipulatorT >::
-            value( get< Is >( expr ), f )... }; };
-
-        return helper( for_elements );
-    }
+    { return Helper< for_elements >::value( expr, f ); }
 };
 
 /// if the manipulator does not accept a tuple, apply to the elements
+/// TODO: check if the applied tensor is accepted by the manipulator and apply
 template< shape S, typename... Ts, typename ManipulatorT >
 requires( not std::is_invocable_v< ManipulatorT, Tensor< S, Ts... >> )
-struct Applier< Tensor< S, Ts... >, ManipulatorT >
-{
-    using type = Tensor< S, typename Applier< Ts, ManipulatorT >::type... >;
+struct Applier< Tensor< S, Ts... >, ManipulatorT > {
+private:
+    static constexpr size_t tensor_size = sizeof...( Ts );
+    typedef make_seq< tensor_size > for_elements;
+
+    template< typename Seq >
+    struct Parser;
+
+    template< size_t... Is >
+    struct Parser< seq< Is... >>
+    {
+        using type = Tensor< S, typename Applier< Ts...[ Is ], ManipulatorT >::
+            type... >;
+        static constexpr type
+        value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
+        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
+            tensor_get< Is >( expr ), f )... }; }
+    };
+
+    template< typename Seq >
+    struct Helper
+    {
+        using type = Parser< Seq >::type;
+        static constexpr type
+        value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
+        { return Parser< Seq >::value( expr, f ); }
+    };
+
+    template< typename Seq >
+    requires( std::is_invocable_v< ManipulatorT, typename 
+        Helper< Seq >::type > )
+    struct Helper< Seq >
+    {
+        using type = Applier< typename Parser< Seq >::type, ManipulatorT >::
+            type;
+        static constexpr type
+        value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
+        { return Applier< typename Parser< Seq >::type, ManipulatorT >::
+            value( Parser< Seq >::value( expr, f ), f ); }
+    };
+
+public:
+    using type = Helper< for_elements >::type;
     static constexpr type
     value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
-    {
-        static constexpr make_seq< sizeof...( Ts )> for_elements;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return { Applier< Ts...[ Is ], ManipulatorT >::
-            value( tensor_get< Is >( expr ), f )... }; };
-
-        return helper( for_elements );
-    }
+    { return Helper< for_elements >::value( expr, f ); }
 };
 
 /// if the manipulator does not accept a closed expression evaluate it and 
@@ -577,10 +777,10 @@ struct Applier< ExprT, ManipulatorT >
             value( a, f )); }
 
     template< typename Seq >
-    struct Helper;
+    struct Parser;
 
     template< size_t... Is >
-    struct Helper< seq< Is... >>
+    struct Parser< seq< Is... >>
     { 
         using reconstituted_type = reconstitute_t< ExprT,
             arg_t< Is >... >;
@@ -590,6 +790,32 @@ struct Applier< ExprT, ManipulatorT >
         value( ExprT const& expr, ManipulatorT& f )
         { return reconstitute( expr, 
             arg< Is >( get_argument< Is >( expr ), f )... )(); }
+    };
+
+    template< typename Seq >
+    struct Helper
+    {
+        using type = Parser< Seq >::type;
+        static constexpr type
+        value( ExprT const& expr, ManipulatorT& f )
+        { return Parser< Seq >::value( expr, f ); }
+    };
+
+    // if the reconstituted type is now appliable then we apply it on the way 
+    // back up the recursion. This allows for SetVar expressions to have their
+    // values processed by a scope, then the SetVar itself to be reprocessed.
+    //
+    // Basically we are sending as much as we can to the manipulator
+    template< typename Seq >
+    requires( std::is_invocable_v< ManipulatorT, typename Parser< Seq >::type > )
+    struct Helper< Seq >
+    {
+        using parsed_type = Parser< Seq >::type;
+        using type = Applier< parsed_type, ManipulatorT >::type;
+        static constexpr type
+        value( ExprT const& expr, ManipulatorT& f )
+        { return Applier< parsed_type, ManipulatorT >::value(
+            Parser< Seq >::value( expr, f ), f ); }
     };
 
     using type = Helper< for_args >::type;
@@ -667,10 +893,11 @@ struct Evaluator
     scope_type const* _scope_ptr;
 };
 
-template< typename ScopeT >
-constexpr Evaluator< ScopeT > 
-eval( ScopeT const& scope )
-{ return { scope }; }
+// TODO: remove the scope evaluator
+template< scope ScopeT >
+constexpr ScopeT&
+eval( ScopeT& scope )
+{ return scope; }
 
 constexpr Evaluator< void > 
 eval()

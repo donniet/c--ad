@@ -1,5 +1,6 @@
 // select expression tests
 
+#include "expressions/expressions.hpp"
 #include "expressions/conditional.hpp"
 
 #include "expressions/arithmetic.hpp"
@@ -15,15 +16,64 @@ using namespace expressions;
 using std::print, std::println;
 
 bool test_select();
+bool test_chain();
 
 int main( int ac, char * av[] )
 {
     println( "SELECT EXPRESSION TETS..." );
 
     test::ensure( test_select, "Select Basic Testing" );
+    test::ensure( test_chain, "Culmination test" );
 
     print( "SUCCESS." );
     return EXIT_SUCCESS;
+}
+
+bool test_chain()
+{
+    auto scope = declare_variables(
+        var< int >( "n" ),
+        var< int >( "m" ));
+
+    auto [ n, m ] = scope.variables();
+    scope( n = 0, m = 0 );
+
+    ( n = 1 ) | scope;
+
+    println( "n == {}", scope(n) );
+    if( scope( n ) != 1 )
+        return false;
+    
+    ( n = n + 1 ) | scope;
+
+    println( "n == {}", scope(n) );
+    if( scope( n ) != 2 )
+        return false;
+
+    ( m = 1 ) | scope;
+    if( scope( m ) != 1 )
+        return false;
+
+    println( "m == {}", scope(m) );
+
+    // chain expression test
+    ( n = n + 1, m = m + n ) | scope;
+
+    println( "n == {}, m == {}", scope( n ), scope( m ));
+    if( scope( n ) != 3 or scope( m ) != 4 )
+        return false;
+
+    //( n = n + 1 ) | scope;
+    //( m = m + n ) | scope;
+
+    // why does this statement not work but the one above does?
+    ( n = n + 1, m = m + n ) | scope;
+
+    println( "n == {}, m == {}", scope( n ), scope( m ));
+    if( scope( n ) != 4 or scope( m ) != 8 )
+        return false;
+
+    return true;
 }
 
 bool test_select() 

@@ -638,6 +638,16 @@ struct IsSecondOrderVar< Var< I, Var< I, T >>>: std::true_type
 template< typename T >
 concept second_order_variable = IsSecondOrderVar< T >::value;
 
+/////////////////////////
+/// Chain expression ///
+///////////////////////
+///
+template< typename First, typename... Rest >
+struct Chain;
+
+template< >
+struct IsCompoundOperation< Chain >: true_type { };
+
 ///////////////
 /// SetVar ///
 /////////////
@@ -645,10 +655,10 @@ concept second_order_variable = IsSecondOrderVar< T >::value;
 template< size_t Id, typename ExprT >
 struct SetVar;
 
-//template< >
-//struct IsDiscriminatedOperation< SetVar >: true_type { };
-template< size_t Id, typename ExprT >
-struct IsExpression< SetVar< Id, ExprT >>: true_type { };
+template< >
+struct IsDiscriminatedOperation< SetVar >: true_type { };
+//template< size_t Id, typename ExprT >
+//struct IsExpression< SetVar< Id, ExprT >>: true_type { };
 
 template< typename T >
 struct IsSetExpression: false_type { };
@@ -661,6 +671,11 @@ constexpr bool is_set_expression_v = IsSetExpression< T >::value;
 
 template< typename T >
 concept set_expression = is_set_expression_v< T >;
+
+// forward decl of set_var method
+template< size_t Id, typename ExprT >
+constexpr SetVar< Id, ExprT >
+set_var( ExprT const& expr );
 
 ///////////////////////
 /// Set Expression ///
@@ -679,11 +694,11 @@ struct SetVar
     using arguments_tuple = tuple< ExprT >;
     static constexpr size_t arguments_size = 1;
 
-    static constexpr ExprT const&
-    value( ExprT const& expr )
-    { return expr; }
+    static SetVar< Id, ExprT >
+    value( ExprT const& val )
+    { return { val }; } 
 
-    constexpr arguments_tuple const&
+    constexpr arguments_tuple 
     args() const
     { return { expr() }; }
 
@@ -697,6 +712,15 @@ struct SetVar
     expr() const
     { return _expr; }
 
+    // forward invocation to argument
+    constexpr auto
+    operator ()() const
+    { return set_var< Id >( expr()() ); }
+
+    template< typename T >
+    constexpr Chain< SetVar< Id, ExprT >, T >
+    operator ,( T const& next ) const;
+
     constexpr SetVar( ExprT const& expr ): _expr{ expr } { }
     constexpr SetVar( SetVar const& ) = default;
     constexpr SetVar() = default;
@@ -705,9 +729,53 @@ private:
     ExprT _expr;
 };
 
+// specialization for non-expression arguments
+template< size_t Id, typename T >
+requires( not expression< T > )
+struct SetVar< Id, T >
+{
+    using arguments_tuple = tuple< T >;
+    static constexpr size_t arguments_size = 1;
+
+    static SetVar< Id, T >
+    value( T const& val )
+    { return { val }; } 
+
+    constexpr arguments_tuple 
+    args() const
+    { return { expr() }; }
+
+    template< size_t I >
+    requires( I == 0 )
+    constexpr T const&
+    arg() const
+    { return expr(); }
+
+    constexpr T const& 
+    expr() const
+    { return _value; }
+
+    // argument will not be invoked for non-expressions
+    constexpr auto
+    operator ()() const
+    { return set_var< Id >( expr() ); }
+
+    constexpr SetVar( T const& expr ): _value{ expr } { }
+    constexpr SetVar( SetVar const& ) = default;
+    constexpr SetVar() = default;
+
+private:
+    T _value;
+};
+
+template< size_t Id, typename ExprT >
+constexpr SetVar< Id, ExprT >
+set_var( ExprT const& expr )
+{ return { expr }; }
+
 }; // namespace expressions
 
-// HACK
+// HACK: make SetVar tuple-like
 namespace std {
 
 template< size_t I, size_t Id, typename ExprT >
@@ -727,6 +795,7 @@ get( expressions::SetVar< Id, ExprT > const& expr )
 } // namespace std
 
 namespace expressions {
+
 /////////////
 /// Func ///
 ///////////

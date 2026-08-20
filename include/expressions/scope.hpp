@@ -4,6 +4,7 @@
 #include "expressions/forward_decl.hpp"
 #include "expressions/unique_variables.hpp"
 #include "expressions/constant.hpp"
+#include "expressions/static_value.hpp"
 
 namespace expressions {
 

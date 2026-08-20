@@ -34,20 +34,28 @@ struct Result< StaticValue< T >>
 { using type = std::remove_cv_t< T >; };
 
 template< typename T >
-requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
-struct StaticValue< T >
+// requires( not is_expression_v< T > ) // not sure if we need this.. meta expressions?
+struct StaticValue //< T >
 { 
     using value_type = std::remove_cv_t< T >;
 
     // casting to and from an expression should be explicit
-    explicit constexpr operator value_type() const
+    explicit constexpr 
+    operator value_type() const
     { return _value; } 
 
-    constexpr value_type get_value() const
+    constexpr value_type 
+    get_value() const
     { return _value; }
 
-    constexpr value_type operator ()() const
+    template< typename... Ts >
+    constexpr value_type 
+    operator ()( Ts const&... ) const
     { return _value; }
+
+    template< typename U >
+    constexpr Chain< StaticValue< T >, U >
+    operator ,( U const& next ) const;
 
     constexpr StaticValue(): _value{} { }
     constexpr StaticValue( value_type const& other ): _value{ other } { }
