@@ -1760,6 +1760,15 @@ public:
     operator ()( First first, Rest... rest ) const
     { return { name(), first, rest... }; }
 
+    // TODO:
+    // operator++()
+    // operator--()
+    // operator+=(auto)
+    // operator-=(auto)
+    // operator*=(auto)
+    // operator/=(auto)
+    // operator%=(auto)
+
     template< typename U >
     constexpr Chain< Var< I, T >, U >
     operator ,( U const& next ) const;
@@ -1812,11 +1821,6 @@ struct Var< I, ExprT >
     //
     // This occurs, for example, when determining free variables 
     static constexpr bool is_bound = not is_free;
-
-    // we signal a substitution stage if our nested expression is simply the 
-    // lower-order version of ourselves
-    static constexpr bool is_substitution_stage = 
-        not is_same_v< Var< I, ExprT >, increase_var_order_t< ExprT >>;
 
 private:
     using this_type = Var< I, value_type >;

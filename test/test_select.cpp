@@ -63,10 +63,6 @@ bool test_chain()
     if( scope( n ) != 3 or scope( m ) != 4 )
         return false;
 
-    //( n = n + 1 ) | scope;
-    //( m = m + n ) | scope;
-
-    // why does this statement not work but the one above does?
     ( n = n + 1, m = m + n ) | scope;
 
     println( "n == {}, m == {}", scope( n ), scope( m ));
