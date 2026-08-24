@@ -238,17 +238,23 @@ struct Result< Tensor< S, Ts... >>
 template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> )
 struct Result< Op< Args... >>
-{ using type = std::remove_cvref_t< decltype(
-    Op< typename Result< Args >::type... >::value( 
-        typename Result< Args >::type{}... ))>; };
+{   
+    using value_type = std::remove_cvref_t< decltype(
+        Op< typename Result< Args >::type... >::value( 
+            typename Result< Args >::type{}... ))>; 
+    using type = Result< value_type >::type;
+};
 
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 requires( compound_expression< Op< Discriminator, Args... >> )
 struct Result< Op< Discriminator, Args... >>
-{ using type = std::remove_cvref_t< decltype(
-    Op< Discriminator, typename Result< Args >::type... >::value(
-        typename Result< Args >::type{}... ))>; };
+{ 
+    using value_type = std::remove_cvref_t< decltype(
+        Op< Discriminator, typename Result< Args >::type... >::value(
+            typename Result< Args >::type{}... ))>; 
+    using type = Result< value_type >::type;
+};
 
 /// @brief trait to resolve the result type of an expression
 template< typename T >
@@ -648,6 +654,18 @@ struct Chain;
 template< >
 struct IsCompoundOperation< Chain >: true_type { };
 
+template< typename T >
+struct IsChain: false_type { };
+
+template< typename First, typename... Rest >
+struct IsChain< Chain< First, Rest... >>: true_type { };
+
+template< typename T >
+constexpr bool is_chain_v = IsChain< T >::value;
+
+template< typename T >
+concept chain = is_chain_v< T >;
+
 ///////////////
 /// SetVar ///
 /////////////
@@ -659,6 +677,11 @@ template< >
 struct IsDiscriminatedOperation< SetVar >: true_type { };
 //template< size_t Id, typename ExprT >
 //struct IsExpression< SetVar< Id, ExprT >>: true_type { };
+
+// SetVar requires a specialization of Result (bootstrapping)
+template< size_t Id, typename ExprT >
+struct Result< SetVar< Id, ExprT >>
+{ using type = Result< ExprT >::type; };
 
 template< typename T >
 struct IsSetExpression: false_type { };

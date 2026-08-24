@@ -15,6 +15,13 @@ using namespace expressions;
 
 using std::print, std::println;
 
+//static_assert( compound_expression< Select< Var< 0, int >, int, long >> );
+//static_assert( is_same_v< result_t< Select< int, int, long >>, int >,
+//    "result of a select with no expression arguments is the first option" );
+//static_assert( is_same_v< result_t< Select< Var< 0, int >,
+//    Constant< (int)0 >, Constant< (long)1 >>>, int >,
+//        "result of a select is the result of it's first option" );
+
 bool test_select();
 bool test_chain();
 

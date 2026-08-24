@@ -1,8 +1,78 @@
-// we need a conditional for iterations, union?
-
-
-
 g( x * x, 3.f )
+
+Func<
+    Selection<
+        LessThan<
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<100L>>, 
+        Sum< 
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<1L>>, 
+        Constant<1L>>, 
+    Var<1, Func<Var<1, long>, Var<1, long>>>>
+
+') to '
+
+Selection<
+    LessThan<
+        Func<
+            Var<1, Func<Var<1, long>, Var<1, long>>>, 
+            Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+        Constant<100L>>, 
+    Sum<
+        Func<
+            Var<1, Func<Var<1, long>, Var<1, long>>>, 
+            Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+        Constant<1L>>, 
+    Constant<1L>>
+
+
+Substituter<
+    Func<
+        Selection<
+            LessThan<
+                Func< 
+                    Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                    Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+                Constant<100L>>, 
+            Sum<
+                Func<
+                    Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                    Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+                Constant<1L>>, 
+            Constant<1L>>, 
+        Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+    Selection<
+        LessThan<
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<100L>>, 
+        Sum<
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<1L>>, 
+        Constant<1L>>
+
+Func<
+    Selection<
+        LessThan<
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<100L>>, 
+        Sum<
+            Func<
+                Var<1, Func<Var<1, long>, Var<1, long>>>, 
+                Var<1, Func<Var<1, long>, Var<1, long>>>>, 
+            Constant<1L>>, 
+        Constant<1L>>, 
+    Var<1, Func<Var<1, long>, Var<1, long>>>>
 
 sub( f(x), x*x, 3.f )
 

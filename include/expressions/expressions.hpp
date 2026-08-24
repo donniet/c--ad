@@ -193,6 +193,14 @@ public:
         ... ))
     { return Link< last_t >::value( last() ); }
 
+    static constexpr last_t const&
+    value( First const& first, Rest const&... rest )
+    { 
+        auto const& [ ...leading, last ] = 
+            tuple< First const&, Rest const&... >{ first, rest... };
+        return last;
+    }
+
     constexpr result_type
     operator ()() const
     requires( closed_expression< First > and ( closed_expression< Rest > and 
@@ -247,6 +255,99 @@ template< typename U >
 constexpr Chain< StaticValue< T >, U >
 StaticValue< T >::operator ,( U const& next ) const
 { return { *this, next }; }
+
+////////////////////
+/// Link method ///
+//////////////////
+///
+/// Associatively links expressions and chains together into new chains
+template< typename... Links >
+struct Linker;
+
+template< typename Link >
+struct Linker< Link >
+{
+    using type = Link;
+    static constexpr type
+    value( Link const& link )
+    { return link; }
+};
+
+template< typename First, typename Second >
+requires( not chain< First > and not chain< Second > )
+struct Linker< First, Second >
+{
+    using type = Chain< First, Second >;
+    static constexpr type
+    value( First const& first, Second const& second )
+    { return { first, second }; }
+};
+
+template< typename FirstFirst, typename... FirstRest, typename Second >
+requires( not chain< Second > )
+struct Linker< Chain< FirstFirst, FirstRest... >, Second >
+{
+    using type = Chain< FirstFirst, FirstRest..., Second >;
+    static constexpr type
+    value( Chain< FirstFirst, FirstRest... > const& first, 
+        Second const& second )
+    {
+        auto [ ...firsts ] = first.args();
+        return { firsts..., second };
+    }
+};
+
+template< typename First, typename SecondFirst, typename... SecondRest >
+requires( not chain< First > )
+struct Linker< First, Chain< SecondFirst, SecondRest... >>
+{
+    using type = Chain< First, SecondFirst, SecondRest... >;
+    static constexpr type
+    value( First const& first, 
+        Chain< SecondFirst, SecondRest... > const& second )
+    {
+        auto [ ...seconds ] = second.args();
+        return { first, seconds... };
+    }
+};
+
+template< typename FirstFirst, typename... FirstRest, typename SecondFirst,
+    typename... SecondRest >
+struct Linker< Chain< FirstFirst, FirstRest... >, 
+    Chain< SecondFirst, SecondRest... >>
+{
+    using type = Chain< FirstFirst, FirstRest..., SecondFirst, SecondRest... >;
+    static constexpr type
+    value( Chain< FirstFirst, FirstRest... > const& first,
+        Chain< SecondFirst, SecondRest... > const& second )
+    {
+        auto [ ...firsts ] = first.args();
+        auto [ ...seconds ] = second.args();
+        return { firsts..., seconds... };
+    }
+};
+
+// recursive case
+template< typename First, typename Second, typename... Rest >
+requires( is_greater( sizeof...( Rest ), 0 ))
+struct Linker< First, Second, Rest... >
+{
+    using type = Linker< typename Linker< First, Second >::type, Rest... >::
+        type;
+
+    static constexpr type
+    value( First const& first, Second const& second, Rest const&... rest )
+    { return Linker< typename Linker< First, Second >::type, Rest... >::
+        value( Linker< First, Second >::value( first, second ), rest... ); }
+};
+
+template< typename... Links >
+using link_t = Linker< Links... >::type;
+
+template< typename... Links >
+constexpr link_t< Links... >
+link( Links const&... links )
+{ return Linker< Links... >::value( links... ); }
 
 /////////////////
 /// Compound ///
@@ -319,6 +420,7 @@ struct Compound;
 /// compound expressions and prevent circular dependencies during compilation.
 ///
 template< typename ExprT, typename... Args >
+requires( compound_expression< ExprT > )
 struct CompoundCommon: tuple< Args... >
 {
     // we keep the static members and typedefs 
@@ -345,7 +447,10 @@ public:
 
 /// specialization for a compound with at least one expression as an argument
 template< typename ExprT, typename... Args >
-requires(( expression< Args > or ... or false )) 
+requires(( expression< Args > or ... or false ) and 
+    compound_expression< ExprT > ) // DT: not sure if we need the extra compound
+                                   //     expression requirement but it may 
+                                   //     simplify compilation error messages
 struct CompoundCommon< ExprT, Args... >: tuple< Args... >
 {
     using expression_type = ExprT;
@@ -394,6 +499,8 @@ private:
     struct ResultHelper;
 
     template< size_t... Is >
+    requires( not is_same_v< reconstitute_t< expression_type, typename
+        ArgEvaluator< Is >::type... >, expression_type > )
     struct ResultHelper< seq< Is... >>
     {
         // the result type of this expression will be the decltype of the
@@ -404,9 +511,20 @@ private:
                 type... >::value( typename ArgEvaluator< Is >::type{}... ))>;
 
         static constexpr type
-        value( arguments_tuple const& tup )
+        value( expression_type const& expr )
         { return reconstitute_t< expression_type, typename ArgEvaluator< Is >::
-            type... >::value( ArgEvaluator< Is >::value( tup )... ); }
+            type... >::value( ArgEvaluator< Is >::value( expr.args() )... ); }
+    };
+
+    template< size_t... Is >
+    requires( is_same_v< reconstitute_t< expression_type, typename
+        ArgEvaluator< Is >::type... >, expression_type > )
+    struct ResultHelper< seq< Is... >>
+    {
+        using type = expression_type;
+        static constexpr type const&
+        value( expression_type const& expr )
+        { return expr; }
     };
 
 public:
@@ -416,13 +534,13 @@ public:
     // conversion operator to the result type in the case that it is closed
     constexpr operator result_type() const
     requires(( closed_expression< Args > and ... and true ))
-    { return ResultHelper< for_args >::value( args() ); }
+    { return ResultHelper< for_args >::value( expr() ); }
     
     // invocation operator also returns the result if this expression is closed
     constexpr result_type 
     operator ()() const 
     requires(( closed_expression< Args > and ... and true ))
-    { return ResultHelper< for_args >::value( args() ); }
+    { return ResultHelper< for_args >::value( expr() ); }
 
     // if the expression is open the invocation operator is idempotent, 
     // which signals that this is a terminal expression (one whose evaluation

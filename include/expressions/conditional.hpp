@@ -36,7 +36,7 @@ template< typename SelectorT, typename... Options >
 struct Select;
 
 template< integral IntT, typename First, typename... Rest >
-requires(( is_same_v< First, Rest > and ... and true ))
+//requires(( std::is_convertible_v< First, Rest > and ... and true ))
 struct Select< IntT, First, Rest... >
 {
     using type = First;
@@ -71,7 +71,7 @@ struct Selection;
 template< >
 struct IsCompoundOperation< Selection >: true_type { };
 
-template< typename SelectorT, typename... Options >
+template< typename SelectorT,typename... Options >
 requires( integral< result_t< SelectorT >> )
 struct Selection: Compound< Selection< SelectorT, Options... >>
 {
@@ -95,6 +95,39 @@ struct Select< SelectorT, Options... >
     value( SelectorT const& selector, Options const&... options )
     { return { selector, options... }; }
 };
+
+//////////////////////
+/// If expression ///
+////////////////////
+///
+template< typename Cond, typename ResultT >
+constexpr ResultT
+if_( Cond const& cond, ResultT const& true_value, ResultT const& false_value )
+{ return cond ? true_value : false_value; }
+
+template< typename Cond, typename ThenT, typename ElseT >
+struct Conditional;
+
+template< >
+struct IsCompoundOperation< Conditional >: true_type { };
+
+template< typename Cond, typename ThenT, typename ElseT >
+requires( std::is_convertible_v< result_t< ThenT >, result_t< ElseT >> )
+struct Conditional< Cond, ThenT, ElseT >: 
+    Compound< Conditional< Cond, ThenT, ElseT >>
+{
+    static constexpr auto
+    value( Cond const& cond, ThenT const& then_value, ElseT const& else_value )
+    { return if_( cond, then_value, else_value ); }
+
+    using Compound< Conditional< Cond, ThenT, ElseT >>::Compound;
+};
+
+template< typename Cond, typename ThenT, typename ElseT >
+requires( expression< Cond > or expression< ThenT > or expression< ElseT >)
+constexpr Conditional< Cond, ThenT, ElseT >
+if_( Cond const& cond, ThenT const& then_expr, ElseT const& else_expr )
+{ return { cond, then_expr, else_expr }; }
 
 }; // namespace expressions
 

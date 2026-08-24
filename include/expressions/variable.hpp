@@ -427,6 +427,14 @@ public:
     constexpr Sub() = default;
 };
 
+template< typename ExprT, typename... Ss >
+using sub_t = Sub< ExprT, Ss... >;
+
+template< typename ExprT, typename... Ss >
+constexpr sub_t< ExprT, Ss... >
+sub( ExprT const& expr, Ss const&... subs )
+{ return { expr, subs... }; }
+
 //////////////////
 /// Free Vars ///
 ////////////////
@@ -665,13 +673,25 @@ private:
 
     // if our variables match, return the substitute
     template< variable Var >
-    requires( var_id_v< Var > == id ) // and var_order_v< Var > == 1 )
+    //requires( var_id_v< Var > == id ) // and var_order_v< Var > == 1 )
+    requires( var_id_v< Var > == id and var_order_v< Var > == 1 )
     struct Parser< Var >
     {
         using type = referent_type;
         static constexpr type
         value( Var const&, referent_type const& sub )
         { return sub; }
+    };
+
+    template< variable Var >
+    requires( var_id_v< Var > == id and is_greater( var_order_v< Var >, 1 ))
+    struct Parser< Var >
+    {
+        using type = SubFor< Id, var_value_t< Var >, SubU >::type;
+        static constexpr type
+        value( Var const& v, referent_type const& sub )
+        { return SubFor< Id, var_value_t< Var >, SubU >::
+            value( v.value(), sub ); }
     };
 
     // we cannot substitute for the variable being assigned in a set expression
@@ -1367,7 +1387,7 @@ struct Substituter {
         static constexpr type
         value( formula_type const& expr, Subs const&... subs )
         { return substitute_for_id_seq< seq< var_id_of< Is >... >>(
-            expr, referent_t< Is >( expr, subs... )... )(); }
+            expr, referent< Is >( expr, subs... )... )(); }
     };
 
     // case: the resultant expression will be open, return it
@@ -1650,6 +1670,11 @@ public:
     { return VarsSub< make_expression_t< Args >... >::value( *this, 
         make_expression( args )... ); }
 
+    // operator() is idempotent
+    constexpr this_type const&
+    operator ()() const
+    { return *this; }
+
     // attempting to evaluate a function is the same as evaluating the formula
 //    constexpr result_t< formula_type >
 //    operator ()() const
@@ -1657,8 +1682,14 @@ public:
 
     constexpr Func( formula_type const& func, 
         Vars const&... vars ): arguments_tuple{ func, vars... } 
-    { };
+    { }
+    // can be initialized by just the formula
+    constexpr Func( formula_type const& func ):
+        arguments_tuple{ func, Vars{}... }
+    { }
     constexpr Func( Func const& ) = default;
+    // may also be initialized by just the formula for Y combinator
+    constexpr Func( Func const& other, Vars const&... ): Func( other ) { }
     constexpr Func() = default;
 };
 
@@ -1910,7 +1941,8 @@ struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
     { return std::get< 1 + I >( args() ); }
 
     template< typename... Ts >
-    constexpr result_t< ExprT >
+    //constexpr result_t< ExprT >
+    constexpr auto
     operator ()( Ts const&... ) const
     { return formula()(); }
 
@@ -1943,19 +1975,27 @@ struct Func< ExprT, Vars... >: std::tuple< ExprT, Vars... >
 
     template< typename... Args >
     requires( sizeof...( Args ) == sizeof...( Vars ))
-    constexpr result_t< formula_type >
+    //constexpr result_t< formula_type >
+    constexpr auto
     operator ()( Args const&... ) const
     { return formula()(); }
 
     // attempting to evaluate a function is the same as evaluating the formula
-    constexpr result_t< formula_type >
+    //constexpr result_t< formula_type >
+    constexpr auto
     operator ()() const
     { return formula()(); }
 
     constexpr Func( formula_type const& func, 
         Vars const&... vars ): arguments_tuple{ func, vars... } 
     { };
+    // can be initialized by just the formula for intermediary calculations
+    constexpr Func( formula_type const& func ):
+        arguments_tuple{ func, Vars{}... }
+    { };
     constexpr Func( Func const& ) = default;
+    // may also be instantiated by a copy and the variables for Y combinator
+    constexpr Func( Func const& other, Vars const&... ): Func( other ) { }
     constexpr Func() = default;
 
 };
