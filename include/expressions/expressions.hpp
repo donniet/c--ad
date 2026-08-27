@@ -533,13 +533,13 @@ public:
 
     // conversion operator to the result type in the case that it is closed
     constexpr operator result_type() const
-    requires(( closed_expression< Args > and ... and true ))
+    requires( not ( open_expression< Args > or ... or false ))
     { return ResultHelper< for_args >::value( expr() ); }
     
     // invocation operator also returns the result if this expression is closed
     constexpr result_type 
     operator ()() const 
-    requires(( closed_expression< Args > and ... and true ))
+    requires( not ( open_expression< Args > or ... or false ))
     { return ResultHelper< for_args >::value( expr() ); }
 
     // if the expression is open the invocation operator is idempotent, 

@@ -1,3 +1,75 @@
+
+// nested second order in factorial
+is_same_v<
+    Func<
+        Conditional<
+            GreaterThan< Var<3, unsigned long long>, Constant<0L>>, 
+            Product< 
+                Var<3, unsigned long long>, 
+                Sub< Func<
+                    Var<2, Func<
+                        Conditional<
+                            GreaterThan<Var<3, unsigned long long>, Constant<0ULL>>, 
+                            Product<
+                                Var<3, unsigned long long>, 
+                                Sub<Func<Var<2, Var<2, unsigned long long>>, 
+                                    Var<3, unsigned long long>>, 
+                                Difference<Var<3, unsigned long long>, Constant<1ULL>>>>, 
+                            Constant<1ULL>>, 
+                        Var<3, unsigned long long>>>, 
+                    Var<3, unsigned long long>>, 
+                Difference<Var<3, unsigned long long>, Constant<1L>>>>, 
+            Constant<1L>>, 
+        Var<3, unsigned long long>>, 
+
+    Func<
+        Conditional<
+            GreaterThan<Var<3, unsigned long long>, Constant<0ULL>>, 
+            Product<
+                Var<3, unsigned long long>, 
+                Sub< Func<
+                    Var<2, Var<2, unsigned long long>>, 
+                        Var<3, unsigned long long>>, 
+                    Difference<Var<3, unsigned long long>, Constant<1ULL>>>>, 
+            Constant<1ULL>>, 
+        Var<3, unsigned long long>>>
+
+// single order nested var in factorial
+is_same_v<
+    Func<
+        Conditional<
+            GreaterThan< Var<3, unsigned long long>, Constant<0L>>, 
+            Product<
+                Var<3, unsigned long long>, 
+                Sub< Func<
+                    Var<2, Func<
+                        Conditional<
+                            GreaterThan< Var<3, unsigned long long>, Constant<0ULL>>, 
+                            Product<
+                                Var<3, unsigned long long>, 
+                                Sub<Func<Var<2, unsigned long long>, 
+                                    Var<3, unsigned long long>>, 
+                                Difference<Var<3, unsigned long long>, Constant<1ULL>>>>, 
+                            Constant<1ULL>>, 
+                        Var<3, unsigned long long>>>, 
+                    Var<3, unsigned long long>>, 
+                Difference<Var<3, unsigned long long>, Constant<1L>>>>, 
+            Constant<1L>>, 
+        Var<3, unsigned long long>>, 
+
+    Func<
+        Conditional<
+            GreaterThan< Var<3, unsigned long long>, Constant<0ULL>>, 
+            Product<
+                Var<3, unsigned long long>, 
+                Sub<Func<
+                    Var<2, unsigned long long>, 
+                        Var<3, unsigned long long>>, 
+                    Difference<Var<3, unsigned long long>, Constant<1ULL>>>>, 
+            Constant<1ULL>>, 
+        Var<3, unsigned long long>>>
+
+
 g( x * x, 3.f )
 
 Func<

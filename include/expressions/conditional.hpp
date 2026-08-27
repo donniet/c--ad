@@ -100,9 +100,9 @@ struct Select< SelectorT, Options... >
 /// If expression ///
 ////////////////////
 ///
-template< typename Cond, typename ResultT >
+template< typename Cond, typename ResultT, typename ElseT >
 constexpr ResultT
-if_( Cond const& cond, ResultT const& true_value, ResultT const& false_value )
+if_( Cond const& cond, ResultT const& true_value, ElseT const& false_value )
 { return cond ? true_value : false_value; }
 
 template< typename Cond, typename ThenT, typename ElseT >

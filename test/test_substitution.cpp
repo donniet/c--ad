@@ -336,66 +336,47 @@ constexpr bool test_func()
     return true;
 }
 
-// Y combinator:
-//
-// Y := λf.(λx.f (x x)) (λx.f (x x))
-// Y g = (λx.g (x x)) (λx.g (x x))
-//     = g (λx.g (x x)) (λx.g (x x))
-//     = g Y g
-//
-// h := λx.f (x x)
-// 
-// h is a function of x that depends on f. h applies x to x then applies the
-// result to f.
-//
-// Y is an expression of a variable f.  
-//
-template< typename FormulaT, variable VarY >
+
+template< size_t N, typename FuncT, typename OmegaT >
+struct PrimitiveRecurse;
+
+// recursive case
+template< size_t N, typename FuncT, typename OmegaT >
+struct PrimitiveRecurse
+{
+    using recurance_type = PrimitiveRecurse< N - 1, FuncT, OmegaT >;
+    
+    static constexpr auto
+    value( FuncT const& func, OmegaT const& omega )
+    { return func( N, recurance_type::value( func, omega )); }
+};
+
+// base case
+template< typename FuncT, typename OmegaT >
+struct PrimitiveRecurse< 0, FuncT, OmegaT >
+{
+    static constexpr OmegaT const&
+    value( FuncT const&, OmegaT const& omega )
+    { return omega; }
+};
+
+template< size_t N, typename FuncT, typename OmegaT >
 constexpr auto 
-Y( Func< FormulaT, VarY > const& g )
-{ 
-    using func_type = Func< FormulaT, VarY >;
-    using result_type = result_t< func_type >;
-    static constexpr size_t x_id = next_var_id_v< Func< FormulaT, VarY >>;
-
-    using x_type = Var< x_id, 
-        Func< Var< x_id, result_type >, Var< x_id, result_type >>>;
-//    using x_type = Var< x_id, result_type >; 
-
-    auto x = x_type{};
-
-    auto h = func( g( x( x )( x )), x );
-    return h( h );
-
-    //return h( g );
-    //return y( g );
-
-    //auto y = func( func( f(x(x)), x )( func( f(x(x)), x )), f );
-
-    //return y;
-}
+primitive_recurse( FuncT const& func, OmegaT const& omega )
+{ return PrimitiveRecurse< N, FuncT, OmegaT >::value( func, omega ); }
 
 bool test_recursion()
 {
     Var< 0, int > n;
-    Var< 1, int > m;
-    
-    //auto f = select( n >= 100_c, n, m + n + 1_c )( 0_c );
-    //auto x = f( f );
-    //println( "f( 0, f ) == {}", x );
-    //auto y = Y( func( select( n < 100_c, n + 1_c, 1_c ), n ));  
-    //println( "y == {}", y );
+    Var< 1, int > r;
 
-    Var< 2, Selection< 
-        GreaterThan< Var< 2, int >, Constant< 10 >>,
-        Sum< Var< 2, int >, Constant< 1 >>,
-        Constant< 1 >>> f;
+    auto fact = func( if_( n > 1, n * r, 1 ), n, r );
+    auto do_fact = primitive_recurse< 5 >( fact, 1 );
 
-    static_assert( is_same_v< int, result_t< Selection<LessThan<Var<2, int>, Constant<1>>, Sum<Var<2, int>, Constant<1>>, Constant<7>>>> );
+    static_assert( not open_expression< std::remove_cvref_t< decltype( do_fact )>> );
 
-    static_assert( is_same_v< int, result_t< decltype( f )>> );
-
-    println( "substitute( f + 3, 2 ) == {}", sub( f + 3, 2 )());
+    println( "primitive_recurse< 5 >( fact, 1 ) = {}",
+        primitive_recurse< 5 >( fact, 1 ));
 
     return true;
 }

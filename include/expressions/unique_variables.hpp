@@ -252,9 +252,9 @@ private:
 };
 
 
-///////////////////////////////////
+//////////////////////////////
 /// Unique Var Operations ///
-/////////////////////////////////
+////////////////////////////
 ///
 namespace detail {
 
@@ -274,9 +274,11 @@ struct MergeValueTypes
         "variables with the same id must have the same value_type" );
 };
 
+/// @brief detail for make_unique_variables_t
 template< variable... Vars >
 struct MakeUniqueVars;
 
+/// terminal case
 template< >
 struct MakeUniqueVars< >
 {
@@ -285,21 +287,26 @@ struct MakeUniqueVars< >
     { return { }; }
 };
 
+/// recursive case
 template< variable First, variable... Rest >
 struct MakeUniqueVars< First, Rest... >
 {
+    // (1)  recursively call MakeUniqueVars on the Rest...
     using rest_type = MakeUniqueVars< Rest... >::type;
     static constexpr size_t rest_size = rest_type::size;
     static constexpr rest_type rest_value( Rest const&... rest )
     { return MakeUniqueVars< Rest... >::value( rest... ); }
 
     static constexpr size_t first_id = var_id_v< First >;
-
     typedef make_seq< rest_size > for_rest;
 
+    // (2)  determine the insert position (if it exists) for First and 
+    //      reconstruct the unique_variables collection
     template< typename RestUnique >
     struct Inserter;
 
+    // (2a) terminal case for inserter: if rest is empty then the result will
+    //      be a unique_variables set containing just First     
     template< >
     struct Inserter< unique_variables< >>
     {
@@ -310,8 +317,9 @@ struct MakeUniqueVars< First, Rest... >
         { return { first }; }
     };
 
+    // (2b) rest already contains a variable with the same id as First 
     template< typename... Vars >
-    requires( unique_variables< Vars... >::template contains< First >())
+    requires( unique_variables< Vars... >::contains_id( first_id ))
     struct Inserter< unique_variables< Vars... >>
     {
         static constexpr size_t index = unique_variables< Vars... >::
@@ -325,7 +333,12 @@ struct MakeUniqueVars< First, Rest... >
 
         template< typename Seq >
         struct Enumerator;
-
+        
+        // enumerate the resultant unique_variables set, merging any value 
+        // types and copy over the variable names from the original
+        //
+        // NOTE: differing variable types in currently not allowed for variables
+        //       with the same id
         template< size_t... Is >
         struct Enumerator< seq< Is... >>
         {
@@ -345,12 +358,14 @@ struct MakeUniqueVars< First, Rest... >
             value( first, rest_value( rest... )); }
     };
 
+    // (2c) rest does not contain a variable with the same id as First
     template< typename... Vars >
-    requires( not unique_variables< Vars... >::template contains< First >())
+    requires( not unique_variables< Vars... >::contains_id( first_id ))
     struct Inserter< unique_variables< Vars... >>
     {
         using unique_variables_type = unique_variables< Vars... >;
 
+        // count how many variables will precede First
         static constexpr size_t index = 
             (( is_less( var_id_v< Vars >, first_id ) ? 1 : 0 ) + ... + 0 );
 
@@ -359,12 +374,15 @@ struct MakeUniqueVars< First, Rest... >
         template< typename Seq >
         struct Enumerator;
 
+        // enumerate the new unique_variables set
         template< size_t... Is >
         struct Enumerator< seq< Is... >>
         {
             template< size_t I >
             struct Element;
 
+            // if the Ith element comes before the index of the inserted element
+            // then copy over the element from the original at I
             template< size_t I >
             requires( I < index )
             struct Element< I >
@@ -375,6 +393,7 @@ struct MakeUniqueVars< First, Rest... >
                 { return rest.template at< I >(); }
             };
 
+            // insert First at index
             template< size_t I >
             requires( I == index )
             struct Element< I >
@@ -385,6 +404,8 @@ struct MakeUniqueVars< First, Rest... >
                 { return first; }
             };
 
+            // if the Ith element comes after the index of the inserted element
+            // collect it from the original at the position I-1
             template< size_t I >
             requires( I > index )
             struct Element< I >
