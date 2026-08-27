@@ -348,7 +348,7 @@ struct PrimitiveRecurse
     
     static constexpr auto
     value( FuncT const& func, OmegaT const& omega )
-    { return func( N, recurance_type::value( func, omega )); }
+    { return func( recurance_type::value( func, omega )); }
 };
 
 // base case
@@ -370,7 +370,7 @@ bool test_recursion()
     Var< 0, int > n;
     Var< 1, int > r;
 
-    auto fact = func( if_( n > 1, n * r, 1 ), n, r );
+    auto fact = func( if_( n > 1, n * r( n - 1 ), 1 ), n, r )( 5 );
     auto do_fact = primitive_recurse< 5 >( fact, 1 );
 
     static_assert( not open_expression< std::remove_cvref_t< decltype( do_fact )>> );
