@@ -15,12 +15,21 @@ else()
 # link_libraries("c++abi" "c++")
 
 ## Dependencies
-find_package(TBB REQUIRED)
-set(C__AD_PARALLEL_LIBS TBB:tbb)
+#removing dependency on TBB to simplify build
+#find_package(TBB REQUIRED)
+#set(C__AD_PARALLEL_LIBS TBB:tbb)
 endif()
 
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message(FATAL_ERROR "This project requires the Clang compiler. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
+endif()
+if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21.0")
+    message(FATAL_ERROR "Clang version 21.0 or higher is required. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
+
+# DT: removing vcglib to to simplify build
 include_directories(include ../vcglib/)
-find_package(Eigen3 REQUIRED)
+#find_package(Eigen3 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,21 +47,23 @@ add_compile_options("-fdiagnostics-show-template-tree")
 add_compile_options("-fcolor-diagnostics")
 add_compile_options("-fansi-escape-codes")
 
-file(GLOB_RECURSE LIB_MODULE_FILES
-    *.cppm
-)
+# DT: removing modules for now to simplify build
+#file(GLOB_RECURSE LIB_MODULE_FILES
+#    *.cppm
+#)
 
-message("modules file list: ${LIB_MODULE_FILES}")
+#message("modules file list: ${LIB_MODULE_FILES}")
 
 # add_compile_options(-fmodules -fbuiltin-module-map -stdlib=libc++)
 # add_compile_options(-stdlib=libc++)
 
-add_subdirectory(lib)
+#add_subdirectory(lib)
 
 enable_testing()
 add_subdirectory(test)
 
-add_subdirectory(experiments)
+# DT: removing experiments subdirectory to simplify build
+#add_subdirectory(experiments)
  
 #add_executable(c++ad test.cpp)
 #target_compile_definitions(c++ad PRIVATE PARALLEL)

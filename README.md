@@ -3,7 +3,65 @@
 Library for rigorous expression of physical objects using unintrusive syntax
 and leveraging only the minimual international standards.  
 
-Currently the only dependencies are a modern C++26 compiler and CMake
+Currently the only dependencies are a modern C++26 compiler and cmake
+
+## Build Environment
+
+Build works using clang++21, cmake (4.2+), and ninja-build. See the [.github/workflows/cmake-single-platform.yml] for all expected dependencies and an example build environment setup.  If you just want to get it to compile as it stands currently below are instructions for linux+bash, mac+zsh, and windows+bat.
+
+### `setup.sh` - Linux Bash Build Environment Setup
+
+```bash
+# install prerequisites
+wget -O - https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+sudo apt update && sudo apt install cmake ninja-build clang-21 clang++-21
+
+# setup build folder
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++-21 --fresh
+
+# compile all targets
+cmake --build build
+
+# run tests
+ctest --test-dir build
+```
+
+### `setup.zsh` - MacOS Zsh Build Environment Setup
+
+```zsh
+# install prerequisites
+brew install cmake ninja llvm@21
+export PATH="/opt/homebrew/opt/llvm@21/bin:$PATH"
+
+# setup build folder
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++-21 --fresh
+
+# compile all targets
+cmake --build build
+
+# run tests
+ctest --test-dir build
+```
+
+### `setup.bat` - Windows Build Environment Setup (credit: Google Gemini)
+
+```bat
+echo Installing CMake, Ninja, and LLVM...
+winget install Kitware.CMake --silent --accept-source-agreements --accept-package-agreements
+winget install Ninja-build.Ninja --silent --accept-source-agreements --accept-package-agreements
+winget install LLVM.LLVM --silent --accept-source-agreements --accept-package-agreements
+
+echo Close and Re-open Command Window to Refresh PATH...
+
+echo setup build folder
+cmake -S . -B build/windows -G Ninja -DCMAKE_CXX_COMPILER=clang++-21 --fresh
+
+echo compile all targets
+cmake --build build/windows
+
+echo run tests
+ctest --test-dir build
+```
 
 ## Goals
 
