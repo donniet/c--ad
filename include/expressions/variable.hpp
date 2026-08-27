@@ -1663,12 +1663,16 @@ public:
     { return std::get< 1 + K >( *this ); }
 
     // substitutes make_expression( args )... in for vars...
-    template< typename... Args >
-    requires( VarsSub< make_expression_t< Args >... >::is_compatible )
-    constexpr typename VarsSub< make_expression_t< Args >... >::type
-    operator ()( Args const&... args ) const
-    { return VarsSub< make_expression_t< Args >... >::value( *this, 
-        make_expression( args )... ); }
+//    template< typename... Args >
+//    requires( VarsSub< make_expression_t< Args >... >::is_compatible )
+//    constexpr typename VarsSub< make_expression_t< Args >... >::type
+//    operator ()( Args const&... args ) const
+//    { return VarsSub< make_expression_t< Args >... >::value( *this, 
+//        make_expression( args )... ); }
+    template< typename First, typename... Rest >
+    constexpr Sub< this_type, First, Rest... >
+    operator ()( First const& first, Rest const&... rest ) const
+    { return { *this, first, rest... }; }
 
     // operator() is idempotent
     constexpr this_type const&
@@ -1784,11 +1788,15 @@ public:
     //{ _value = val; }
 
     /// @brief direct substitution into a variable creates a function 
-    template< variable First, variable... Rest > 
-    requires( is_non_repeating_v< seq< var_id_v< First >,
-        var_id_v< Rest >... >> ) 
-    constexpr Func< increase_var_order_t< this_type >, First, Rest... >
-    operator ()( First first, Rest... rest ) const
+//    template< variable First, variable... Rest > 
+//    requires( is_non_repeating_v< seq< var_id_v< First >,
+//        var_id_v< Rest >... >> ) 
+//    constexpr Func< increase_var_order_t< this_type >, First, Rest... >
+//    operator ()( First first, Rest... rest ) const
+//    { return { name(), first, rest... }; }
+    template< typename First, typename... Rest >
+    constexpr Sub< increase_var_order_t< this_type >, First, Rest... >
+    operator()( First first, Rest... rest ) const
     { return { name(), first, rest... }; }
 
     // TODO:
