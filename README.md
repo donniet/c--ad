@@ -7,7 +7,7 @@ Currently the only dependencies are a modern C++26 compiler (clang++-21), the ni
 
 ## Build Environment
 
-Build works using clang++-21, cmake (4.2+), and ninja-build. See the [.github/workflows/cmake-single-platform.yml] for all expected dependencies and an example build environment setup.  If you just want to get it to compile as it stands currently below are instructions for linux+bash, mac+zsh, and windows+bat.
+Build works using clang++-21, cmake (4.2+), and ninja-build. See the [github workflow](.github/workflows/cmake-single-platform.yml) for all dependencies and an example build environment setup.  If you just want to get it to compile as it stands currently below are instructions for linux+bash, mac+zsh, and windows+bat.
 
 ### `setup.sh` - Linux Bash Build Environment Setup
 
