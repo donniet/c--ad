@@ -221,6 +221,10 @@ template< typename T >
 struct Result
 { using type = std::remove_cvref_t< T >; };
 
+template< typename T >
+concept has_specialized_result = requires( T const& ) 
+{ typename Result< T >::type; };
+
 /// @brief result of a tuple is a tuple of results
 template< typename... Ts >
 requires( expression< tuple< Ts... >> )
@@ -373,7 +377,15 @@ struct IsStaticExpression< Var< I, T >>:
 template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> )
 struct IsStaticExpression< Op< Args... >>: std::integral_constant< bool, 
-    ( IsStaticExpression< Args >::value and ... )> { };
+    ( IsStaticExpression< Args >::value and ... and true )> { };
+
+template< template< auto, typename... > class Op, auto Discriminator,
+    typename... Args >
+requires( compound_expression< Op< Discriminator, Args... >> )
+struct IsStaticExpression< Op< Discriminator, Args... >>: 
+    std::integral_constant< bool, 
+        ( IsStaticExpression< Args >::value and ... and true )> { };
+
 
 template< typename T >
 concept static_expression = IsStaticExpression< T >::value;

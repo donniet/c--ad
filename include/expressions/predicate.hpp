@@ -4,85 +4,23 @@
 #include "expressions/variable.hpp"
 
 namespace expressions {
-
+  
 ///////////////////////////////
-/// Predicate Substitution ///
+/// Predicate: ForVar< I > ///
 /////////////////////////////
 ///
-/// Predicates used to identify parts of expressions to substitute.  
-/// A predicate is a boolean valued trait consistent with 
-/// std::integral_constant< bool, value >.  Typically they are nested inside
-/// another templated class to allow the erasure of parameters to the
-/// predicate.  
-///
-/// @brief expression manipulator that replaces any argument in an expression
-/// with the given WithT argument.
-///
-/// @tparam Predicate resolves to an integral_constant< bool, ... > like
-/// like object-type (ie: has a constexpr static bool value member) which
-/// flags the expression passed as the template parameter as substitutable
-///
-///
-/// Case: Default is idempotent
-template< template< typename > class Predicate, typename ExprT, typename WithT >
-struct PredicateSub
+/// @brief predicate class for the Ith variable id 
+template< size_t I >
+struct ForVar
 {
-    using type = ExprT;
-    static constexpr type value( ExprT const& expr, WithT const& )
-    { return expr; }
-};
- 
-/// Case: Predicate matched expression.  We resolve to our replacement
-template< template< typename > class Predicate, typename ExprT, typename WithT >
-requires( Predicate< ExprT >::value )
-struct PredicateSub< Predicate, ExprT, WithT >
-{
-    using type = WithT;
-    static constexpr type value( ExprT const& expr, WithT const& with )
-    { return with; } 
+    // default case
+    template< typename TestT >
+    struct Is: integral_constant< bool, false > { };
+
+    template< variable Var >
+    struct Is< Var >: integral_constant< bool, I == var_id_v< Var >> { };
 };
 
-/// Case: Unmatched non-compound expression is idempotent
-template< template< typename > class Predicate, typename NonCompoundExprT, 
-    typename WithT >
-requires( not Predicate< NonCompoundExprT >::value and 
-    not compound_expression< NonCompoundExprT > ) 
-struct PredicateSub< Predicate, NonCompoundExprT, WithT >
-{
-    using type = NonCompoundExprT;
-    static constexpr type value( NonCompoundExprT const& expr, WithT const& with )
-    { return expr; }
-};
-
-/// Case: Unmatched compound expression recurses
-template< template< typename > class Predicate, 
-    template< typename... > class Op, typename... Args, typename WithT >
-requires( compound_expression< Op< Args... >> and 
-    not Predicate< Op< Args... >>::value )
-struct PredicateSub< Predicate, Op< Args... >, WithT > {
-private:
-    template< typename ArgT >
-    using ArgumentSub = PredicateSub< Predicate, ArgT, WithT >;
-
-    template< typename ArgT >
-    static constexpr typename ArgumentSub< ArgT >::type 
-    sub_argument( ArgT const& arg, WithT const& with )
-    { return ArgumentSub< ArgT >::value( arg, with ); }
-
-public:
-    using type = Op< typename ArgumentSub< Args >::type... >;
-
-private:
-    template< size_t... Is >
-    static constexpr type 
-    value_helper( Op< Args... > const& op, WithT const& with, seq< Is... > )
-    { return { sub_argument( get_argument< Is >( op ), with )... }; }
-
-public:
-    static constexpr type 
-    value( Op< Args... > const& op, WithT const& with )
-    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
-};
 
 //////////////////////////
 /// Predicate Matches ///
@@ -123,12 +61,298 @@ struct IsMatch: integral_constant< bool, false > { };
 template< typename Var, typename ExprT >
 struct IsMatch< match< Var, ExprT >>: integral_constant< bool, true > { };
 
-template< typename MatchT >
-concept match = IsMatch< MatchT >::value;
+}; // namespace detail
 
+template< typename T >
+constexpr bool is_match_v = detail::IsMatch< T >::value;
+
+template< typename VarTuple, typename ReplacementTuple >
+struct Replacement;
+
+template< >
+struct Replacement< tuple<>, tuple<> >
+{ };
+
+template< variable FirstVar, variable... RestVars, 
+    typename FirstRep, typename... RestReps >
+requires( sizeof...( RestVars ) == sizeof...( RestReps ))
+struct Replacement< tuple< FirstVar, RestVars... >, 
+    tuple< FirstRep, RestReps... >>:
+        Replacement< tuple< RestVars... >, tuple< RestReps... >>
+{
+    static constexpr size_t size = 1 + sizeof...( RestVars );
+
+    template< variable Var >
+    struct Helper;
+
+    template< variable Var >
+    requires( var_id_v< Var > == var_id_v< FirstVar > )
+    struct Helper< Var >
+    { using type = FirstRep; };
+
+    template< variable Var >
+    requires( var_id_v< Var > != var_id_v< FirstVar > )
+    struct Helper< Var >
+    { using type = Replacement< tuple< RestVars... >, tuple< RestReps... >>::
+        template Helper< Var >::type; };
+
+    template< variable Var >
+    using replacement_t = Helper< Var >::type;
+
+    template< size_t I >
+    friend struct VarType;
+
+    template< size_t I >
+    struct VarHelper;
+
+    template< >
+    struct VarHelper< 0 >
+    { 
+        using type = FirstVar; 
+        static constexpr type 
+        value( Replacement< tuple< FirstVar, RestVars... >,
+            tuple< FirstRep, RestReps... >> const& reps )
+        { return reps._var; }
+    };
+
+    template< size_t I >
+    requires( is_greater( I, 0 ))
+    struct VarHelper< I >
+    { 
+        using type = RestVars...[ I - 1 ]; 
+        static constexpr type 
+        value( Replacement< tuple< FirstVar, RestVars... >,
+            tuple< FirstRep, RestReps... >> const& reps )
+        { return Replacement< tuple< RestVars... >, tuple< RestReps... >>::
+            template VarHelper< I - 1 >::value( reps ); }
+    };
+
+    template< size_t I >
+    using var_t = VarHelper< I >::type;
+
+    template< size_t I >
+    constexpr var_t< I >
+    var() const
+    { return VarHelper< I >::value( *this ); }
+
+    template< variable Var >
+    constexpr replacement_t< Var >
+    operator []( Var ) const;
+
+    template< variable Var >
+    requires( var_id_v< Var > == var_id_v< FirstVar > )
+    constexpr replacement_t< Var >
+    operator []( Var ) const
+    { return _rep; }
+
+    template< variable Var >
+    requires( var_id_v< Var > != var_id_v< FirstVar > )
+    constexpr replacement_t< Var >
+    operator []( Var const& v ) const
+    { return Replacement< tuple< RestVars... >, tuple< RestReps... >>::
+        operator []( v ); }
+    
+    constexpr Replacement() = default;
+    constexpr Replacement( Replacement const& ) = default;
+    constexpr Replacement( tuple< FirstVar, RestVars... > const& vars,
+        tuple< FirstRep, RestReps... > const& reps ): 
+            Replacement< tuple< RestVars... >, tuple< RestReps... >>{
+                tuple_rest( vars ), tuple_rest( reps ) },
+                    _var{ tuple_first( vars )}, _rep{ tuple_first( reps )}
+    { }
+
+private:
+    FirstVar _var;
+    FirstRep _rep;
+};
+
+template< variable Var, typename Rep >
+using single_replacement_t = Replacement< tuple< Var >, tuple< Rep >>;
+
+template< variable Var, typename Rep >
+constexpr single_replacement_t< Var, Rep >
+single_replacement( Var const& var, Rep const& rep )
+{ return {{ var }, { rep }}; }
+
+template< typename T >
+struct IsReplacement: std::false_type { };
+
+template< typename VarsTuple, typename RepsTuple >
+struct IsReplacement< Replacement< VarsTuple, RepsTuple >>: std::true_type { };
+
+template< typename T >
+constexpr bool is_replacement_v = IsReplacement< T >::value;
+
+///////////////////////////////
+/// Predicate Substitution ///
+/////////////////////////////
+///
+/// Predicates used to identify parts of expressions to substitute.  
+/// A predicate is a boolean valued trait consistent with 
+/// std::integral_constant< bool, value >.  Typically they are nested inside
+/// another templated class to allow the erasure of parameters to the
+/// predicate.  
+///
+/// @brief expression manipulator that replaces any argument in an expression
+/// with the given WithT argument.
+///
+/// @tparam Predicate resolves to an integral_constant< bool, ... > like
+/// like object-type (ie: has a constexpr static bool value member) which
+/// flags the expression passed as the template parameter as substitutable
+///
+///
+/// Case: Default is idempotent
+template< template< typename > class Predicate, typename ExprT, 
+    typename WithT >
+struct PredicateSub
+{
+    using type = ExprT;
+    static constexpr type value( ExprT const& expr, WithT const& )
+    { return expr; }
+};
+ 
+/// Case: Predicate matched expression.  We resolve to our replacement
+template< template< typename > class Predicate, typename ExprT, 
+    typename WithT >
+requires( Predicate< ExprT >::value and not is_replacement_v< WithT > )
+struct PredicateSub< Predicate, ExprT, WithT >
+{
+    using type = WithT;
+    static constexpr type value( ExprT const& expr, WithT const& with )
+    { return with; } 
+};
+
+/// Case: Predicate matched expressions and we were given a replacement pattern
+template< template< typename > class Predicate, typename ExprT,
+    typename Pattern >
+requires( Predicate< ExprT >::value and is_replacement_v< Pattern >)
+struct PredicateSub< Predicate, ExprT, Pattern >
+{
+    // replace every var in ExprT with the substitute in ReplacementPattern
+    typedef make_seq< Pattern::size > for_replacements;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< >
+    struct Helper< seq< >>
+    {
+        using type = ExprT;
+        static constexpr type
+        value( ExprT const& expr, Pattern const& rep )
+        { return expr; }
+    };
+
+    template< size_t I, size_t... Is >
+    struct Helper< seq< I, Is... >>
+    {
+        using var_type = Pattern::template var_t< I >;
+        using rep_type = Pattern::template replacement_t< var_type >;
+
+        static constexpr size_t var_id = var_id_v< var_type >;
+
+        using rest_type = Helper< seq< Is... >>::type;
+
+        static constexpr rest_type
+        rest_value( ExprT const& expr, Pattern const& rep )
+        { return Helper< seq< Is... >>::value( expr, rep ); }
+
+        using type = PredicateSub< ForVar< var_id >::template Is,
+            rest_type, rep_type >::type;
+
+        static constexpr type
+        value( ExprT const& expr, Pattern const& rep )
+        { return PredicateSub< ForVar< var_id >::template Is,
+            rest_type, rep_type >::value( rest_value( expr, rep ), 
+                rep[ var_type{} ] ); }
+    };
+
+    using type = Helper< for_replacements >::type;
+    static constexpr type
+    value( ExprT const& expr, Pattern const& rep )
+    { return Helper< for_replacements >::value( expr, rep ); }
+};
+
+/// Case: Unmatched non-compound expression is idempotent
+template< template< typename > class Predicate, typename NonCompoundExprT, 
+    typename WithT >
+requires( not Predicate< NonCompoundExprT >::value and 
+    not compound_expression< NonCompoundExprT > ) 
+struct PredicateSub< Predicate, NonCompoundExprT, WithT >
+{
+    using type = NonCompoundExprT;
+    static constexpr type value( NonCompoundExprT const& expr, 
+        WithT const& with )
+    { return expr; }
+};
+
+/// Case: Unmatched compound expression recurses
+template< template< typename > class Predicate, 
+    template< typename... > class Op, typename... Args, typename WithT >
+requires( compound_expression< Op< Args... >> and 
+    not Predicate< Op< Args... >>::value )
+struct PredicateSub< Predicate, Op< Args... >, WithT > {
+private:
+    template< typename ArgT >
+    using ArgumentSub = PredicateSub< Predicate, ArgT, WithT >;
+
+    template< typename ArgT >
+    static constexpr typename ArgumentSub< ArgT >::type 
+    sub_argument( ArgT const& arg, WithT const& with )
+    { return ArgumentSub< ArgT >::value( arg, with ); }
+
+public:
+    using type = Op< typename ArgumentSub< Args >::type... >;
+
+private:
+    template< size_t... Is >
+    static constexpr type 
+    value_helper( Op< Args... > const& op, WithT const& with, seq< Is... > )
+    { return { sub_argument( get_argument< Is >( op ), with )... }; }
+
+public:
+    static constexpr type 
+    value( Op< Args... > const& op, WithT const& with )
+    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
+};
+
+/// Case: Unmatched discriminated expression recurses
+template< template< typename > class Predicate, 
+    template< auto, typename... > class Op, auto Discriminator,
+        typename... Args, typename WithT >
+requires( compound_expression< Op< Discriminator, Args... >> and 
+    not Predicate< Op< Discriminator, Args... >>::value )
+struct PredicateSub< Predicate, Op< Discriminator, Args... >, WithT > {
+private:
+    template< typename ArgT >
+    using ArgumentSub = PredicateSub< Predicate, ArgT, WithT >;
+
+    template< typename ArgT >
+    static constexpr typename ArgumentSub< ArgT >::type 
+    sub_argument( ArgT const& arg, WithT const& with )
+    { return ArgumentSub< ArgT >::value( arg, with ); }
+
+public:
+    using type = Op< Discriminator, typename ArgumentSub< Args >::type... >;
+
+private:
+    template< size_t... Is >
+    static constexpr type 
+    value_helper( Op< Discriminator, Args... > const& op, WithT const& with, 
+        seq< Is... > )
+    { return { sub_argument( get_argument< Is >( op ), with )... }; }
+
+public:
+    static constexpr type 
+    value( Op< Discriminator, Args... > const& op, WithT const& with )
+    { return value_helper( op, with, make_seq< sizeof...( Args )>{} ); }
+};
+
+namespace detail {
 // represents a Sub<...> that has been matched against an expression
 //
-template< typename ExprT, match... Matches >
+template< typename ExprT, typename... Matches >
+requires(( is_match_v< Matches > and ... and true ))
 struct SubMatches
 {
     using expression_type = ExprT;
@@ -183,22 +407,6 @@ private:
 };
 
 } // namespace detail
-  
-///////////////////////////////
-/// Predicate: ForVar< I > ///
-/////////////////////////////
-///
-/// @brief predicate class for the Ith variable id 
-template< size_t I >
-struct ForVar
-{
-    // default case
-    template< typename TestT >
-    struct Is: integral_constant< bool, false > { };
-
-    template< variable Var >
-    struct Is< Var >: integral_constant< bool, I == var_id_v< Var >> { };
-};
 
 //////////////////////////////////////////
 /// Predicate: ForExpression< ExprT > ///
@@ -222,7 +430,7 @@ struct ForExpression< ExprT >
     // default case does not match
     template< typename TestT >
     struct Is: integral_constant< bool, false > 
-    {  using matches_type = tuple<>; };
+    { using matches_type = tuple<>; };
 
     // expression matches verbatim, so no variable matches need to be tracked
     template< >
@@ -249,6 +457,7 @@ struct ForExpression< Var >
 
 /// @brief specialization for compound expressions with dependent variables
 ///
+/// TODO: build this for discriminated expressions
 template< template< typename... > class Op, typename... Args >
 requires( compound_expression< Op< Args... >> and 
     is_greater( free_variables_t< Op< Args... >>::size, 0 ))

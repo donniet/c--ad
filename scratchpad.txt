@@ -1,3 +1,86 @@
+Sub<
+    Sub<
+        Func< Product<Var<0, int>, 
+            Sub< Var<1, Var<1, int>>, 
+                 Difference<Var<0, int>, Constant<1L>>>>, 
+            Var<0, int>, 
+            Var<1, int>>, 
+        Constant<5L>>, 
+    Sub<
+        Sub<
+            Func< Product<Var<0, int>, 
+                Sub< Var<1, Var<1, int>>, 
+                    Difference<Var<0, int>, Constant<1L>>>>, 
+                Var<0, int>, 
+                Var<1, int>>, 
+            Constant<5L>>, 
+        Sub< 
+            Sub<
+                Func< Product<Var<0, int>, 
+                    Sub< Var<1, Var<1, int>>, 
+                        Difference<Var<0, int>, Constant<1L>>>>, 
+                    Var<0, int>, 
+                    Var<1, int>>, 
+                Constant<5L>>, 
+            Sub<
+                Sub<
+                    Func< Product<Var<0, int>, 
+                        Sub< Var<1, Var<1, int>>, 
+                            Difference<Var<0, int>, Constant<1L>>>>, 
+                        Var<0, int>, 
+                        Var<1, int>>, 
+                    Constant<5L>>, 
+                Sub<
+                    Sub<
+                        Func< Product<Var<0, int>, 
+                            Sub< Var<1, Var<1, int>>, 
+                                Difference<Var<0, int>, Constant<1L>>>>, 
+                            Var<0, int>, 
+                            Var<1, int>>, 
+                        Constant<5L>>, 
+                    Constant<1L>>>>>>
+Sub<
+    Func<
+        Product< 
+            Var<0, int>, 
+            Sub< Var<1, Var<1, int>>, 
+                Difference< Var<0, int>, Constant<1L>>>>, 
+        Var<0, int>, 
+        Var<1, int>>, 
+    Sub< 
+        Func<
+            Product<
+                Var<0, int>, 
+                Sub< Var<1, Var<1, int>>, 
+                    Difference< Var<0, int>, Constant<1L>>>>, 
+            Var<0, int>, 
+            Var<1, int>>, 
+        Sub<
+            Func<
+                Product< Var<0, int>, 
+                    Sub< Var<1, Var<1, int>>, 
+                        Difference< Var<0, int>, Constant<1L>>>>, 
+                Var<0, int>, 
+                Var<1, int>>, 
+            Sub<
+                Func<
+                    Product< Var<0, int>, 
+                        Sub< Var<1, Var<1, int>>, 
+                            Difference< Var<0, int>, Constant<1L>>>>, 
+                    Var<0, int>, 
+                    Var<1, int>>, 
+                Sub< 
+                    Func< 
+                        Product< Var<0, int>, 
+                            Sub< Var<1, Var<1, int>>, 
+                                Difference<Var<0, int>, Constant<1L>>>>, 
+                        Var<0, int>,
+                        Var<1, int>>, 
+                    Constant<1L>>>>>>
+
+{n*r(n-1)}(n=5)(r={n*r(n-1)}(n=5))...
+
+{5*{5*r(5-1)}(5-1)
 
 // nested second order in factorial
 is_same_v<

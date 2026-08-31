@@ -14,11 +14,6 @@ using std::print, std::println;
 using namespace expressions;
 using namespace units;
 
-static_assert( expression< WhileDoer< 
-    LessThan< Var< 0, int >, StaticValue< int >>,
-        SetVar< 0, Sum< Var< 0, int >, StaticValue< int >>>>>, 
-            "while_do is an expression" );
-
 bool test_iteration();
 
 int main( int ac, char* av[] )
@@ -48,23 +43,11 @@ bool test_iteration()
     
     scope( m = 0, n = 0 );
 
-    while_do( n < 100, n = n + 1, m = m + n ) | scope;
-    
-    //iterate( m = m + n, n = n + 1 ).until( n > 100 ) | eval( vars );
-
-    //// sum of the first n integers
-    //auto first_n = iteration( m, n ).
-    //    initial_values( 0, 1 ).
-    //    update( m + n, n + 1 ).
-    //    until( n > 100 );
-    //
-    //static_assert( closed_expression< decltype( first_n )> );
-    //
-    //auto [ s, steps ] = first_n | eval();
-    //
-    //println( std::runtime_format( "sum of first {} integers: {}" ), steps-1, s );
-
+    ( n = n + 1, m = m + n ) | do_while( n < 100, scope );
     println( "m == {}", scope( m ) );
+    
+    if( scope( m ) != 5050 )
+        return false;
 
     auto rate = 1.0 / 100.0_sqft;
 

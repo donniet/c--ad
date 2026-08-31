@@ -1540,24 +1540,37 @@ struct GetFreeVars< Var< I, T >>
 //};
 
 /// @brief trait to identify free variables in an unbound function
-template< size_t I, typename T, variable... Vars >
-struct GetFreeVars< Func< Var< I, Var< I, T >>,
-    Vars... >>
+template< typename ExprT, variable... Vars >
+requires( is_greater( var_order_v< ExprT >, 1 ))
+struct GetFreeVars< Func< ExprT, Vars... >>
 {
-    using formula_variable_type = Var< I, Func< Var< I, T >, Vars... >>;
+    using expression_free_vars_type = GetFreeVars< ExprT >::type;
+    using parameters_type = make_unique_variables_t< Vars... >;
 
-    using type = make_unique_variables_t< formula_variable_type, Vars... >;
+    // subtract any free vars from expression_free_vars to eliminate duplicate
+    // ids with different value types-- we prefer the ...vars value types
+    using unbound_expression_vars_type = subtract_unique_variables_t<
+        expression_free_vars_type, parameters_type >;
+
+    // now merge them knowing there will be no duplicates
+    using type = merge_unique_variables_t< unbound_expression_vars_type,
+        parameters_type >;
 
     static constexpr type 
-    value( Func< Var< I, Var< I, T >>, Vars... > const& func )
+    value( Func< ExprT, Vars... > const& func )
     {
-        static constexpr make_seq< sizeof...( Vars )> for_vars;
+        auto [ formula, ...vars ] = func.args();
 
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return make_unique_variables( std::get< 0 >( func ).name(),
-            std::get< 1 + Is >( func )... ); };
+        auto expression_free_vars = 
+            GetFreeVars< ExprT >::value( formula );
+        auto parameters = make_unique_variables( vars... );
 
-        return helper( for_vars ); 
+        // remove free vars from formula that match our parameters
+        auto unbound_expression_vars = subtract_unique_variables(
+            expression_free_vars, parameters );
+
+        // return the re-merged variables to eliminate duplicate IDs
+        return merge_unique_variables( unbound_expression_vars, parameters );
     }
 };
 
@@ -2007,6 +2020,55 @@ struct Func< ExprT, Vars... >: std::tuple< ExprT, Vars... >
     constexpr Func() = default;
 
 };
+
+/////////////////////////////
+/// Constant Expressions ///
+///////////////////////////
+/// 
+/// Expression containing no free variables and only constant leaves can be 
+/// evaluated at compile time
+///
+template< typename ExprT >
+struct IsConstantExpression;
+
+template< typename ExprT >
+requires( not expression< ExprT > or open_expression< ExprT >)
+struct IsConstantExpression< ExprT >: false_type { };
+
+template< closed_expression ExprT >
+struct IsConstantExpression< ExprT >
+{
+    // assume false
+    template< typename T >
+    struct Parser: false_type { };
+
+    template< auto Value >
+    struct Parser< Constant< Value >>: true_type { };
+
+    // vars are ok because they are part of a closed expression and so must be
+    // bound by a sub
+    template< variable Var >
+    struct Parser< Var >: true_type { };
+
+    // parser for compound expressions
+    template< template< typename... > class Op, typename... Args >
+    struct Parser< Op< Args... >>: std::integral_constant< bool,
+        ( Parser< Args >::value and ... and true )> { };
+
+    // parser for discriminated expressions
+    template< template< auto, typename... > class Op, auto Discriminator,
+        typename... Args >
+    struct Parser< Op< Discriminator, Args... >>: std::integral_constant< bool,
+        ( Parser< Args >::value and ... and true )> { };
+
+    // TODO: verify that operator() is consteval...    
+
+    static constexpr bool value = Parser< ExprT >::value;
+};
+
+template< typename T >
+concept constant_expression = IsConstantExpression< T >::value;
+
 
 } // namespace expressions 
 
