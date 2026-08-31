@@ -129,6 +129,20 @@ constexpr Conditional< Cond, ThenT, ElseT >
 if_( Cond const& cond, ThenT const& then_expr, ElseT const& else_expr )
 { return { cond, then_expr, else_expr }; }
 
+/// short circuit for constant conditions
+template< constant_expression Cond, typename ThenT, typename ElseT >
+requires( Cond() )
+constexpr ThenT
+if_( Cond const&, ThenT const& then_expr, ElseT const& )
+{ return then_expr; }
+
+/// short circuit for constant conditions
+template< constant_expression Cond, typename ThenT, typename ElseT >
+requires( not Cond() )
+constexpr ElseT
+if_( Cond const&, ThenT const&, ElseT const& else_expr )
+{ return else_expr; }
+
 }; // namespace expressions
 
 #endif // __EXPRESSIONS_CONDITIONAL_HPP__

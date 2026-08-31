@@ -498,6 +498,12 @@ private:
     template< typename Seq >
     struct ResultHelper;
 
+    // was the result pre-defined?
+//    template< typename Seq >
+//    requires( has_specialized_result< expression_type > )
+//    struct ResultHelper< Seq >
+//    { using type = Result< expression_type >::type; };
+
     template< size_t... Is >
     requires( not is_same_v< reconstitute_t< expression_type, typename
         ArgEvaluator< Is >::type... >, expression_type > )
@@ -600,6 +606,36 @@ struct Compound< Op< Discriminator, Args... >>:
     using CompoundCommon< Op< Discriminator, Args... >, Args... >::
         CompoundCommon; 
 };
+
+////////////////////////////
+/// Identity expression ///
+//////////////////////////
+///
+template< typename T >
+constexpr T const&
+ident( T const& val )
+{ return val; }
+
+template< typename ExprT >
+struct Identity;
+
+template< >
+struct IsCompoundOperation< Identity >: true_type { };
+
+template< typename ExprT >
+struct Identity: Compound< Identity< ExprT >>
+{
+    static constexpr auto
+    value( ExprT const& expr )
+    { return ident( expr ); }
+
+    using Compound< Identity< ExprT >>::Compound;
+};
+
+template< expression ExprT >
+constexpr Identity< ExprT >
+ident( ExprT const& expr )
+{ return { expr }; }
 
 ///////////////////////////
 /// Element expression ///

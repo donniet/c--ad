@@ -14,6 +14,9 @@
 #include <functional>
 #include <any>
 
+#define STRINGIZE(X) #X
+#define TO_STRING(X) STRINGIZE(X)
+
 using std::size_t;
 using size_diff_t = std::ptrdiff_t;
 
