@@ -81,7 +81,7 @@ struct IsExpression< T >: true_type { };
 
 template< typename... Ts >
 struct IsExpression< tuple< Ts... >>: integral_constant< bool,
-    ( IsExpression< Ts >::value or ... )> { };
+    ( IsExpression< Ts >::value or ... or false )> { };
 
 template< shape S, typename... Ts >
 struct IsExpression< Tensor< S, Ts... >>: integral_constant< bool,
@@ -281,7 +281,7 @@ template< template< typename... > class Op, typename... Args,
 requires( sizeof...( Args ) == sizeof...( Subs ))
 struct Reconstituter< Op< Args... >, Subs... >
 {
-    using type = Op< Subs... >;
+    using type = Op< std::remove_cvref_t< Subs >... >;
     static constexpr type
     value( Op< Args... > const& expr, Subs const&... subs )
     { return { subs... }; }
@@ -292,10 +292,32 @@ template< template< auto, typename... > class Op, auto Discriminator,
 requires( sizeof...( Args ) == sizeof...( Subs ))
 struct Reconstituter< Op< Discriminator, Args... >, Subs... >
 {
-    using type = Op< Discriminator, Subs... >;
+    using type = Op< Discriminator, std::remove_cvref_t< Subs >... >;
     static constexpr type
     value( Op< Discriminator, Args... > const& expr, Subs const&... subs )
     { return { subs... }; } 
+};
+
+template< typename... Ts, typename... Subs >
+requires( sizeof...( Ts ) == sizeof...( Subs ))
+struct Reconstituter< tuple< Ts... >, Subs... >
+{
+    using type = tuple< std::remove_cvref_t< Subs >... >;
+
+    static constexpr type
+    value( tuple< Ts... > const& expr, Subs const&... subs )
+    { return { subs... }; }
+};
+
+template< shape S, typename... Ts, typename... Subs >
+requires( sizeof...( Ts ) == sizeof...( Subs ))
+struct Reconstituter< Tensor< S, Ts... >, Subs... >
+{
+    using type = Tensor< S, std::remove_cvref_t< Subs >... >;
+
+    static constexpr type
+    value( Tensor< S, Ts... > const& expr, Subs const&... subs )
+    { return { subs... }; }
 };
 
 } // namespace detail
@@ -466,8 +488,14 @@ private:
     static constexpr size_t tuple_size = sizeof...( Ts );
     typedef make_seq< tuple_size > for_elements;
 
-    template< typename Seq >
-    struct Helper;
+    // default case for empty sequences
+    template< typename Seq > // seq< >
+    struct Helper
+    { static constexpr size_t value = 0; };
+
+//    template< >
+//    struct Helper< seq< >>
+//    { static constexpr size_t value = 0; };
 
     template< size_t I, size_t... Is >
     struct Helper< seq< I, Is... >> {
@@ -478,10 +506,6 @@ private:
     public:
         static constexpr size_t value = std::max( first_order, rest_order );
     };
-
-    template< >
-    struct Helper< seq< >>
-    { static constexpr size_t value = 0; };
 
 public:
     static constexpr size_t value = Helper< for_elements >::value;

@@ -106,8 +106,9 @@ protected:
     { static_assert( I >= size, 
         "index into unique_variables must be less than size" ); }; 
 
-    template< >
-    struct Element< 0 >
+    template< size_t I >
+    requires( I == 0 )
+    struct Element< I >
     { 
         using type = First; 
         static constexpr type value( unique_variables const& vars )
@@ -302,20 +303,26 @@ struct MakeUniqueVars< First, Rest... >
 
     // (2)  determine the insert position (if it exists) for First and 
     //      reconstruct the unique_variables collection
-    template< typename RestUnique >
-    struct Inserter;
-
-    // (2a) terminal case for inserter: if rest is empty then the result will
-    //      be a unique_variables set containing just First     
-    template< >
-    struct Inserter< unique_variables< >>
+    template< typename RestUnique > // unique_variables< >
+    struct Inserter
     {
-        //static_assert( not is_substitution_expression_v< var_value_t< First >> ); // and tuple_size_v< tuple< Vars... >> == 1 );
         using type = unique_variables< First >;
-        static constexpr type 
+        static constexpr type
         value( First const& first )
         { return { first }; }
     };
+
+    // (2a) terminal case for inserter: if rest is empty then the result will
+    //      be a unique_variables set containing just First     
+//    template< >
+//    struct Inserter< unique_variables< >>
+//    {
+//        //static_assert( not is_substitution_expression_v< var_value_t< First >> ); // and tuple_size_v< tuple< Vars... >> == 1 );
+//        using type = unique_variables< First >;
+//        static constexpr type 
+//        value( First const& first )
+//        { return { first }; }
+//    };
 
     // (2b) rest already contains a variable with the same id as First 
     template< typename... Vars >

@@ -657,8 +657,9 @@ private:
     template< size_t J >
     struct Element: SumElements< make_seq< J >> { };
 
-    template< >
-    struct Element< 0 >: integral_constant< size_t, 0 > { };
+    template< size_t J >
+    requires( J == 0 )
+    struct Element< J >: integral_constant< size_t, 0 > { };
 
     template< typename Seq >
     struct PrefixSum;
@@ -1349,9 +1350,17 @@ struct TupleIndexHelper< T, tuple< U, Us... >, Index >
 template< typename T, typename TupleT >
 constexpr size_t tuple_index_v = detail::TupleIndexHelper< T, TupleT >::value;
 
-/**
- * Pack helpers
- */
+/////////////////////
+/// Pack helpers ///
+///////////////////
+/// 
+template< size_t I, typename... Ts >
+struct PackElement
+{ using type = std::tuple_element_t< I, std::tuple< Ts... >>; };
+
+/// @brief pack_element_t avoids type-pack mangling bug in g++-16
+template< size_t I, typename... Ts >
+using pack_element_t = PackElement< I, Ts... >::type;
 
 /**
  * noop_t always evaluates to it's template parameter no matter what size_t is
@@ -1607,10 +1616,10 @@ template< typename Tup, typename CharT >
 struct FormatterTupleBase {
 private:
     template< typename FlatTup >
-    struct Helper;
+    struct Helper { };
 
-    template< >
-    struct Helper< tuple< >> { };
+//    template< >
+//    struct Helper< tuple< >> { };
 
     template< typename T, typename... Ts >
     requires( not ( is_same_v< T, Ts > or ... ))

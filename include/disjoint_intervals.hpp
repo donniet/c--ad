@@ -46,7 +46,7 @@ public:
 
     struct const_iterator
     {
-        using value_type = value_type;
+        using value_type = T;
         using pointer = value_type const*;
         using reference = value_type const&;
         // TODO: bidirectional at least? maybe random access?

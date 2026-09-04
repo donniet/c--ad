@@ -17,13 +17,13 @@ using namespace units;
 
 struct SubTests
 {
-    static constexpr Var< 16, int > n;
-    static constexpr Var< 0, float > x;
-    static constexpr Var< 1, float > y;
-    static constexpr Var< 2, float > z;
-    static constexpr Constant< 0.f > zero;
-    static constexpr Constant< 1.f > one;
-    static constexpr Constant< (int)0 > zeroi;
+    static constexpr Var< 16, int > n = {};
+    static constexpr Var< 0, float > x = {};
+    static constexpr Var< 1, float > y = {};
+    static constexpr Var< 2, float > z = {};
+    static constexpr Constant< 0.f > zero = {};
+    static constexpr Constant< 1.f > one = {};
+    static constexpr Constant< (int)0 > zeroi = {};
 
     static_assert( is_expression_v< Constant< 0.f >>, 
         "constant is an expression" );

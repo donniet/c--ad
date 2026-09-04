@@ -900,8 +900,9 @@ private:
     struct Element
     { using type = Ts...[ I - 1 ]; };
 
-    template< >
-    struct Element< 0 >
+    template< size_t I >
+    requires( I == 0 )
+    struct Element< I >
     { using type = T; };
 
 public:
@@ -1095,7 +1096,7 @@ using tensor_element_t = detail::TensorElement< I, TensorT >::type;
 /// @return a tensor of shape S with types ...Ts and values ...ts
 template< shape S, typename... Ts >
 requires( S::size() == sizeof...( Ts ))
-constexpr Tensor< S, Ts... > make_tensor( Ts... ts )
+constexpr Tensor< S, Ts... > make_tensor( Ts const&... ts )
 { return { ts... }; }
 
 /// @brief determines if a type is a tensor

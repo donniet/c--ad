@@ -128,6 +128,9 @@
 #ifndef __EXPRESSIONS_EXPRESSIONS_HPP__
 #define __EXPRESSIONS_EXPRESSIONS_HPP__
 
+#include <meta>
+#include <vector>
+
 #include "expressions/forward_decl.hpp"
 #include "expressions/unique_variables.hpp"
 #include "expressions/constant.hpp"
@@ -206,6 +209,12 @@ public:
     requires( closed_expression< First > and ( closed_expression< Rest > and 
         ... ))
     { return Link< last_t >::value( last() ); }
+
+    constexpr last_t 
+    operator ()() const
+    requires( not closed_expression< First > or not ( closed_expression< Rest > and 
+        ... ))
+    { return last(); }
 
     template< typename FirstSub, typename... RestSub >
     requires( is_compatible_substitution_v< expression_type, FirstSub, 
@@ -476,7 +485,7 @@ private:
     template< size_t I >
     struct ArgEvaluator
     { 
-        using type = Args...[ I ];
+        using type = std::remove_cvref_t< pack_element_t< I, Args...>>;
         static constexpr type
         value( arguments_tuple const& tup )
         { return std::get< I >( tup ); }
@@ -486,14 +495,40 @@ private:
     //       Args...[I]::operator()** because Compound< Op, Args... >::
     //       operator()*** guards itself so there be no circular logic.
     template< size_t I >
-    requires( expression< Args...[ I ]> )
+    requires( closed_expression< pack_element_t< I, Args... >> )
     struct ArgEvaluator< I >
     {
-        using type = result_t< Args...[ I ]>;
+        //using type = result_t< Args...[ I ]>;
+        using type = std::remove_cvref_t< decltype( 
+            pack_element_t< I, Args... >{}() )>;
         static constexpr type
         value( arguments_tuple const& tup )
         { return std::get< I >( tup )(); } // ** the invocation operator()
     }; 
+
+    // evaluating a variable is undefined
+    template< size_t I >
+    requires( open_expression< pack_element_t< I, Args... >> )
+    struct ArgEvaluator< I >
+    {
+        using type = Undefined< result_t< pack_element_t< I, Args... >>>;
+        //using type = result_t< Args...[ I ]>;
+
+        // we explicitly cast undefined here as a way to signal this value is
+        // actually undefined
+        static constexpr type
+        value( arguments_tuple const& tup )
+        { return {}; }
+        //{ return (type)Undefined< type >{}; }
+    };
+
+    template< size_t I >
+    using arg_t = ArgEvaluator< I >::type;
+
+    template< size_t I >
+    static constexpr arg_t< I >
+    arg_v( arguments_tuple const& args )
+    { return ArgEvaluator< I >::value( args ); }
 
     template< typename Seq >
     struct ResultHelper;
@@ -504,35 +539,60 @@ private:
 //    struct ResultHelper< Seq >
 //    { using type = Result< expression_type >::type; };
 
+    // Case: if any of our arguments are undefined then we are undefined
     template< size_t... Is >
-    requires( not is_same_v< reconstitute_t< expression_type, typename
-        ArgEvaluator< Is >::type... >, expression_type > )
+    requires(( is_undefined_v< arg_t< Is >> or ... or false ))
+    struct ResultHelper< seq< Is... >>
+    {
+        using defined_type = std::remove_cvref_t< decltype( reconstitute_t< 
+            expression_type, undefined_value_t< arg_t< Is >>... >::value( 
+                undefined_value_t< arg_t< Is >>{}... ))>;
+        using type = Undefined< defined_type >;
+
+        static constexpr type
+        value( expression_type const& expr )
+        { return {}; }
+    };
+
+    // Case: if our result is the not the same type as we are, then resolve it
+    template< size_t... Is >
+    requires( not ( is_undefined_v< arg_t< Is >> or ... or false ) /* and 
+        not is_same_v< reconstitute_t< expression_type, arg_t< Is >... >, 
+            expression_type > */ )
     struct ResultHelper< seq< Is... >>
     {
         // the result type of this expression will be the decltype of the
         // return value of the static value method of the parent class when
         // called on the result types of the arguments
-        using type = std::remove_cvref_t< decltype( 
-            reconstitute_t< expression_type, typename ArgEvaluator< Is >::
-                type... >::value( typename ArgEvaluator< Is >::type{}... ))>;
+        //
+        // DT: A const& is sneaking into a Tensor definition here when using 
+        // Element< 0, Tensor<... >>.
+        using reconstituted_type = 
+            reconstitute_t< expression_type, arg_t< Is >... >;
 
+        using type = std::remove_cvref_t< decltype( reconstituted_type::
+            value( arg_t< Is >{}... ))>;
+
+        
         static constexpr type
         value( expression_type const& expr )
-        { return reconstitute_t< expression_type, typename ArgEvaluator< Is >::
-            type... >::value( ArgEvaluator< Is >::value( expr.args() )... ); }
+        { return reconstituted_type::value( CompoundCommon< ExprT, Args... >::
+            template arg_v< Is >( expr.args() )... ); }
     };
 
-    template< size_t... Is >
-    requires( is_same_v< reconstitute_t< expression_type, typename
-        ArgEvaluator< Is >::type... >, expression_type > )
-    struct ResultHelper< seq< Is... >>
-    {
-        using type = expression_type;
-        static constexpr type const&
-        value( expression_type const& expr )
-        { return expr; }
-    };
-
+    // Case: if our result is the same type as we are then we are terminal
+//    template< size_t... Is >
+//    requires( /* not ( undefined< arg_t< Is >> or ... or false ) and */
+//        is_same_v< reconstitute_t< expression_type, arg_t< Is >... >, 
+//            expression_type > )
+//    struct ResultHelper< seq< Is... >>
+//    {
+//        using type = expression_type;
+//        static constexpr type const&
+//        value( expression_type const& expr )
+//        { return expr; }
+//    };
+//
 public:
     // result type of this expression if closed and evaluated.
     using result_type = ResultHelper< for_args >::type;
@@ -644,7 +704,7 @@ ident( ExprT const& expr )
 template< size_t I, typename ArrayT >
 struct GetElement
 {
-    using type = std::tuple_element_t< I, ArrayT >;
+    using type = std::remove_cvref_t< std::tuple_element_t< I, ArrayT >>;
 
     static constexpr type
     value( ArrayT const& arr )
@@ -672,15 +732,20 @@ struct Element: Compound< Element< I, ArrayT >>
 {
     static constexpr size_t index = I;
 
-    static constexpr tuple_element_t< I, ArrayT >
+    static constexpr auto
     value( ArrayT const& arg )
     { return get_element< I >( arg ); }
 
     using Compound< Element< I, ArrayT >>::Compound;
 };
 
+/// GetElement specializations for Tuple and Tensor expressions
+/// This heads off circular logic if we know how to extract the element from the
+/// array type
+
 /// get_element expression specialization
 template< size_t I, expression ExprT >
+requires( not is_tuple_v< ExprT > and not is_tensor_v< ExprT > )
 struct GetElement< I, ExprT >
 {
     using type = Element< I, ExprT >;
@@ -756,6 +821,90 @@ struct Evaluator< void >
     { return expr.get_value(); } 
 };
 
+// TODO: investigate reflective means of determining expression application
+//       before class instantiation to prevent circular references
+#if defined(__GNUC__) && __GNUC__ >= 16
+
+template< typename T >
+consteval auto get_members_static() 
+{
+    auto members_vec = std::meta::members_of( ^^T, 
+        std::meta::access_context::current() );
+    return std::define_static_array( members_vec );
+}
+
+consteval auto get_parameters_static( std::meta::info member )
+{
+    auto params = std::meta::parameters_of( member );
+    return std::define_static_array( params );
+}
+
+/////////////////////////////////////
+/// is_accepted consteval method ///
+///////////////////////////////////
+///
+/// Checks prior to instantiation of a manipulator class accepts an expression
+/// type
+template< typename ExprT, typename ManipulatorT >
+consteval bool 
+is_accepted()
+{
+    using namespace std::meta;
+    using std::vector;
+
+    constexpr auto members = get_members_static< ManipulatorT >();
+    constexpr make_seq< members.size() > for_members = {};
+   
+    auto helper = [&]< size_t... Is >( seq< Is... > ) 
+    { return ( ... or [&]() {
+        constexpr auto member = members[ Is ];
+
+        if constexpr( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            constexpr auto params = get_parameters_static( member );
+    
+            if constexpr( params.size() == 1 )
+            { 
+                using ParamT = std::decay_t<
+                    typename [: type_of( params[0] ) :]>;
+                
+                // is our parameter the same decayed type as the expression?
+                if constexpr( std::is_same_v< ParamT, std::decay_t< ExprT >> )
+                    return true; 
+
+                // is our parameter a templated type such that the method
+
+            }
+        }
+
+        return false;
+    }()); };
+
+    return helper( for_members );
+}
+
+template< typename ExprT, typename ManipulatorT >
+constexpr bool is_accepted_v = is_accepted< ExprT, ManipulatorT >();
+
+template< typename T >
+struct Foo { };
+
+struct Bar {
+    int operator ()( Foo< int > const& ) const { return 0; }
+
+    template< typename T >
+    int operator ()( Foo< T > const& ) const { return 0; }
+};
+
+static_assert( is_accepted_v< Foo< int >, Bar >,
+    "Foo< int > is accepted by Bar" );
+
+//static_assert( is_accepted_v< Foo< char >, Bar >, 
+//    "Foo< char > is accepted by Bar" );
+
+#endif // g++-16
+
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
 ////////////////////////////////////////////////////
@@ -772,28 +921,31 @@ struct Evaluator< void >
 template< typename ExprT, typename ManipulatorT >
 struct Applier
 {
-    using type = ExprT;
-    static constexpr type 
-    value( ExprT const& expr, ManipulatorT& f )
-    { return expr; }
-};
-
-/// if the manipulator accepts the expression return the result of the
-/// manipulation
-template< typename ExprT, typename ManipulatorT >
-requires( std::is_invocable_v< ManipulatorT, ExprT > )
-struct Applier< ExprT, ManipulatorT >
-{
     using type = std::invoke_result_t< ManipulatorT, ExprT >;
     static constexpr type 
     value( ExprT const& expr, ManipulatorT& f )
     { return f( expr ); }
 };
 
+/// if the manipulator accepts the expression return the result of the
+/// manipulation
+//template< typename ExprT, typename ManipulatorT >
+////requires( std::is_invocable_v< ManipulatorT, ExprT > )
+//requires( not undefined< result_t< ExprT >> and 
+//    not std::is_invocable_v< ManipulatorT, ExprT > )
+//struct Applier< ExprT, ManipulatorT >
+//{
+//    using type = result_t< ExprT >;
+//    static constexpr type 
+//    value( ExprT const& expr, ManipulatorT& f )
+//    { return expr(); }
+//};
+
 /// if the manipulator does not accept a tuple, apply to the elements
 /// TODO: check if the applied tuple is accepted by the manipulator and apply
 template< typename... Ts, typename ManipulatorT >
-requires( not std::is_invocable_v< ManipulatorT, tuple< Ts... >> )
+requires(( open_expression< Ts > or ... or false ) and 
+    not std::is_invocable_v< ManipulatorT, tuple< Ts... >> )
 struct Applier< tuple< Ts... >, ManipulatorT > {
 private:
     static constexpr size_t tuple_size = sizeof...( Ts );
@@ -823,8 +975,8 @@ private:
     };
 
     template< typename Seq >
-    requires( std::is_invocable_v< ManipulatorT, typename 
-        Helper< Seq >::type > )
+    requires( std::is_invocable_v< ManipulatorT, typename Helper< Seq >::
+        type > )
     struct Helper< Seq >
     {
         using type = Applier< typename Parser< Seq >::type, ManipulatorT >::
@@ -845,7 +997,8 @@ public:
 /// if the manipulator does not accept a tuple, apply to the elements
 /// TODO: check if the applied tensor is accepted by the manipulator and apply
 template< shape S, typename... Ts, typename ManipulatorT >
-requires( not std::is_invocable_v< ManipulatorT, Tensor< S, Ts... >> )
+requires(( undefined< result_t< Ts >> or ... or false ) and 
+    not std::is_invocable_v< ManipulatorT, Tensor< S, Ts... >> )
 struct Applier< Tensor< S, Ts... >, ManipulatorT > {
 private:
     static constexpr size_t tensor_size = sizeof...( Ts );
@@ -909,11 +1062,38 @@ struct Applier< ExprT, ManipulatorT >
         ManipulatorT >::value( expr(), f ); }
 };
 
+/// special cases for functions that aren't accepted by the manipulator
+template< open_expression ExprT, variable... Vars, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, Func< ExprT, Vars... >> and
+    open_expression< typename Applier< ExprT, ManipulatorT >::type > )
+struct Applier< Func< ExprT, Vars... >, ManipulatorT >
+{
+    using type = Func< typename Applier< ExprT, ManipulatorT >::type,
+        Vars... >;
+
+    static constexpr type
+    value( Func< ExprT, Vars... > const& func, ManipulatorT& f ) 
+    { return { Applier< ExprT, ManipulatorT >::value( func.formula(), f )}; }
+};
+
+/// special cases for functions that aren't accepted by the manipulator
+template< open_expression ExprT, variable... Vars, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, Func< ExprT, Vars... >> and
+    not open_expression< typename Applier< ExprT, ManipulatorT >::type > )
+struct Applier< Func< ExprT, Vars... >, ManipulatorT >
+{
+    using type = Applier< ExprT, ManipulatorT >::type;
+
+    static constexpr type
+    value( Func< ExprT, Vars... > const& func, ManipulatorT& f ) 
+    { return Applier< ExprT, ManipulatorT >::value( func.formula(), f ); }
+};
+
 /// if the manipulator does not accept an open expression, parse into the
 /// expression
 template< open_expression ExprT, typename ManipulatorT >
-requires( not std::is_invocable_v< ManipulatorT, ExprT> and
-    compound_expression< ExprT> )
+requires( not std::is_invocable_v< ManipulatorT, ExprT > and
+    compound_expression< ExprT > and not is_function_v< ExprT > )
 struct Applier< ExprT, ManipulatorT >
 {
     using arguments_tuple = ExprT::arguments_tuple;
@@ -934,10 +1114,22 @@ struct Applier< ExprT, ManipulatorT >
     struct Parser;
 
     template< size_t... Is >
+    requires( expression< reconstitute_t< ExprT, arg_t< Is >... >> )
     struct Parser< seq< Is... >>
     { 
         using reconstituted_type = reconstitute_t< ExprT,
             arg_t< Is >... >;
+
+        using arguments_tuple = ExprT::arguments_tuple;
+
+        // DT: duplicating to try and remove g++-16 error...
+        template< size_t I >
+        static constexpr arg_t< I >
+        arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
+        { return make_expression( 
+            Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::
+                value( a, f )); }
+
 
         using type = std::remove_cvref_t< decltype( reconstituted_type{}() )>;
         static constexpr type
@@ -945,6 +1137,19 @@ struct Applier< ExprT, ManipulatorT >
         { return reconstitute( expr, 
             arg< Is >( get_argument< Is >( expr ), f )... )(); }
     };
+
+//    template< size_t... Is >
+//    requires( not closed_expression< reconstitute_t< ExprT, arg_t< Is >... >> )
+//    struct Parser< seq< Is... >>
+//    { 
+//        using type = reconstitute_t< ExprT,
+//            arg_t< Is >... >;
+//
+//        static constexpr type
+//        value( ExprT const& expr, ManipulatorT& f )
+//        { return reconstitute( expr, 
+//            arg< Is >( get_argument< Is >( expr ), f )... ); }
+//    };
 
     template< typename Seq >
     struct Helper
@@ -960,16 +1165,22 @@ struct Applier< ExprT, ManipulatorT >
     // values processed by a scope, then the SetVar itself to be reprocessed.
     //
     // Basically we are sending as much as we can to the manipulator
+    //
+    // DT: checking is_invoable_v by the Parser requires reconstitution of the
+    //     expression and checking invocability on the reconstituted expression
+    //     which leads to a circular logic chain for Tensors...
     template< typename Seq >
     requires( std::is_invocable_v< ManipulatorT, typename Parser< Seq >::type > )
     struct Helper< Seq >
     {
-        using parsed_type = Parser< Seq >::type;
+        using parser_type = Parser< Seq >;
+        using parsed_type = parser_type::type;
+
         using type = Applier< parsed_type, ManipulatorT >::type;
         static constexpr type
         value( ExprT const& expr, ManipulatorT& f )
         { return Applier< parsed_type, ManipulatorT >::value(
-            Parser< Seq >::value( expr, f ), f ); }
+            parser_type::value( expr, f ), f ); }
     };
 
     using type = Helper< for_args >::type;
@@ -977,7 +1188,56 @@ struct Applier< ExprT, ManipulatorT >
     value( ExprT const& expr, ManipulatorT& f )
     { return Helper< for_args >::value( expr, f ); }
 };
+/*
+template< typename T, typename... Args>
+consteval bool has_matching_call_operator() {
+    // 1. Get the reflection token for the class
+    constexpr std::meta::info class_refl = reflexpr(T);
+    
+    // 2. Fetch all members of the class
+    constexpr std::vector<std::meta::info> members = std::meta::members_of(class_refl);
+    
+    bool found_match = false;
 
+    // 3. Use C++26 'template for' to iterate over members at compile time
+    template for (constexpr std::meta::info member : members) {
+        
+        // Check if the member is a function and if its name is "operator()"
+        if constexpr (std::meta::is_function(member) && 
+                      std::meta::identifier_of(member) == "operator()") {
+            
+            // Extract the parameters of this specific operator() overload
+            constexpr std::vector<std::meta::info> params = std::meta::parameters_of(member);
+            
+            // Check if the number of arguments matches
+            if constexpr (params.size() == sizeof...(Args)) {
+                
+                // Compare parameter types against Args... 
+                // (For simplicity, we check a single argument match here)
+                // In full production code, you would iterate and compare all types.
+                using ExpectedType = std::tuple_element_t<0, std::tuple<Args...>>;
+                
+                // std::meta::type_of extracts the type reflection token
+                if constexpr (std::meta::type_of(params[0]) == reflexpr(ExpectedType)) {
+                    found_match = true;
+                }
+            }
+        }
+    }
+    
+    return found_match;
+}
+
+// let's try and write essentially an interpretter for expressions inside 
+// a single class.  It has to determine if the manipulator accepts an expression
+// if it does then it should return the result.  If it doesn't then it should
+// parse the expression and ask the same of it's components.  
+template< typename T, typename ManipulatorT >
+struct Applicator
+{
+    
+};
+*/
 /////////////////////
 /// apply method ///
 ///////////////////
@@ -995,7 +1255,8 @@ apply( ExprT const& expr, ManipulatorT& f )
 /// We commandeer operator| on expression types as the "manipulation" operator
 ///
 template< typename T, typename ManipulatorT >
-requires( std::invocable< ManipulatorT, T > or expression< T > )
+requires( std::is_invocable_v< ManipulatorT, T > or expression< T > )
+//requires( expression< T > )
 constexpr auto
 operator |( T const& value_or_expression, ManipulatorT&& f )
 { return apply( value_or_expression, f ); }

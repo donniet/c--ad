@@ -194,17 +194,19 @@ class Normalizer
 
     /// @brief helper for the Kth element of the Ith term of the normalized
     /// expression of T
-    template< size_t I, size_t K >
+    template< size_t I, size_t K > 
     struct TermElement;
     
     /// @brief the idempotent case has a single element in it's sole term
-    template< > 
-    struct TermElementSize< 0 >: 
+    template< size_t I > 
+    requires( I == 0 )
+    struct TermElementSize< I >: 
         integral_constant< size_t, 1 > { };        
 
     /// @brief that single element is the expression type and value itself
-    template< >
-    struct TermElement< 0, 0 >
+    template< size_t I, size_t K >
+    requires( I == 0, K == 0 )
+    struct TermElement< I, K >
     { 
         using type = expression_type;
         static constexpr type value( expression_type expr )
@@ -343,8 +345,9 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     template< typename Seq >
     struct Helper;
 
-    template< >
-    struct Helper< seq< 0 >>
+    template< size_t I >
+    requires( I == 0 )
+    struct Helper< seq< I >>
     {
         using type = Term< 0 >::type;
         static constexpr type value( expression_type expr )
@@ -415,8 +418,9 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
         subnormalizer< J - 1 >::terms_size * 
             ElementDivisor< J - 1 >::value > { };
 
-    template< >
-    struct ElementDivisor< 0 >: integral_constant< size_t, 1 > { };
+    template< size_t J >
+    requires( J == 0 )
+    struct ElementDivisor< J >: integral_constant< size_t, 1 > { };
 
     template< size_t J >
     static constexpr size_t divisor = ElementDivisor< J >::value;
@@ -513,8 +517,9 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     template< typename Seq >
     struct Helper;
 
-    template< >
-    struct Helper< seq< 0 >>
+    template< size_t I >
+    requires( I == 0 )
+    struct Helper< seq< I >>
     {
         using type = Term< 0 >::type;
         static constexpr type value( expression_type expr )
