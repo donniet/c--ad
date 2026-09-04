@@ -350,7 +350,7 @@ struct MakeUniqueVars< First, Rest... >
         struct Enumerator< seq< Is... >>
         {
             using type = unique_variables< std::conditional_t< Is == index,
-                merged_variable, Vars...[ Is ]>... >;
+                merged_variable, pack_element_t< Is, Vars... >>... >;
             static constexpr type value( First const& first, 
                 rest_type const& rest )
             { return { ( Is == index ? first.name() : 
@@ -560,7 +560,7 @@ private:
     // (1) what elements from the first should be in our final set?
     template< size_t I >
     struct Pred: std::integral_constant< size_t, 
-        ( subtrahend_type::template contains< MinuendVars...[ I ]>() ? 0 : 1 )>
+        ( subtrahend_type::template contains< pack_element_t< I, MinuendVars... >>() ? 0 : 1 )>
     { };
 
     template< typename Seq >
@@ -691,20 +691,20 @@ struct tuple_size< expressions::unique_variables< Vars... >>:
 /// @brief specialization of std::tuple_element_t for unique_variables
 template< size_t I, expressions::variable... Vars >
 struct tuple_element< I, expressions::unique_variables< Vars... >>
-{ using type = Vars...[ I ]; };
+{ using type = pack_element_t< I, Vars... >; };
 
 template< size_t I, expressions::variable... Vars >
 struct tuple_element< I, const expressions::unique_variables< Vars... >>
-{ using type = add_const< Vars...[ I ]>::type; };
+{ using type = add_const< pack_element_t< I, Vars... >>::type; };
 
 template< size_t I, expressions::variable... Vars >
 struct tuple_element< I, volatile expressions::unique_variables< Vars... >>
-{ using type = add_volatile< Vars...[ I ]>::type; };
+{ using type = add_volatile< pack_element_t< I, Vars... >>::type; };
 
 template< size_t I, expressions::variable... Vars >
 struct tuple_element< I, const volatile expressions::unique_variables< 
     Vars... >>
-{ using type = add_cv< Vars...[ I ]>::type; };
+{ using type = add_cv< pack_element_t< I, Vars... >>::type; };
 
 /// @brief sepcialization of std::get for unique_variables
 template< size_t I, expressions::variable... Vars >

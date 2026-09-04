@@ -255,7 +255,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     using normalizer_t = Normalizer< SumOf, ProductOf, ComplimentOf, T >;
         
     template< size_t J >
-    using subnormalizer = normalizer_t< Ts...[J] >;
+    using subnormalizer = normalizer_t< pack_element_t< J, Ts... > >;
 
     static constexpr size_t terms_size = 
         ( normalizer_t< Ts >::terms_size + ... );
@@ -287,7 +287,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     template< size_t I, size_t K, typename Seq >
     struct TermElementHelper;
 
-    /// @brief case where Ts...[J] contains the Ith term
+    /// @brief case where pack_element_t< J, Ts... > contains the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
     requires( is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementHelper< I, K, seq< J, Js... >>
@@ -298,7 +298,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
             std::get< J >( expr )); }
     };
 
-    /// @brief case where Ts...[J] contains the Ith term
+    /// @brief case where pack_element_t< J, Ts... > contains the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
     requires( not is_less( I, subnormalizer< J >::terms_size ))
     struct TermElementHelper< I, K, seq< J, Js... >>:
@@ -405,7 +405,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
 
     // normalizer for the Jth argument of this product
     template< size_t J >
-    using subnormalizer = normalizer_t< Ts...[J] >;
+    using subnormalizer = normalizer_t< pack_element_t< J, Ts... > >;
 
     // the number of additive terms will the the product of additive terms
     // in the normalized expression of our Ts... arguments due to the
@@ -436,7 +436,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
 
     template< size_t I, size_t... Js >
     struct TermElementSizeHelper< I, seq< Js... >>: integral_constant< size_t,
-        ( normalizer_t< Ts...[Js] >::
+        ( normalizer_t< pack_element_t< Js, Ts... > >::
             template TermElementSize< subterm< Js, I >>::value + ... )> { };
 
     template< size_t I >
@@ -456,7 +456,7 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
     template< size_t I, size_t K, typename Seq >
     struct TermElementHelper;
 
-    /// @brief case where Ts...[J] contributes the Kth element of the Ith term
+    /// @brief case where pack_element_t< J, Ts... > contributes the Kth element of the Ith term
     template< size_t I, size_t K, size_t J, size_t... Js >
     requires( is_less( K, subterm_element_size< J, I >))
     struct TermElementHelper< I, K, seq< J, Js... >>
@@ -469,8 +469,8 @@ class Normalizer< SumOf, ProductOf, ComplimentOf,
                 value( std::get< J >( expr )); }
     };
 
-    /// @brief case where Ts...[J] does not contribute enough elements to the
-    /// Ith term.  We subtract the number of elements Ts...[J] contributes and
+    /// @brief case where pack_element_t< J, Ts... > does not contribute enough elements to the
+    /// Ith term.  We subtract the number of elements pack_element_t< J, Ts... > contributes and
     /// search the remaining Js...
     template< size_t I, size_t K, size_t J, size_t... Js >
     requires( not is_less( K, subterm_element_size< J, I >))

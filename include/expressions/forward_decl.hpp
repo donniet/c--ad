@@ -172,7 +172,7 @@ struct GetArgument;
 //template< size_t I, template< typename... > class Op, typename... Args >
 //struct GetArgument< I, Op< Args... >>
 //{
-//    using type = Args...[ I ];
+//    using type = pack_element_t< I, Args... >;
 //    static constexpr type const&
 //    value( Op< Args... > const& expr )
 //    { return std::get< I >( expr ); }
@@ -182,7 +182,7 @@ struct GetArgument;
 //    typename... Args >
 //struct GetArgument< I, Op< Discriminator, Args... >>
 //{
-//    using type = Args...[ I ];
+//    using type = pack_element_t< I, Args... >;
 //    static constexpr type const&
 //    value( Op< Discriminator, Args... > const& expr )
 //    { return std::get< I >( expr ); }
@@ -501,7 +501,7 @@ private:
     struct Helper< seq< I, Is... >> {
     private:
         static constexpr size_t first_order = 
-            VarOrder< Ts...[ I ]>::value;
+            VarOrder< pack_element_t< I, Ts... >>::value;
         static constexpr size_t rest_order = Helper< seq< Is... >>::value;
     public:
         static constexpr size_t value = std::max( first_order, rest_order );
@@ -597,7 +597,7 @@ struct MakeVarTuple
     template< size_t... Is >
     struct Helper< seq< Is... >>
     {
-        using type = tuple< Var< VarList.at( Is ), Ts...[ Is ] >... >;
+        using type = tuple< Var< VarList.at( Is ), pack_element_t< Is, Ts... > >... >;
         static constexpr type
         value()
         { return {}; }
@@ -991,7 +991,7 @@ struct SequentialVars
 
     template< size_t... Is >
     struct Helper< seq< Is... >>
-    { using type = tuple< Var< Start + Is, Ts...[ Is ]>... >; };
+    { using type = tuple< Var< Start + Is, pack_element_t< Is, Ts... >>... >; };
 
     using type = Helper< make_seq< sizeof...( Ts )>>::type; 
 };

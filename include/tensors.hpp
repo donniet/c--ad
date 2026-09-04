@@ -898,7 +898,7 @@ struct Tensor< S, T, Ts... > : tuple< T, Ts... >
 private:
     template< size_t I >
     struct Element
-    { using type = Ts...[ I - 1 ]; };
+    { using type = pack_element_t< I - 1, Ts... >; };
 
     template< size_t I >
     requires( I == 0 )
@@ -1694,7 +1694,8 @@ constexpr auto operator*( T scalar, Tensor< S, Ts... > const& ten )
 /// @return the scaled tensor
 template< shape S, typename... Ts, typename T >
 constexpr auto divide_scale( Tensor< S, Ts... > const& ten, T scalar ) 
-{ return detail::divide_scale_helper( ten, scalar, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::divide_scale_helper( ten, scalar, 
+    make_seq< sizeof...( Ts )>{} ); }
 
 /// @brief divides a tensor by a scalar
 /// @tparam T the scalar type
@@ -1706,7 +1707,8 @@ constexpr auto divide_scale( Tensor< S, Ts... > const& ten, T scalar )
 template< shape S, typename... Ts, typename T >
 requires( not tensor< T > )
 constexpr auto operator /( Tensor< S, Ts... > const& ten, T scalar )
-{ return detail::divide_scale_helper( ten, scalar, make_seq< sizeof...( Ts )>{} ); }
+{ return detail::divide_scale_helper( ten, scalar, 
+    make_seq< sizeof...( Ts )>{} ); }
 
 // stacked tensor details
 namespace detail {
@@ -1715,14 +1717,15 @@ namespace detail {
 /// @tparam I is the element of the stacked tensor
 /// @tparam ...Tensors are the tensor types to be stacked
 template< size_t I, tensor... Tensors >
-requires(( is_same_v< tensor_shape_t< Tensors...[ 0 ]>, tensor_shape_t< Tensors >> and ... ))
+requires(( is_same_v< tensor_shape_t< pack_element_t< 0, Tensors... >>, 
+    tensor_shape_t< Tensors >> and ... ))
 struct StackedElement
 { 
     // the shape of the new tensor is the size of the input tensors
     // concatenated to the shape of ...Tensors.  All of the ...Tensors
     // must have the same shape so we choose the first one
     using shape_type = shape_cat_t< Shape< sizeof...( Tensors )>, 
-        tensor_shape_t< Tensors...[ 0 ]>>;
+        tensor_shape_t< pack_element_t< 0, Tensors... >>>;
 
     // get an instance of our tensor shape to use to index into the parameters
     static constexpr shape_type element = shape_type::from_element( I );
@@ -1733,11 +1736,13 @@ struct StackedElement
 
     // type of the Ith element of the stacked tensor depends on which
     // tensor parameter we get from the parameter_index
-    using type = tensor_element_t< element.rest(), Tensors...[ parameter_index ]>;
+    using type = tensor_element_t< element.rest(), 
+        pack_element_t< parameter_index, Tensors... >>;
 
     // value of the Ith element of the stacked tensor
     static constexpr type value( Tensors const&... tensors )
-    { return tensor_get< element.rest() >( tensors...[ parameter_index ] ); }
+    { return tensor_get< element.rest() >(
+        pack_element< parameter_index >( tensors... )); }
 };
 
 /// @brief helper class for a stack of tensors
@@ -2339,7 +2344,7 @@ namespace std {
 
 template< size_t I, tensors::shape S, typename... Ts >
 struct tuple_element< I, tensors::Tensor< S, Ts... >>
-{ using type = Ts...[ I ]; }; 
+{ using type = pack_element_t< I, Ts... >; }; 
 
 };
 

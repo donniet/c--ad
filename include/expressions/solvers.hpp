@@ -289,7 +289,7 @@ struct SolveFor< tuple< Vars... >, Params... >:
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
             tuple< typename Vars::value_type... >
         { return { Scope< Vars... >::template 
-            get_value< Vars...[ Is ]>()... }; };
+            get_value< pack_element_t< Is, Vars... >>()... }; };
 
         return helper( make_seq< sizeof...( Vars )>{} ); 
     }
