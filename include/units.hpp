@@ -1141,6 +1141,8 @@ constexpr long double length_value( Length length, length_unit u )
     case length_unit::feet: return meters( length ) / meters_per_foot;
     case length_unit::miles: return meters( length ) / meters_per_mile;
     }
+
+    return meters( length );
 }
 
 /////////////

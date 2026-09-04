@@ -20,12 +20,12 @@ else()
 #set(C__AD_PARALLEL_LIBS TBB:tbb)
 endif()
 
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    message(FATAL_ERROR "This project requires the Clang compiler. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
-endif()
-if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21.0")
-    message(FATAL_ERROR "Clang version 21.0 or higher is required. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
-endif()
+#if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+#    message(FATAL_ERROR "This project requires the Clang compiler. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
+#endif()
+#if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21.0")
+#    message(FATAL_ERROR "Clang version 21.0 or higher is required. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+#endif()
 
 # DT: removing vcglib to to simplify build
 include_directories(include ../vcglib/)
@@ -33,19 +33,45 @@ include_directories(include ../vcglib/)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS ON)
+# DT: disable extensions to test reflection
+#set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(CMAKE_COLOR_MAKEFILE=ON)
 
+if( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" )
+    add_compile_options("-Wnormalized=none")
+endif()
+
+# debug options
 add_compile_options("-ftemplate-backtrace-limit=0")
-add_compile_options("-fshow-overloads=all")
 add_compile_options("-fdiagnostics-show-template-tree")
-add_compile_options("-fconstexpr-backtrace-limit=0")
-add_compile_options("-ferror-limit=1")
 #add_compile_options("-fno-inline")
-add_compile_options("-fdiagnostics-show-template-tree")
-add_compile_options("-fcolor-diagnostics")
-add_compile_options("-fansi-escape-codes")
+
+if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # debug options (CLANG)
+    add_compile_options("-fshow-overloads=all")
+    add_compile_options("-fconstexpr-backtrace-limit=0")
+    add_compile_options("-ferror-limit=1")
+    add_compile_options("-fcolor-diagnostics")
+    add_compile_options("-fansi-escape-codes")
+elseif( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" )
+    # debug options (GNU)
+    add_compile_options("-fdiagnostics-color")
+    add_compile_options("-fdiagnostics-all-candidates")
+    add_compile_options("-fmax-errors=1")
+    add_compile_options("-fdiagnostics-color=always")
+    #add_compile_options("-ftemplate-depth=0")
+endif()
+
+# reflection args
+if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+    # enabling reflection (CLANG)
+    add_compile_options("-fexperimental-library")
+elseif( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" )
+    # enabling reflection (GNU)
+    add_compile_options("-freflection")
+endif()
 
 # DT: removing modules for now to simplify build
 #file(GLOB_RECURSE LIB_MODULE_FILES

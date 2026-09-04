@@ -1,3 +1,45 @@
+Func<
+    Sum< Sum< 
+        PowN<2L, Difference<Var<4, Length>, StaticValue<Length>>>, 
+            PowN<2L, Difference<Var<5, Length>, StaticValue<Length>>>>, 
+                StaticValue<Area>>, 
+    Var<4, Length>, 
+    Var<5, Length>>::var<1UL>
+
+
+( Tensor< Shape< 2 >, 
+    Sum< Sum< Product< Product< 
+            Constant< 2 >, 
+                PowN< 1, Difference< Var< 4, Length >, StaticValue< Length >>>>, 
+                    Difference< Constant< 1 >, Constant< 0 >>>, 
+        Constant< 0 >>, 
+            Constant< 0 >>, 
+    Sum< Sum< Product< Product< 
+            Constant< 2 >, 
+                PowN< 1, Difference< Var< 4, Length >, StaticValue< Length >>>>, 
+                    Difference< Constant< 1 >, Constant< 0 >>>, 
+        Constant< 0 >>, 
+            Constant< 0 >>> ) 
+
+( tuple_element< 4, tuple< 
+    Var< 0, int >, 
+    Var< 1, int >, 
+    Var< 2, Length >, 
+    Var< 3, Length >, 
+    Var< 4, Length >, 
+    Var< 5, Length >, 
+    Var< 6, Length >>>::type&, 
+  tuple_element< 5, tuple< 
+    Var< 0, int >, 
+    Var< 1, int >, 
+    Var< 2, Length >, 
+    Var< 3, Length >, 
+    Var< 4, Length >, 
+    Var< 5, Length >, 
+    Var< 6, Length >>>::type&)
+
+
+
 Sub<
     Sub<
         Func< Product<Var<0, int>, 

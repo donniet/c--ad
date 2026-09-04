@@ -324,6 +324,67 @@
 using std::true_type, std::false_type;
 
 namespace expressions {
+//////////////////
+/// Undefined ///
+////////////////
+/// 
+/// Attempting to evaluate a variable results in an undefined value that can
+/// be recognized during concept checking
+template< typename T >
+struct Undefined
+{
+    using value_type = T;
+
+    // if you really want a value, we'll give it to you
+    explicit constexpr
+    operator value_type() const
+    { return _undefined_value; }
+
+    // we allow copying but don't worry about the value because...
+    template< typename U >
+    requires( std::is_convertible_v< T, U > )
+    constexpr Undefined& 
+    operator =( Undefined< U > const& other ) 
+    { return *this; }
+
+    constexpr Undefined() = default;
+
+    // we allow copy constructors but don't worry about the value...
+    constexpr Undefined( Undefined const& ) { };
+
+private:
+    value_type _undefined_value;
+};
+
+template< typename U >
+struct IsUndefined: false_type { };
+
+template< typename T >
+struct IsUndefined< Undefined< T >>: true_type { };
+
+template< typename U >
+constexpr bool is_undefined_v = IsUndefined< U >::value;
+
+template< typename T >
+struct UndefinedValue
+{ using type = T; };
+
+template< typename U >
+struct UndefinedValue< Undefined< U >>
+{ using type = U; };
+
+template< typename T >
+using undefined_value_t = UndefinedValue< T >::type;
+
+template< typename T >
+consteval undefined_value_t< T >
+make_undefined_value( T const& )
+{ return {}; }
+
+template< typename T >
+concept undefined = is_undefined_v< T >;
+
+ 
 
 /////////////////////////////
 /// Forward Declarations ///
@@ -379,11 +440,11 @@ struct Sub: tuple< ExprT, Ss... >
     using arguments_tuple = tuple< ExprT, Ss... >;
 
     static constexpr size_t arguments_size = 1 + sizeof...( Ss );
-    static constexpr make_seq< arguments_size > for_args;
+    static constexpr make_seq< arguments_size > for_args = {};
 
 private:
     static constexpr size_t subs_size = sizeof...( Ss );
-    static constexpr make_seq< subs_size > for_subs;
+    static constexpr make_seq< subs_size > for_subs = {};
 
 public:
     constexpr arguments_tuple const&
@@ -416,7 +477,7 @@ public:
     { return std::get< 0 >( *this ); }
 
     template< size_t I >
-    constexpr Ss...[ I ]
+    constexpr std::tuple_element_t< I, std::tuple< Ss... >>
     arg() const
     { return std::get< 1 + I >( *this ); }
 
@@ -596,6 +657,13 @@ struct IsCompatibleVarSub< Id, std::tuple< Exprs... >, S >:
         (( IsCompatibleVarSub< Id, Exprs, S >::value ) or ... )>
 { };
 
+/// @brief we are compatible to sub into a tensor if we are compatible with
+///        at least one element (same as tuples)
+template< size_t Id, shape Shp, typename... Ts, typename S >
+struct IsCompatibleVarSub< Id, Tensor< Shp, Ts... >, S >:
+    IsCompatibleVarSub< Id, std::tuple< Ts... >, S >
+{ };
+
 /// @brief we are compatible to sub into a substitution expression if we can
 ///        sub into the evaluated expression
 template< size_t Id, typename FormulaT, typename... Args, typename S >
@@ -621,13 +689,6 @@ requires( compound_expression< Op< Discriminator, Args... >> and not
     is_substitution_expression_v< Op< Discriminator, Args... >> )
 struct IsCompatibleVarSub< Id, Op< Discriminator, Args... >, S >:
     IsCompatibleVarSub< Id, std::tuple< Args... >, S > 
-{ };
-
-/// @brief we are compatible to sub into a tensor if we are compatible with
-///        at least one element (same as tuples)
-template< size_t Id, shape Shp, typename... Ts, typename S >
-struct IsCompatibleVarSub< Id, Tensor< Shp, Ts... >, S >:
-    IsCompatibleVarSub< Id, std::tuple< Ts... >, S >
 { };
 
 } // namespace detail
@@ -746,6 +807,58 @@ private:
     template< expression U, variable... Args >
     struct Parser< Func< U, Args... >>: FuncParser< Func< U, Args... >>
     { };
+
+    template< typename... Ts >
+    struct Parser< tuple< Ts... >>
+    {
+        typedef make_seq< sizeof...( Ts )> for_elements;
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            using type = tuple< typename Parser< Ts...[ Is ]>::type... >;
+
+            static constexpr type
+            value( tuple< Ts... > const& expr, referent_type const& sub )
+            { return { Parser< Ts...[ Is ]>::value( get< Is >( expr ), 
+                sub )... }; }
+        };
+
+        using type = Helper< for_elements >::type;
+
+        static constexpr type
+        value( tuple< Ts... > const& expr, referent_type const& sub )
+        { return Helper< for_elements >::value( expr, sub ); }
+    };
+
+    template< shape S, typename... Ts >
+    struct Parser< Tensor< S, Ts... >>
+    {
+        typedef make_seq< sizeof...( Ts )> for_elements;
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            using type = Tensor< S, typename Parser< Ts...[ Is ]>::type... >;
+
+            static constexpr type
+            value( Tensor< S, Ts... > const& expr, referent_type const& sub )
+            { return { Parser< Ts...[ Is ]>::value( tensor_get< Is >( expr ),
+                sub )... }; }
+        };
+
+        using type = Helper< for_elements >::type;
+
+        static constexpr type
+        value( Tensor< S, Ts... > const& expr, referent_type const& sub )
+        { return Helper< for_elements >::value( expr, sub ); }
+    };
 
     // parser or compound expressions
     template< typename CompoundExpr >
@@ -1415,13 +1528,6 @@ public:
     // //
 };
 
-/// DT: we need a case for Substituter< Func<...>> which corresponds to the
-///     direct substitution into a function.  This would result in a 
-///     Sub< Func<...>> if the substitution was incomplete, and a 
-///     substitute_for_id_seq_t<...> if it was.
-/// DT: do we? I accidentally included a "closed_expression<..>" condition
-///     on the specialization below.  I think the handles above may be working
-
 /// @brief substituting into a non-expresssion, a closed expression is, or an
 ///        open expression with no substitution arguments is idempotent
 template< typename T, typename... Ss >
@@ -1452,6 +1558,25 @@ struct GetFreeVars< tuple< Ts... >>
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
         { return merge_unique_variables( GetFreeVars< Ts >::value( 
             std::get< Is >( expr ))... ); };
+
+        return helper( for_elements );
+    }
+};
+
+template< shape S, typename... Ts >
+struct GetFreeVars< Tensor< S, Ts... >>
+{
+    using type = merge_unique_variables_t< typename
+        GetFreeVars< Ts >::type... >;
+
+    static constexpr type
+    value( Tensor< S, Ts... > const& expr )
+    {
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return merge_unique_variables( GetFreeVars< Ts >::value(
+            tensor_get< Is >( expr ))... ); };
 
         return helper( for_elements );
     }
@@ -1671,7 +1796,7 @@ public:
     { return std::get< 0 >( *this ); }
 
     template< size_t K >
-    constexpr Vars...[ K ]
+    constexpr pack_element_t< K, Vars... >
     var() const
     { return std::get< 1 + K >( *this ); }
 
@@ -1791,6 +1916,17 @@ public:
     set_name( string const& new_name )
     { _name = new_name; }
 
+    // nullary operator() returns ourselves as per requirement of reconstitution
+    // and concept checking of invocability in appliers
+    //constexpr this_type const&
+    //operator ()() const
+    //{ return *this; }
+
+    // let's try returning undefined
+    constexpr Undefined< result_t< value_type >>
+    operator ()() const
+    { return {}; }
+
     // DT: consider including a value again.
     //constexpr value_type const& 
     //value() const
@@ -1894,6 +2030,17 @@ public:
     set_value( value_type const& new_expr )
     { _expr = new_expr; }
 
+    // nullary function call operator returns ourselves, as per requirement
+    // of reconstitution and concept checking for invocability in CommonCompound
+    //constexpr this_type const&
+    //operator ()() const
+    //{ return *this; }
+    
+    // lets try returning undefined
+    constexpr Undefined< result_t< value_type >>
+    operator ()() const
+    { return {}; }
+
     // return an unbound function using the stored expression
     template< variable First, variable... Rest >
     requires( is_non_repeating_v< seq< var_id_v< First >,
@@ -1946,7 +2093,7 @@ struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
     using arguments_tuple = tuple< ExprT, Ss... >;
 
     static constexpr size_t arguments_size = 1 + sizeof...( Ss );
-    static constexpr make_seq< arguments_size > for_args;
+    static constexpr make_seq< arguments_size > for_args = {};
 
     constexpr arguments_tuple const&
     args() const
@@ -1978,48 +2125,49 @@ struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
 /// Closed Func Specialization ///
 /////////////////////////////////
 ///
-template< closed_expression ExprT, variable... Vars >
-struct Func< ExprT, Vars... >: std::tuple< ExprT, Vars... >
-{
-    using formula_type = ExprT;
-    using arguments_tuple = std::tuple< formula_type, Vars... >;
-    using this_type = Func< formula_type, Vars... >;
-
-    constexpr formula_type const&
-    formula() const
-    { return std::get< 0 >( *this ); }
-
-    template< size_t K >
-    constexpr Vars...[ K ]
-    var() const
-    { return std::get< 1 + K >( *this ); }
-
-    template< typename... Args >
-    requires( sizeof...( Args ) == sizeof...( Vars ))
-    //constexpr result_t< formula_type >
-    constexpr auto
-    operator ()( Args const&... ) const
-    { return formula()(); }
-
-    // attempting to evaluate a function is the same as evaluating the formula
-    //constexpr result_t< formula_type >
-    constexpr auto
-    operator ()() const
-    { return formula()(); }
-
-    constexpr Func( formula_type const& func, 
-        Vars const&... vars ): arguments_tuple{ func, vars... } 
-    { };
-    // can be initialized by just the formula for intermediary calculations
-    constexpr Func( formula_type const& func ):
-        arguments_tuple{ func, Vars{}... }
-    { };
-    constexpr Func( Func const& ) = default;
-    // may also be instantiated by a copy and the variables for Y combinator
-    constexpr Func( Func const& other, Vars const&... ): Func( other ) { }
-    constexpr Func() = default;
-
-};
+/// NOTE: g++-16 doesn't think this is any more specialized
+//template< closed_expression ExprT, variable... Vars >
+//struct Func< ExprT, Vars... >: std::tuple< ExprT, Vars... >
+//{
+//    using formula_type = ExprT;
+//    using arguments_tuple = std::tuple< formula_type, Vars... >;
+//    using this_type = Func< formula_type, Vars... >;
+//
+//    constexpr formula_type const&
+//    formula() const
+//    { return std::get< 0 >( *this ); }
+//
+//    template< size_t K >
+//    constexpr Vars...[ K ]
+//    var() const
+//    { return std::get< 1 + K >( *this ); }
+//
+//    template< typename... Args >
+//    requires( sizeof...( Args ) == sizeof...( Vars ))
+//    //constexpr result_t< formula_type >
+//    constexpr auto
+//    operator ()( Args const&... ) const
+//    { return formula()(); }
+//
+//    // attempting to evaluate a function is the same as evaluating the formula
+//    //constexpr result_t< formula_type >
+//    constexpr auto
+//    operator ()() const
+//    { return formula()(); }
+//
+//    constexpr Func( formula_type const& func, 
+//        Vars const&... vars ): arguments_tuple{ func, vars... } 
+//    { };
+//    // can be initialized by just the formula for intermediary calculations
+//    constexpr Func( formula_type const& func ):
+//        arguments_tuple{ func, Vars{}... }
+//    { };
+//    constexpr Func( Func const& ) = default;
+//    // may also be instantiated by a copy and the variables for Y combinator
+//    constexpr Func( Func const& other, Vars const&... ): Func( other ) { }
+//    constexpr Func() = default;
+//
+//};
 
 /////////////////////////////
 /// Constant Expressions ///

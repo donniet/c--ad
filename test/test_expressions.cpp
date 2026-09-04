@@ -230,9 +230,9 @@ constexpr auto count_expressions( ExprT const& expr )
 
 struct PreOrderVisitTests 
 {
-    static constexpr Var< 0, int > v0;
-    static constexpr Var< 1, int > v1;
-    static constexpr Var< 2, int > v2;
+    static constexpr Var< 0, int > v0 = {};
+    static constexpr Var< 1, int > v1 = {};
+    static constexpr Var< 2, int > v2 = {};
 
     static_assert(( count_expressions( v0 + 0_c ) | eval( )) == 3ul );
     static_assert(( count_expressions( v0 ) | eval( )) == 1ul );

@@ -105,8 +105,9 @@ struct Replacement< tuple< FirstVar, RestVars... >,
     template< size_t I >
     struct VarHelper;
 
-    template< >
-    struct VarHelper< 0 >
+    template< size_t I >
+    requires( I == 0 )
+    struct VarHelper< I >
     { 
         using type = FirstVar; 
         static constexpr type 
@@ -231,11 +232,8 @@ struct PredicateSub< Predicate, ExprT, Pattern >
     // replace every var in ExprT with the substitute in ReplacementPattern
     typedef make_seq< Pattern::size > for_replacements;
 
-    template< typename Seq >
-    struct Helper;
-
-    template< >
-    struct Helper< seq< >>
+    template< typename Seq > // seq<>
+    struct Helper
     {
         using type = ExprT;
         static constexpr type
@@ -433,8 +431,9 @@ struct ForExpression< ExprT >
     { using matches_type = tuple<>; };
 
     // expression matches verbatim, so no variable matches need to be tracked
-    template< >
-    struct Is< ExprT >: integral_constant< bool, true > 
+    template< typename TestT >
+    requires( is_same_v< TestT, ExprT >)
+    struct Is< TestT >: integral_constant< bool, true > 
     { using matches_type = tuple<>; };
 };
 /// 
@@ -529,8 +528,10 @@ private:
     template< typename... >
     struct AreArgumentMatchesCompatible;
 
-    template< >
-    struct AreArgumentMatchesCompatible<>: integral_constant< bool, true >
+    template< typename... Empty >
+    requires( sizeof...( Empty ) == 0 )
+    struct AreArgumentMatchesCompatible< Empty... >: 
+        integral_constant< bool, true >
     { using matches_type = tuple<>; };
 
     template< typename MatchesT >
