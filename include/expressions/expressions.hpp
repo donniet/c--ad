@@ -128,7 +128,12 @@
 #ifndef __EXPRESSIONS_EXPRESSIONS_HPP__
 #define __EXPRESSIONS_EXPRESSIONS_HPP__
 
+//TODO: investigate reflective means of determining expression application
+//       before class instantiation to prevent circular references
+#if defined(__GNUC__) && __GNUC__ >= 16
 #include <meta>
+#endif
+
 #include <vector>
 
 #include "expressions/forward_decl.hpp"
