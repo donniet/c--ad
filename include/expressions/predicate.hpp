@@ -120,7 +120,7 @@ struct Replacement< tuple< FirstVar, RestVars... >,
     requires( is_greater( I, 0 ))
     struct VarHelper< I >
     { 
-        using type = RestVars...[ I - 1 ]; 
+        using type = pack_element_t< I - 1, RestVars... >; 
         static constexpr type 
         value( Replacement< tuple< FirstVar, RestVars... >,
             tuple< FirstRep, RestReps... >> const& reps )
@@ -504,7 +504,7 @@ private:
     {
         // collect the unique variable indices from all the matches
         using unique_variable_id_seq = sort_unique_seq< seq< 
-            match_variable_t< Matches...[ Is ]>::id... >>;
+            match_variable_t< pack_element_t< Is, Matches... >>::id... >>;
 
         // helper to find matched expression for each unique variable
         // indexed by Seq
@@ -639,7 +639,7 @@ private:
     struct Helper< seq< Js... >, TestArgs... >: 
         AreArgumentMatchesCompatible< typename 
             ForExpression< std::tuple_element_t< Js, arguments_tuple >>::
-                template Is< TestArgs...[ Js ]>... >
+                template Is< pack_element_t< Js, TestArgs... >>... >
     { };
 
 public:

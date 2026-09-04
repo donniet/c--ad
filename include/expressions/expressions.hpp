@@ -472,7 +472,7 @@ struct CompoundCommon< ExprT, Args... >: tuple< Args... >
     { return *this; }
 
     template< size_t I >
-    constexpr Args...[ I ] const&
+    constexpr pack_element_t< I, Args... > const&
     arg() const
     { return get< I >( args() ); }
 
@@ -492,13 +492,13 @@ private:
     };
 
     // NOTE: this does not guard against terminal expression idempotency on 
-    //       Args...[I]::operator()** because Compound< Op, Args... >::
+    //       pack_element_t< I, Args... >::operator()** because Compound< Op, Args... >::
     //       operator()*** guards itself so there be no circular logic.
     template< size_t I >
     requires( closed_expression< pack_element_t< I, Args... >> )
     struct ArgEvaluator< I >
     {
-        //using type = result_t< Args...[ I ]>;
+        //using type = result_t< pack_element_t< I, Args... >>;
         using type = std::remove_cvref_t< decltype( 
             pack_element_t< I, Args... >{}() )>;
         static constexpr type
@@ -512,7 +512,7 @@ private:
     struct ArgEvaluator< I >
     {
         using type = Undefined< result_t< pack_element_t< I, Args... >>>;
-        //using type = result_t< Args...[ I ]>;
+        //using type = result_t< pack_element_t< I, Args... >>;
 
         // we explicitly cast undefined here as a way to signal this value is
         // actually undefined
@@ -957,11 +957,11 @@ private:
     template< size_t... Is >
     struct Parser< seq< Is... >>
     {
-        using type = tuple< typename Applier< Ts...[ Is ], ManipulatorT >::
+        using type = tuple< typename Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
             type... >;
         static constexpr type
         value( tuple< Ts... > const& expr, ManipulatorT& f )
-        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
+        { return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::value( 
             std::get< Is >( expr ), f )... }; }
     };
 
@@ -1010,11 +1010,11 @@ private:
     template< size_t... Is >
     struct Parser< seq< Is... >>
     {
-        using type = Tensor< S, typename Applier< Ts...[ Is ], ManipulatorT >::
+        using type = Tensor< S, typename Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
             type... >;
         static constexpr type
         value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
-        { return { Applier< Ts...[ Is ], ManipulatorT >::value( 
+        { return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::value( 
             tensor_get< Is >( expr ), f )... }; }
     };
 
@@ -1430,7 +1430,7 @@ make_scope( Ts const&... ts )
 
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
     { ( scope.template set_value< std::tuple_element_t< Is, variables_tuple >>( 
-        ts...[ Is ] ), ...); };
+        pack_element< Is >( ts... )), ...); };
 
     helper( make_seq< sizeof...( Ts )>{} );
 
@@ -1505,7 +1505,7 @@ private:
         struct Helper;
 
         // we sum the expressions visited by each Args...[ Is < I ] to 
-        // determine the offset to Start for each Args...[ I ]
+        // determine the offset to Start for each pack_element_t< I, Args... >
         // NOTE: we do not add 1 here since this, Op< Args... > typed
         //       expression will not be visited until after it's arguments. In
         //       this way when we finally do visit Op< Args... > it will also
@@ -1513,16 +1513,16 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         { static constexpr size_t start = 
-            ( Start + ... + DepthFirst< Visitor, Args...[ Is ], 0 >::size ); };
+            ( Start + ... + DepthFirst< Visitor, pack_element_t< Is, Args... >, 0 >::size ); };
 
     public:
         // our value is the helper value for the sequence [ 0...I )
         static constexpr size_t start = Helper< make_seq< I >>::start;
 
-        using type = DepthFirst< Visitor, Args...[ I ], start >::type;
+        using type = DepthFirst< Visitor, pack_element_t< I, Args... >, start >::type;
 
-        static constexpr type value( Args...[ I ] const& arg )
-        { return DepthFirst< Visitor, Args...[ I ], start >::value( arg ); } 
+        static constexpr type value( pack_element_t< I, Args... > const& arg )
+        { return DepthFirst< Visitor, pack_element_t< I, Args... >, start >::value( arg ); } 
     };
 
     template< typename Seq >

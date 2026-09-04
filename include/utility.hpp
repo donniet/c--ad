@@ -1,3 +1,16 @@
+////////////////////////
+/// Utility Library ///
+//////////////////////
+///
+/// Common macros, includes, concepts, and aliases; tuple, sequence and 
+/// pack helpers.
+///
+/// seq      := std::index_sequence
+/// make_seq := std::make_index_sequence
+///
+/// pack_element_t< I, Ts... > := Ts...[ I ]
+/// pack_element_v
+
 #ifndef __UTILITY_HPP__
 #define __UTILITY_HPP__
 
@@ -38,6 +51,27 @@ concept arithmetic = is_arithmetic_v< T >;
 template< typename T >
 concept integral = is_integral_v< T >;
 
+
+/////////////////////
+/// Pack helpers ///
+///////////////////
+/// 
+template< size_t I, typename... Ts >
+struct PackElement
+{ using type = std::tuple_element_t< I, std::tuple< Ts... >>; };
+
+/// @brief pack_element_t avoids type-pack mangling bug in g++-16
+template< size_t I, typename... Ts >
+using pack_element_t = PackElement< I, Ts... >::type;
+
+template< size_t I, typename... Ts >
+static constexpr pack_element_t< I, Ts... >
+pack_element( Ts... ts )
+{ return std::get< I >( std::make_tuple( ts... )); }
+
+template< size_t I, auto... ts >
+constexpr auto 
+pack_element_v = pack_element< I >( ts... );
 
 //////////////////
 /// ExactZero ///
@@ -553,7 +587,7 @@ private:
     template< size_t... Is >
     struct Helper< seq< Is... >>
     {
-        using type = Packer< Ts...[ Is ]... >;
+        using type = Packer< pack_element_t< Is, Ts... >... >;
         static constexpr type value( std::tuple< Ts... > const& tup )
         { return { std::get< Is >( tup )... }; }
     };
@@ -652,7 +686,7 @@ private:
 
     template< size_t... Js >
     struct SumElements< seq< Js... >>: integral_constant< size_t,
-        ( Is...[ Js ] + ... + 0 )> { };
+        ( pack_element_v< Js, Is... > + ... + 0 )> { };
 
     template< size_t J >
     struct Element: SumElements< make_seq< J >> { };
@@ -856,7 +890,7 @@ public:
     // we add one to the min_element_index_rest since we removed the first element
     // in the recursive step.
     static constexpr size_t value = 
-        ( K <= Ks...[ min_element_index_rest ] ? 0 : min_element_index_rest + 1 );
+        ( K <= pack_element_v< min_element_index_rest, Ks... > ? 0 : min_element_index_rest + 1 );
 };
 
 static_assert( MinElementIndex< seq< 5, 4, 3, 2, 1, 0 >>::value == 5 );
@@ -886,7 +920,7 @@ private:
     // Case: I is the index of the minimum element remaining
     template< size_t I, size_t... Is >
     requires( is_greater( sizeof...( Is ), 0 ) and 
-        (( Ks...[ I ] <= Ks...[ Is ] ) and ... ))
+        (( pack_element_v< I, Ks... > <= pack_element_v< Is, Ks... > ) and ... ))
     struct Helper< seq< I, Is... >>
     { using type = ConcatSeq< seq< I >, typename 
         Helper< seq< Is... >>::type >::type; };
@@ -895,7 +929,7 @@ private:
     // Case: I is not the index of the minimum element remaining
     template< size_t I, size_t... Is >
     requires( is_greater( sizeof...( Is ), 0 ) and
-        (( Ks...[ I ] > Ks...[ Is ] ) or ... ))
+        (( pack_element_v< I, Ks... > > pack_element_v< Is, Ks... > ) or ... ))
     struct Helper< seq< I, Is... >>:
         Helper< seq< Is..., I >> 
     { };
@@ -1350,18 +1384,6 @@ struct TupleIndexHelper< T, tuple< U, Us... >, Index >
 template< typename T, typename TupleT >
 constexpr size_t tuple_index_v = detail::TupleIndexHelper< T, TupleT >::value;
 
-/////////////////////
-/// Pack helpers ///
-///////////////////
-/// 
-template< size_t I, typename... Ts >
-struct PackElement
-{ using type = std::tuple_element_t< I, std::tuple< Ts... >>; };
-
-/// @brief pack_element_t avoids type-pack mangling bug in g++-16
-template< size_t I, typename... Ts >
-using pack_element_t = PackElement< I, Ts... >::type;
-
 /**
  * noop_t always evaluates to it's template parameter no matter what size_t is
  * passed as the second parameter.  This is useful for constructing uniform
@@ -1563,7 +1585,8 @@ struct FlattenTuple< std::tuple< Ts... >>
         static constexpr size_t remainder = Remainder< I >::value;
 
         template< size_t I >
-        using flattener = FlattenTuple< Ts...[ tuple_index< I > ]>;
+        using flattener = FlattenTuple< 
+            pack_element_t< tuple_index< I >, Ts... >>;
 
         using type = std::tuple< tuple_element_t< remainder< Is >,
             typename flattener< Is >::type >... >;

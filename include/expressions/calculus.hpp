@@ -144,7 +144,7 @@ struct Derive< Id, Sum< Ts... >>
         static constexpr make_seq< sizeof...( Ts )> for_args;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return ( Derive< Id, Ts...[ Is ]>::value( 
+        { return ( Derive< Id, pack_element_t< Is, Ts... >>::value( 
             get_argument< Is >( expr )) + ... ); };
 
         return helper( for_args );
@@ -174,7 +174,7 @@ private:
     template< size_t J, size_t K >
     struct Element
     {
-        using type = Ts...[ K ];
+        using type = pack_element_t< K, Ts... >;
         static constexpr type
         value( Product< Ts... > const& expr )
         { return get_argument< K >( expr ); }
@@ -187,7 +187,7 @@ private:
     {
         static constexpr auto
         value( Product< Ts... > const& expr )
-        { return Derive< Id, Ts...[ K ]>::
+        { return Derive< Id, pack_element_t< K, Ts... >>::
             value( get_argument< K >( expr )); }
     };
     
@@ -239,7 +239,7 @@ struct Derive< Id, Quotient< T, Ts... > >
     struct RestHelper< seq< Is... >>
     {
         using type = std::remove_cvref_t< decltype( 
-            ( Ts...[ Is ]{} / ... / 1 ))>;
+            ( pack_element_t< Is, Ts... >{} / ... / 1 ))>;
 
         static constexpr type
         value( Quotient< T, Ts... > const& expr )
@@ -490,7 +490,7 @@ struct Derive< Id, tuple< Ts... >>
         static constexpr make_seq< sizeof...( Ts )> for_elements;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return make_tuple( Derive< Id, Ts...[ Is ] >::
+        { return make_tuple( Derive< Id, pack_element_t< Is, Ts... > >::
             value( get< Is >( tup ))... ); };
 
         return helper( for_elements );
@@ -507,7 +507,7 @@ struct Derive< Id, Tensor< S, Ts... > >
         static constexpr make_seq< sizeof...( Ts )> for_elements;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return make_tensor< S >( Derivative< Id, Ts...[ Is ] >::
+        { return make_tensor< S >( Derivative< Id, pack_element_t< Is, Ts... > >::
             value( tensor_get< Is >( ten ))... ); };
 
         return helper( for_elements );
@@ -570,7 +570,7 @@ struct Gradient: Compound< Gradient< T >>
     template< variable... Vars, size_t... Is >
     struct FuncHelper< unique_variables< Vars... >, seq< Is... >>
     {
-        using type = Func< T, Vars...[ Is ]... >;
+        using type = Func< T, pack_element_t< Is, Vars... >... >;
         static constexpr type
         value( T const& t, unique_variables< Vars... > const& vars )
         { return { t, vars.template at< Is >()... }; }

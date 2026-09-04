@@ -31,11 +31,11 @@ protected:
     struct Helper;
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I == var_id_v< Vars...[ J ]> and 
-        1 == var_order_v< Vars...[ J ]> )
+    requires( I == var_id_v< pack_element_t< J, Vars... >> and 
+        1 == var_order_v< pack_element_t< J, Vars... >> )
     struct Helper< I, seq< J, Js... >>
     { 
-        using variable_type = Vars...[ J ];
+        using variable_type = pack_element_t< J, Vars... >;
 
         static constexpr tuple_element_t< J, values_tuple_type > 
         get( values_tuple_type const& vals )
@@ -62,8 +62,8 @@ protected:
     };
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I == var_id_v< Vars...[ J ]> and
-        1 != var_order_v< Vars...[ J ]> )
+    requires( I == var_id_v< pack_element_t< J, Vars... >> and
+        1 != var_order_v< pack_element_t< J, Vars... >> )
     struct Helper< I, seq< J, Js... >>
     { 
         // should never be instantiated
@@ -74,7 +74,7 @@ protected:
     };
 
     template< size_t I, size_t J, size_t... Js >
-    requires( I != var_id_v< Vars...[ J ]> )
+    requires( I != var_id_v< pack_element_t< J, Vars... >> )
     struct Helper< I, seq< J, Js... >>:
         Helper< I, seq< Js... >>
     { };
@@ -148,7 +148,7 @@ public:
                 set_value( other.get_value( var ), var ); };
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        {( take_value_if_dirty( Vars...[ Is ]{} ), ... ); }; 
+        {( take_value_if_dirty( pack_element_t< Is, Vars... >{} ), ... ); }; 
 
         helper( make_seq< sizeof...( Vars )>{} );
     }
@@ -351,7 +351,7 @@ merge_compatible_scopes( Scope< VarsA... > const& left, ScopeB const& right )
     };
 
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-    {( set_variable_value( VarsA...[ Is ]{} ), ... ); }; 
+    {( set_variable_value( pack_element_t< Is, VarsA... >{} ), ... ); }; 
 
     helper( make_seq< sizeof...( VarsA )>{} );
     return scope;
@@ -406,18 +406,19 @@ struct SimpleScopeHelper;
 template< size_t... Is, typename... Values >
 struct SimpleScopeHelper< seq< Is... >, Values... >
 { 
-    using type = Scope< Var< Is, Values...[ Is ]>... >;
+    using type = Scope< Var< Is, pack_element_t< Is, Values... >>... >;
 
     template< typename... Names >
     requires( sizeof...( Names ) == sizeof...( Is ))
     static constexpr type from_names( Names const&... names )
-    { return { Var< Is, Values...[ Is ]>{ names...[ Is ] }... }; }
+    { return { Var< Is, pack_element_t< Is, Values... >>{ 
+        pack_element< Is >( names... )}... }; }
 
     static constexpr type from_values( Values const&... values )
     { 
         type scope;
-        ( set_value< Var< Is, Values...[ Is ]>>( scope, values...[ Is ]), 
-            ... );
+        ( set_value< Var< Is, pack_element_t< Is, Values... >>>( scope, 
+            pack_element< Is >( values... )), ... );
         return scope;
     }
 };

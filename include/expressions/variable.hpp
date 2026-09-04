@@ -819,11 +819,11 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = tuple< typename Parser< Ts...[ Is ]>::type... >;
+            using type = tuple< typename Parser< pack_element_t< Is, Ts... >>::type... >;
 
             static constexpr type
             value( tuple< Ts... > const& expr, referent_type const& sub )
-            { return { Parser< Ts...[ Is ]>::value( get< Is >( expr ), 
+            { return { Parser< pack_element_t< Is, Ts... >>::value( get< Is >( expr ), 
                 sub )... }; }
         };
 
@@ -845,11 +845,11 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Tensor< S, typename Parser< Ts...[ Is ]>::type... >;
+            using type = Tensor< S, typename Parser< pack_element_t< Is, Ts... >>::type... >;
 
             static constexpr type
             value( Tensor< S, Ts... > const& expr, referent_type const& sub )
-            { return { Parser< Ts...[ Is ]>::value( tensor_get< Is >( expr ),
+            { return { Parser< pack_element_t< Is, Ts... >>::value( tensor_get< Is >( expr ),
                 sub )... }; }
         };
 
@@ -878,10 +878,10 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< typename Parser< Args...[ Is ]>::type... >;
+            using type = Op< typename Parser< pack_element_t< Is, Args... >>::type... >;
             static constexpr type
             value( Op< Args... > const& expr, referent_type const& sub )
-            { return { Parser< Args...[ Is ]>::value(
+            { return { Parser< pack_element_t< Is, Args... >>::value(
                 get_argument< Is >( expr ), sub )... }; };
         };
 
@@ -904,13 +904,13 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< Discriminator, typename Parser< Args...[ Is ]>::
+            using type = Op< Discriminator, typename Parser< pack_element_t< Is, Args... >>::
                 type... >;
 
             static constexpr type
             value( Op< Discriminator, Args... > const& expr, 
                 referent_type const& sub )
-            { return { Parser< Args...[ Is ]>::value(
+            { return { Parser< pack_element_t< Is, Args... >>::value(
                 get_argument< Is >( expr ), sub )... }; };
         };
 
@@ -939,10 +939,10 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< typename Parser< Args...[ Is ]>::type... >;
+            using type = Op< typename Parser< pack_element_t< Is, Args... >>::type... >;
             static constexpr type
             value( Op< Args... > const& expr, referent_type const& sub )
-            { return { Parser< Args...[ Is ]>::value(
+            { return { Parser< pack_element_t< Is, Args... >>::value(
                 get_argument< Is >( expr ), sub )... }; };
         };
 
@@ -1248,7 +1248,7 @@ private:
             std::tuple_element_t< Is, formula_variable_tuple >... >;
         using variable_tuple = std::tuple<
             std::tuple_element_t< Is, formula_variable_tuple >... >;
-        using referent_tuple = std::tuple< Subs...[ Is ]... >;
+        using referent_tuple = std::tuple< pack_element_t< Is, Subs... >... >;
 
         // this is useful in our GetFreeVars implementation
         static constexpr variable_set_type
@@ -1768,11 +1768,11 @@ private:
             // corresponding ...Vars as an expression
             static constexpr bool
             is_compatible = ( is_compatible_substitution_v< 
-                Vars...[ Is ], Args...[ Is ]> and ... and true );
+                pack_element_t< Is, Vars... >, pack_element_t< Is, Args... >> and ... and true );
 
             //using type = Sub< this_type, Args... >;
             //using type = substitute_for_id_seq_t< 
-            //    seq< var_id_v< Vars...[ Is ]>... >, ExprT, Args...[ Is ]... >;
+            //    seq< var_id_v< pack_element_t< Is, Vars... >>... >, ExprT, pack_element_t< Is, Args... >... >;
             using type = substitute_t< Sub< this_type, Args... >>;
 
             static constexpr type 
@@ -2104,7 +2104,7 @@ struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
     { return std::get< 0 >( args() ); }
 
     template< size_t I >
-    constexpr Ss...[ I ]
+    constexpr pack_element_t< I, Ss... >
     arg() const
     { return std::get< 1 + I >( args() ); }
 
@@ -2138,7 +2138,7 @@ struct Sub< ExprT, Ss... >: tuple< ExprT, Ss... >
 //    { return std::get< 0 >( *this ); }
 //
 //    template< size_t K >
-//    constexpr Vars...[ K ]
+//    constexpr pack_element_t< K, Vars... >
 //    var() const
 //    { return std::get< 1 + K >( *this ); }
 //

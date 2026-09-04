@@ -1408,6 +1408,8 @@ constexpr long double time_value( Time time, time_unit u )
     case time_unit::weeks: return seconds( time ) / seconds_per_week;
     case time_unit::years: return seconds( time ) / seconds_per_year;
     }
+
+    return seconds( time );
 }
 
 /////////////////
@@ -1644,6 +1646,8 @@ constexpr long double mass_value( Mass mass, mass_unit u )
         return kilograms( mass ) / kilograms_per_long_ton;
     case mass_unit::tons: return kilograms( mass ) / kilograms_per_ton;
     }
+
+    return kilograms( mass );
 }
 
 /////////////////////
@@ -2145,6 +2149,8 @@ constexpr long double scalar_value( Scalar scalar, scalar_unit u )
     case scalar_unit::square_arcseconds:
         return scalar.get_value() / steradians_per_square_degree * 3600. * 3600.;
     }
+
+    return scalar.get_value();
 }
 
 ////////////////////
