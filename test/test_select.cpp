@@ -66,6 +66,7 @@ bool test_chain()
     // chain expression test
     ( n = n + 1, m = m + n ) | scope;
 
+    // GCC fails here, perhaps second expression is executed first?
     println( "n == {}, m == {}", scope( n ), scope( m ));
     if( scope( n ) != 3 or scope( m ) != 4 )
         return false;

@@ -376,7 +376,7 @@ struct MakeUniqueVars< First, Rest... >
         static constexpr size_t index = 
             (( is_less( var_id_v< Vars >, first_id ) ? 1 : 0 ) + ... + 0 );
 
-        typedef make_seq< 1 + sizeof...( Rest )> for_spliced;
+        typedef make_seq< 1 + unique_variables_type::size > for_spliced;
 
         template< typename Seq >
         struct Enumerator;
