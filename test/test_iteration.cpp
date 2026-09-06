@@ -16,8 +16,9 @@ using namespace expressions;
 using namespace units;
 
 bool test_iteration();
+bool test_minimize_parabola();
+bool test_gradient_descent();
 
-constexpr auto lt = LessThan<StaticValue<int>, StaticValue<int>>{};
 
 //using scope_type = Scope<Var<0, int>, Var<1, int>, Var<2, Length>, Var<3, Length>, Var<4, Length>, Var<5, Length>, Var<6, Length>>;
 
@@ -40,7 +41,9 @@ int main( int ac, char* av[] )
     println("ITERATION TESTS");
 
     test::ensure( test_iteration, "Iteration" );
-
+    test::ensure( test_minimize_parabola, "Minimize Parabola" );
+    test::ensure( test_gradient_descent, "Gradient Descent" );
+    
     println("SUCCESS.");
     return EXIT_SUCCESS;
 }
@@ -51,14 +54,9 @@ bool test_iteration()
 
     auto scope = declare_variables(
         var< int >( "n" ),
-        var< int >( "m" ),
-        var< Length >( "w" ),
-        var< Length >( "z" ),
-        var< Length >( "x" ),
-        var< Length >( "y" ),
-        var< Length >( "f" ));
+        var< int >( "m" ));
 
-    auto [ n, m, w, z, x, y, f ] = scope.variables();
+    auto [ n, m ] = scope.variables();
     
     scope( m = 0, n = 0 );
 
@@ -68,39 +66,70 @@ bool test_iteration()
     if( scope( m ) != 5050 )
         return false;
 
-    auto rate = 1.0 / 100.0_sqft;
+    return true;
+}
+
+bool test_minimize_parabola()
+{
+    using std::println;
+
+    auto scope = declare_variables( 
+        var< int >( "n" ), var< float >( "x" ));
+
+    auto [ n, x ] = scope.variables();
+
+    scope( n = 0, x = 0 );
+
+    auto p = ( x - 2 ) * ( x - 2 ) + 5;
+    auto dp_x = derive< x.id >( p );
+
+    auto rate = 0.03_c;
+
+    ( x = x - rate * p(x) * dp_x(x), n = n + 1 ) | 
+        do_while( n < 100 and dp_x( x ) * dp_x( x ) > 0.00000001, scope );
+
+    println( "minimum of (x-2)^2+5 is {} at x={}; steps {}", 
+        p( x ) | scope, x | scope, n | scope );
+
+    return true;
+}
+
+bool test_gradient_descent() 
+{
+    using std::println;
+
+    auto scope = declare_variables(
+        var< int >( "n" ),
+        var< float >( "x" ), var< float >( "y" ),
+        var< float >( "f" ), var< float >( "dx" ),
+        var< float >( "dy" ));
+
+    auto [ n, x, y, f, dx, dy ] = scope.variables();
+
+    auto rate = 0.015_c;
 
     // parabloid with vertex at (2_ft, 3_ft) and minimum 3_sqft
     auto para2 = func( 
-        pow( x - 2_ft, 2_c ) + pow( y - 3_ft, 2_c ) + 3_ft * 1_ft, x, y );
+        ( x - 2 ) * ( x - 2 ) + ( y - 3 ) * ( y - 3 ) + 3, x, y );
 
     auto grad_p = grad( para2 );
 
+    scope( n = 0, x = 0, y = 0, dx = 0, dy = 0, f = 0 );
 
-    scope( n = 0, x = 0_ft, y = 0_ft );
+    println( "grad_p | scope = ( {}, {} )", 
+        get_element< 0 >( grad_p ) | scope, 
+            get_element< 1 >( grad_p ) | scope );
 
-    println( "grad_p | scope = {}", get_element< 0 >( grad_p ) | scope );
+    ( f = para2( x, y ), 
+      dx = get_element< 0 >( grad_p( x, y )),
+      dy = get_element< 1 >( grad_p( x, y )),
+      x = x - rate * f * dx,
+      y = y - rate * f * dy,
+      n = n + 1 ) |
+        do_while( n < 30 and norm( grad_p( x, y )) > 0.001, scope );
 
-    ( x - rate * para2 * get< 0 >( grad_p( x, y )),
-      y - rate * para2 * get< 1 >( grad_p( x, y )),
-      n = n + 1 ) | 
-        do_while( n < 1000 and norm( grad_p( x, y )) < 0.001_sqft, scope );
-
-    println( "minimum of para2 is ( {}, {} )", scope( x ), scope( y ));
-
-
-    //auto p = func( para2, x, y );
-    //
-    //auto grad_p = grad( p );
-    //
-    //auto [ min_value, steps2 ] = 
-    //    iteration( x, y, n ).
-    //    initial_values( 0_ft, 0_ft, 0 ).
-    //    update( 
-    //        x - rate * para2 * get_element< 0 >( grad_p( x, y )), 
-    //        y - rate * para2 * get_element< 1 >( grad_p( x, y )),
-    //        n + 1 ).
-    //    until( n == 1000 or norm( grad_p( x, y )) < 0.001_sqft ) | eval();
+    println( "minimum of para2 is {} at ( {}, {} ) step {}", 
+        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
 
     return true;
 }

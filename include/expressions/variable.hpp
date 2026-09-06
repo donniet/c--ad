@@ -845,12 +845,13 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Tensor< S, typename Parser< pack_element_t< Is, Ts... >>::type... >;
+            using type = Tensor< S, typename 
+                Parser< pack_element_t< Is, Ts... >>::type... >;
 
             static constexpr type
             value( Tensor< S, Ts... > const& expr, referent_type const& sub )
-            { return { Parser< pack_element_t< Is, Ts... >>::value( tensor_get< Is >( expr ),
-                sub )... }; }
+            { return { Parser< pack_element_t< Is, Ts... >>::
+                value( tensor_get< Is >( expr ), sub )... }; }
         };
 
         using type = Helper< for_elements >::type;
@@ -878,7 +879,9 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< typename Parser< pack_element_t< Is, Args... >>::type... >;
+            using type = Op< typename 
+                Parser< pack_element_t< Is, Args... >>::type... >;
+
             static constexpr type
             value( Op< Args... > const& expr, referent_type const& sub )
             { return { Parser< pack_element_t< Is, Args... >>::value(
@@ -904,8 +907,8 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< Discriminator, typename Parser< pack_element_t< Is, Args... >>::
-                type... >;
+            using type = Op< Discriminator, typename 
+                Parser< pack_element_t< Is, Args... >>::type... >;
 
             static constexpr type
             value( Op< Discriminator, Args... > const& expr, 
@@ -915,6 +918,7 @@ private:
         };
 
         using type = Helper< for_args >::type;
+
         static constexpr type
         value( Op< Discriminator, Args... > const& expr, 
             referent_type const& sub )
@@ -939,7 +943,9 @@ private:
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = Op< typename Parser< pack_element_t< Is, Args... >>::type... >;
+            using type = Op< typename 
+                Parser< pack_element_t< Is, Args... >>::type... >;
+
             static constexpr type
             value( Op< Args... > const& expr, referent_type const& sub )
             { return { Parser< pack_element_t< Is, Args... >>::value(
@@ -947,6 +953,7 @@ private:
         };
 
         using type = Helper< for_args >::type;
+
         static constexpr type
         value( Op< Args... > const& expr, referent_type const& sub )
         { return Helper< for_args >::value( expr, sub ); }
@@ -984,7 +991,6 @@ private:
     // and our compount expression parser is a special case of our parser.
     template< compound_expression CompoundExpr >
     struct Parser< CompoundExpr >: CompoundParser< CompoundExpr > { };
-   
        
 public:
     using type = Parser< expression_type >::type;
