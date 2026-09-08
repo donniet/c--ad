@@ -441,6 +441,101 @@ constexpr declare_variables( Decls... decls )
 { return SimpleScopeHelper< make_seq< sizeof...( Decls )>, typename
     Decls::value_type... >::from_names( decls.name()... ); }
 
+/////////////////////
+/// Buffer Scope ///
+///////////////////
+///
+/// Reads of variables come from the scope ScopeT, but writes are all made to
+/// a buffer. When destroyed the buffered values are copied back to the 
+/// referenced scope
+///
+/// DT: can you buffer a buffer?
+template< scope ScopeT >
+struct Buffer: ScopeT
+{
+    using scope_type = ScopeT;
+
+    constexpr scope_type const&
+    read_scope() const
+    {
+        if( _read_scope_ptr == nullptr )
+            throw std::logic_error( "reading from a moved buffer" );
+
+        return *_read_scope_ptr; 
+    }
+
+    // read from the _read_scope
+    template< typename ExprT >
+    requires( std::is_invocable_v< scope_type, ExprT > and 
+        not is_set_expression_v< ExprT > )
+    constexpr auto 
+    operator ()( ExprT const& expr ) const
+    { return read_scope()( expr ); }
+
+    constexpr Buffer() = delete;
+    constexpr Buffer( Buffer const& ) = default;
+
+    // moving requires unsetting the buffered read scope ptr to prevent
+    // premature copying on destruction
+    constexpr Buffer( Buffer&& other ): Buffer( other )
+    { other._read_scope_ptr = nullptr; }
+    
+    // construction from the buffered scope type saves a pointer to the 
+    // buffered scope and copies the scope values using the copy constructor
+    constexpr Buffer( scope_type& read_scope ): 
+        _read_scope_ptr{ &read_scope }, scope_type{ read_scope }
+    { }
+
+    // destruction copies the values from our buffer back into the referenced
+    // scope we used for reads, but does nothing if we were moved
+    constexpr ~Buffer()
+    { 
+        if( _read_scope_ptr != nullptr ) 
+        {
+            *_read_scope_ptr = *(scope_type*)this; 
+            _read_scope_ptr = nullptr;
+        }
+    }
+
+private:
+    scope_type* _read_scope_ptr;
+};
+
+// DT: iteration tests went into an infinite processor loop (memory never moved)
+
+// a buffer is a scope
+template< scope ScopeT >
+struct IsScope< Buffer< ScopeT >>: true_type { };
+
+template< scope ScopeT >
+constexpr Buffer< ScopeT >
+buffer( ScopeT& scope )
+{ return { scope }; }
+
+// if the scope is already buffered, don't rebuffer it...
+template< scope ScopeT >
+constexpr Buffer< ScopeT >&
+buffer( Buffer< ScopeT >& buffered_scope )
+{ return buffered_scope; }
+
+template< scope ScopeT >
+struct BufferType
+{ using type = Buffer< ScopeT >; };
+
+template< scope ScopeT >
+struct BufferType< Buffer< ScopeT >>
+{ using type = Buffer< ScopeT >; };
+
+template< typename ScopeT >
+using buffer_t = BufferType< ScopeT >::type;
+
+// and we can't buffer a constant scope so don't bother
+template< scope ScopeT >
+constexpr ScopeT const&
+buffer( ScopeT const& scope )
+{ return scope; }
+
+
 } // namespace expressions
 
 #endif // __EXPRESSIONS_SCOPE_HPP__

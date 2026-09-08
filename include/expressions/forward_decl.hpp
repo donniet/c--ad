@@ -757,6 +757,9 @@ struct SetVar
     value( ExprT const& val )
     { return { val }; } 
 
+    constexpr operator result_t< ExprT >() const
+    { return expr()(); }
+
     constexpr arguments_tuple 
     args() const
     { return { expr() }; }
@@ -799,6 +802,9 @@ struct SetVar< Id, T >
     static SetVar< Id, T >
     value( T const& val )
     { return { val }; } 
+
+    constexpr operator T() const
+    { return expr(); }
 
     constexpr arguments_tuple 
     args() const
@@ -894,10 +900,10 @@ template< variable... Vars >
 struct Scope;
 
 template< typename T >
-struct IsScope: integral_constant< bool, false > { };
+struct IsScope: false_type { }; 
 
 template< typename... Vars >
-struct IsScope< Scope< Vars... >>: integral_constant< bool, true > { };
+struct IsScope< Scope< Vars... >>: true_type { };
 
 template< typename T >
 constexpr bool is_scope_v = IsScope< T >::value;
@@ -912,7 +918,7 @@ struct ScopeContainsVar;
 
 template< size_t I, typename ScopeT >
 requires( not is_scope_v< ScopeT >)
-struct ScopeContainsVar< I, ScopeT >: integral_constant< bool, false > { };
+struct ScopeContainsVar< I, ScopeT >: false_type { };
 
 template< size_t I, typename ScopeT >
 requires( is_scope_v< ScopeT >)

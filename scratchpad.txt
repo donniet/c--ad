@@ -1,3 +1,37 @@
+Tensor<Shape<2>, 
+    Sum<Sum<Sum<
+        Product<
+            Difference<Constant<1.000000e+00>, Constant<0>>, 
+            Product<
+                Difference<Var<1, float>, StaticValue<int>>, 
+                StaticValue<int>>>, 
+        Sum<
+            Product<
+                Difference<Var<1, float>, StaticValue<int>>, 
+                Product<
+                    Difference<Constant<1.000000e+00>, Constant<0>>, 
+                    StaticValue<int>>>, 
+            StaticValue<int>>>, 
+        Constant<0>>, Constant<0>>, 
+
+    Sum<Sum<
+        Constant<0>, 
+        Sum<
+            Product<
+                Difference<Constant<1.000000e+00>, Constant<0>>, 
+                Product<
+                    Difference<Var<2, float>, StaticValue<int>>, 
+                    StaticValue<int>>>, 
+            Sum<
+                Product<
+                    Difference<Var<2, float>, StaticValue<int>>, 
+                    Product<
+                        Difference<Constant<1.000000e+00>, Constant<0>>, 
+                        StaticValue<int>>>, 
+                StaticValue<int>>>>, 
+        Constant<0>>>
+
+
 Func<
     Sum< Sum< 
         PowN<2L, Difference<Var<4, Length>, StaticValue<Length>>>, 

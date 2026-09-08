@@ -245,6 +245,15 @@ public:
     constexpr Chain( ) = default;
 };
 
+template< typename T >
+struct IsChainExpression: false_type { };
+
+template< typename First, typename... Rest >
+struct IsChainExpression< Chain< First, Rest... >>: true_type { };
+
+template< typename T >
+constexpr bool is_chain_expression_v = IsChainExpression< T >::value;
+
 /// Chain implementations
 template< size_t Id, typename ExprT >
 template< typename T >
@@ -909,7 +918,6 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 //    "Foo< char > is accepted by Bar" );
 
 #endif // g++-16
-
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
 ////////////////////////////////////////////////////
@@ -962,12 +970,16 @@ private:
     template< size_t... Is >
     struct Parser< seq< Is... >>
     {
-        using type = tuple< typename Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
-            type... >;
+        using type = tuple< typename Applier< pack_element_t< Is, Ts... >, 
+            ManipulatorT >::type... >;
+
         static constexpr type
         value( tuple< Ts... > const& expr, ManipulatorT& f )
-        { return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::value( 
-            std::get< Is >( expr ), f )... }; }
+        {   
+            auto buf = buffer( f );
+            return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
+                value( std::get< Is >( expr ), buf )... }; 
+        }
     };
 
     template< typename Seq >
@@ -980,8 +992,8 @@ private:
     };
 
     template< typename Seq >
-    requires( std::is_invocable_v< ManipulatorT, typename Helper< Seq >::
-        type > )
+    requires( std::is_invocable_v< ManipulatorT, typename 
+        Parser< Seq >::type > )
     struct Helper< Seq >
     {
         using type = Applier< typename Parser< Seq >::type, ManipulatorT >::
@@ -1015,12 +1027,16 @@ private:
     template< size_t... Is >
     struct Parser< seq< Is... >>
     {
-        using type = Tensor< S, typename Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
-            type... >;
+        using type = Tensor< S, typename Applier< pack_element_t< Is, Ts... >, 
+            ManipulatorT >::type... >;
+
         static constexpr type
         value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
-        { return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::value( 
-            tensor_get< Is >( expr ), f )... }; }
+        {   
+            auto buf = buffer( f );
+            return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
+            value( tensor_get< Is >( expr ), buf )... }; 
+        }
     };
 
     template< typename Seq >
@@ -1106,14 +1122,16 @@ struct Applier< ExprT, ManipulatorT >
 
     template< size_t I >
     using arg_t = make_expression_t< typename 
-        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::type >;
+        Applier< tuple_element_t< I, arguments_tuple >, 
+            buffer_t< ManipulatorT >>::type >;
 
     template< size_t I >
     static constexpr arg_t< I >
-    arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
+    arg( tuple_element_t< I, arguments_tuple > const& a, 
+        buffer_t< ManipulatorT >& f )
     { return make_expression( 
-        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::
-            value( a, f )); }
+        Applier< tuple_element_t< I, arguments_tuple >, 
+            buffer_t< ManipulatorT >>::value( a, f )); }
 
     template< typename Seq >
     struct Parser;
@@ -1130,17 +1148,21 @@ struct Applier< ExprT, ManipulatorT >
         // DT: duplicating to try and remove g++-16 error...
         template< size_t I >
         static constexpr arg_t< I >
-        arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
+        arg( tuple_element_t< I, arguments_tuple > const& a, 
+            buffer_t< ManipulatorT >& f )
         { return make_expression( 
-            Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::
-                value( a, f )); }
+            Applier< tuple_element_t< I, arguments_tuple >, 
+                buffer_t< ManipulatorT >>::value( a, f )); }
 
 
         using type = std::remove_cvref_t< decltype( reconstituted_type{}() )>;
         static constexpr type
         value( ExprT const& expr, ManipulatorT& f )
-        { return reconstitute( expr, 
-            arg< Is >( get_argument< Is >( expr ), f )... )(); }
+        {   
+            auto buf = buffer( f );
+            return reconstitute( expr, 
+                arg< Is >( get_argument< Is >( expr ), buf )... )(); 
+        }
     };
 
 //    template< size_t... Is >

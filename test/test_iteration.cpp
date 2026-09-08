@@ -6,6 +6,8 @@
 #include "expressions/logical.hpp"
 #include "expressions/calculus.hpp"
 
+#include "expressions/format.hpp"
+
 #include "testing.hpp"
 
 #include <print>
@@ -60,7 +62,10 @@ bool test_iteration()
     
     scope( m = 0, n = 0 );
 
-    ( n = n + 1, m = m + n ) | do_while( n < 100, scope );
+    ( n = n + 1, 
+      m = m + n ) | 
+        do_while( n < 100, scope );
+
     println( "m == {}", scope( m ) );
     
     if( scope( m ) != 5050 )
@@ -114,21 +119,48 @@ bool test_gradient_descent()
 
     auto grad_p = grad( para2 );
 
+    println("grad_p[0] = {}", get<0>( grad_p ));
+    println("grad_p[1] = {}", get<1>( grad_p ));
+
+    //static_assert( is_same_v< void, decltype( grad_p )> );
+
     scope( n = 0, x = 0, y = 0, dx = 0, dy = 0, f = 0 );
 
     println( "grad_p | scope = ( {}, {} )", 
-        get_element< 0 >( grad_p ) | scope, 
-            get_element< 1 >( grad_p ) | scope );
+        get< 0 >( grad_p ) | scope, 
+            get< 1 >( grad_p ) | scope );
 
+    // DT: this works, so executing each step one-by-one works
+    for( int i = 0; i < 30; ++i )
+    {
+        auto vf = para2 | scope;
+        auto vdfx = get<0>(grad_p) | scope;
+        auto vdfy = get<1>(grad_p) | scope;
+
+        auto vx = scope(x) - (float)rate * vf * vdfx;
+        auto vy = scope(y) - (float)rate * vf * vdfy;
+
+        scope( x = vx, y = vy, n = i );
+        
+    }
+    println( "[MANUAL ITERATION]: para2 is {} at ( {}, {} ) step {}",
+        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
+
+    scope( n = 0, x = 0, y = 0, dx = 0, dy = 0, f = 0 );
+
+    // DT: this version does not work perhaps because x is set then
+    //     y is recalculated with the new x.
+    //
+    //     We could set tensors each time maybe
     ( f = para2( x, y ), 
-      dx = get_element< 0 >( grad_p( x, y )),
-      dy = get_element< 1 >( grad_p( x, y )),
+      dx = get< 0 >( grad_p( x, y )),
+      dy = get< 1 >( grad_p( x, y )),
       x = x - rate * f * dx,
       y = y - rate * f * dy,
       n = n + 1 ) |
         do_while( n < 30 and norm( grad_p( x, y )) > 0.001, scope );
 
-    println( "minimum of para2 is {} at ( {}, {} ) step {}", 
+    println( "[AUTO ITERATION]:   para2 is {} at ( {}, {} ) step {}", 
         para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
 
     return true;
