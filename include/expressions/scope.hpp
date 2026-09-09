@@ -141,10 +141,10 @@ public:
     /// @brief take values and flags from another 
     template< typename ScopeU >
     constexpr void
-    take_from( ScopeU const& other )
+    take_from( ScopeU const& other, bool take_all = false )
     {
         auto take_value_if_dirty = [&]< variable Var >( Var var ) constexpr 
-        { if( other.is_dirty( var ))
+        { if( take_all or other.is_dirty( var ))
                 set_value( other.get_value( var ), var ); };
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
@@ -222,7 +222,7 @@ public:
 
     constexpr Scope& operator =( Scope const& other )
     {
-        take_from( other );
+        take_from( other, true );
         return *this;
     }
 
