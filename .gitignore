@@ -2,3 +2,6 @@ a.out
 build/
 *.code-workspace
 .vscode/
+
+# vi swap files
+*.swp

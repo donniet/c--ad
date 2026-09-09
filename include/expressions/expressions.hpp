@@ -976,9 +976,8 @@ private:
         static constexpr type
         value( tuple< Ts... > const& expr, ManipulatorT& f )
         {   
-            auto buf = buffer( f );
             return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
-                value( std::get< Is >( expr ), buf )... }; 
+                value( std::get< Is >( expr ), f )... }; 
         }
     };
 
@@ -1033,9 +1032,8 @@ private:
         static constexpr type
         value( Tensor< S, Ts... > const& expr, ManipulatorT& f )
         {   
-            auto buf = buffer( f );
             return { Applier< pack_element_t< Is, Ts... >, ManipulatorT >::
-            value( tensor_get< Is >( expr ), buf )... }; 
+                value( tensor_get< Is >( expr ), f )... }; 
         }
     };
 
@@ -1071,7 +1069,26 @@ public:
 /// if the manipulator does not accept a closed expression evaluate it and 
 /// try again
 template< closed_expression ExprT, typename ManipulatorT >
-requires( not std::is_invocable_v< ManipulatorT, ExprT > )
+requires( not std::is_invocable_v< ManipulatorT, ExprT > and 
+    ( compound_expression< ExprT > and scope< ManipulatorT > ))
+struct Applier< ExprT, ManipulatorT >
+{
+    using type = Applier< std::remove_cvref_t< decltype( ExprT{}() )>, 
+        buffer_t< ManipulatorT >>::type;
+
+    // if we are applying a closed, compound expression we should buffer the manipulator
+    static constexpr type
+    value( ExprT const& expr, ManipulatorT& f )
+    { 
+        auto buf = buffer( f );
+        return Applier< std::remove_cvref_t< decltype( ExprT{}() )>,
+            buffer_t< ManipulatorT >>::value( expr(), buf );
+    }
+};
+
+template< closed_expression ExprT, typename ManipulatorT >
+requires( not std::is_invocable_v< ManipulatorT, ExprT > and 
+    not ( compound_expression< ExprT > and scope< ManipulatorT > ))
 struct Applier< ExprT, ManipulatorT >
 {
     using type = Applier< std::remove_cvref_t< decltype( ExprT{}() )>, 
@@ -1079,8 +1096,10 @@ struct Applier< ExprT, ManipulatorT >
 
     static constexpr type
     value( ExprT const& expr, ManipulatorT& f )
-    { return Applier< std::remove_cvref_t< decltype( ExprT{}() )>,
-        ManipulatorT >::value( expr(), f ); }
+    {
+        return Applier< std::remove_cvref_t< decltype( ExprT{}() )>,
+            ManipulatorT >::value( expr(), f ); 
+    }
 };
 
 /// special cases for functions that aren't accepted by the manipulator
@@ -1122,16 +1141,13 @@ struct Applier< ExprT, ManipulatorT >
 
     template< size_t I >
     using arg_t = make_expression_t< typename 
-        Applier< tuple_element_t< I, arguments_tuple >, 
-            buffer_t< ManipulatorT >>::type >;
+        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::type >;
 
     template< size_t I >
     static constexpr arg_t< I >
-    arg( tuple_element_t< I, arguments_tuple > const& a, 
-        buffer_t< ManipulatorT >& f )
+    arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
     { return make_expression( 
-        Applier< tuple_element_t< I, arguments_tuple >, 
-            buffer_t< ManipulatorT >>::value( a, f )); }
+        Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::value( a, f )); }
 
     template< typename Seq >
     struct Parser;
@@ -1148,20 +1164,17 @@ struct Applier< ExprT, ManipulatorT >
         // DT: duplicating to try and remove g++-16 error...
         template< size_t I >
         static constexpr arg_t< I >
-        arg( tuple_element_t< I, arguments_tuple > const& a, 
-            buffer_t< ManipulatorT >& f )
+        arg( tuple_element_t< I, arguments_tuple > const& a, ManipulatorT& f )
         { return make_expression( 
-            Applier< tuple_element_t< I, arguments_tuple >, 
-                buffer_t< ManipulatorT >>::value( a, f )); }
+            Applier< tuple_element_t< I, arguments_tuple >, ManipulatorT >::value( a, f )); }
 
 
         using type = std::remove_cvref_t< decltype( reconstituted_type{}() )>;
         static constexpr type
         value( ExprT const& expr, ManipulatorT& f )
         {   
-            auto buf = buffer( f );
             return reconstitute( expr, 
-                arg< Is >( get_argument< Is >( expr ), buf )... )(); 
+                arg< Is >( get_argument< Is >( expr ), f )... )(); 
         }
     };
 
