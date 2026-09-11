@@ -558,7 +558,7 @@ auto grad( Func< FormulaT, Vars... > const& func )
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
     { return make_tensor< S >( derive( f, func.template var< Is >())... ); };
 
-    return helper( for_vars );
+    return func( helper( for_vars ), Vars{}... ); 
 }
 
 template< typename T >
