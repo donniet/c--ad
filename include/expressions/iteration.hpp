@@ -51,7 +51,7 @@ template< typename Condition, typename Scope >
 constexpr DoWhile< Condition, Scope >
 do_while( Condition const& cond, Scope& scope )
 { return { cond, scope }; }
-} // namespace expressions
 
+} // namespace expressions
 
 #endif // __EXPRESSIONS_ITERATION_HPP__
