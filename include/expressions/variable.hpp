@@ -1774,11 +1774,13 @@ private:
             // corresponding ...Vars as an expression
             static constexpr bool
             is_compatible = ( is_compatible_substitution_v< 
-                pack_element_t< Is, Vars... >, pack_element_t< Is, Args... >> and ... and true );
+                pack_element_t< Is, Vars... >, 
+                    pack_element_t< Is, Args... >> and ... and true );
 
             //using type = Sub< this_type, Args... >;
             //using type = substitute_for_id_seq_t< 
-            //    seq< var_id_v< pack_element_t< Is, Vars... >>... >, ExprT, pack_element_t< Is, Args... >... >;
+            //   seq< var_id_v< pack_element_t< Is, Vars... >>... >, ExprT, 
+            //      pack_element_t< Is, Args... >... >;
             using type = substitute_t< Sub< this_type, Args... >>;
 
             static constexpr type 

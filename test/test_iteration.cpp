@@ -55,22 +55,22 @@ bool test_iteration()
     using std::println;
 
     auto scope = declare_variables(
-        var< int >( "n" ),
-        var< int >( "m" ));
+        var< int >( "m" ),
+        var< int >( "n" ));
 
-    auto [ n, m ] = scope.variables();
+    auto [ m, n ] = scope.variables();
 
     static constexpr int N = 5;
     
     scope( m = 0, n = 0 );
 
-    ( m = m + n, 
-      n = n + 1 ) | 
+    ( n = n + 1, 
+      m = m + n ) | 
         do_while( n <= N, scope );
 
-    println( "m == {}", scope( m ) );
+    println( "m == {} and should be {}", scope( m ), N*(N+1)/2 );
     
-    if( scope( m ) != N * ( N - 1 ) / 2 )
+    if( scope( m ) != N * (N+1) / 2 )
         return false;
 
     return true;
