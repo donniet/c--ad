@@ -59,16 +59,18 @@ bool test_iteration()
         var< int >( "m" ));
 
     auto [ n, m ] = scope.variables();
+
+    static constexpr int N = 5;
     
     scope( m = 0, n = 0 );
 
-    ( n = n + 1, 
-      m = m + n ) | 
-        do_while( n < 100, scope );
+    ( m = m + n, 
+      n = n + 1 ) | 
+        do_while( n <= N, scope );
 
     println( "m == {}", scope( m ) );
     
-    if( scope( m ) != 5050 )
+    if( scope( m ) != N * ( N - 1 ) / 2 )
         return false;
 
     return true;
