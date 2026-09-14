@@ -264,6 +264,54 @@ struct Result< Op< Discriminator, Args... >>
 template< typename T >
 using result_t = Result< T >::type;
 
+//////////////////////////
+/// CompoundArguments ///
+////////////////////////
+///
+/// Returns a tuple of arguments to a compound expression
+template< typename T >
+struct CompoundArguments
+{
+    using type = T::arguments_type;
+
+    static constexpr type
+    value( T const& expr )
+    { return expr.args(); }
+};
+
+template< typename... Ts >
+requires(( expression< Ts > or ... ))
+struct CompoundArguments< tuple< Ts... >>
+{
+    using type = tuple< Ts... >;
+
+    static constexpr type const&
+    value( tuple< Ts... > const& expr )
+    { return expr; }
+};
+
+template< shape S, typename... Ts >
+requires(( expression< Ts > or ... ))
+struct CompoundArguments< Tensor< S, Ts... >>
+{
+    using type = tuple< Ts... >;
+    
+    static constexpr type
+    value( Tensor< S, Ts... > const& expr )
+    { 
+        auto [ ...ts ] = expr;
+        return { ts... };
+    }
+};
+
+template< typename T >
+using compound_arguments_t = CompoundArguments< T >::type;
+
+template< typename T >
+constexpr compound_arguments_t< T >
+compound_arguments( T const& expr )
+{ return CompoundArguments< T >::value( expr ); }
+
 //////////////////////
 /// Reconstituter ///
 ////////////////////

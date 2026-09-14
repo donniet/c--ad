@@ -548,15 +548,16 @@ template< >
 struct IsCompoundOperation< Gradient >: true_type { };
 
 template< typename FormulaT, variable... Vars >
-auto grad( Func< FormulaT, Vars... > const& func )
+auto grad( Func< FormulaT, Vars... > const& scalar_field )
 {
     typedef Shape< sizeof...( Vars )> S;
     static constexpr make_seq< sizeof...( Vars )> for_vars;
 
-    auto f = func.formula();
+    auto f = scalar_field.formula();
 
     auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-    { return make_tensor< S >( derive( f, func.template var< Is >())... ); };
+    { return make_tensor< S >( 
+        derive( f, scalar_field.template var< Is >())... ); };
 
     return func( helper( for_vars ), Vars{}... ); 
 }
