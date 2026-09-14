@@ -918,6 +918,126 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 //    "Foo< char > is accepted by Bar" );
 
 #endif // g++-16
+
+//////////////////
+/// Processor ///
+////////////////
+///
+/// This is an attempt to replace and simplify the Applier below
+
+template< typename ExprT, typename ProcessorT >
+struct Process {
+private:
+    using processor_type = ProcessorT;
+
+    template< typename ExprU >
+    static constexpr bool
+    is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
+
+    template< typename ExprU >
+    using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
+
+    // terminal default case
+    template< typename ExprU >
+    struct Parser
+    {
+        using type = ExprU;
+
+        static constexpr type
+        value( ExprU const& expr, processor_type& )
+        { return expr; }
+    };
+
+    template< typename T >
+    using parse_t = Parser< T >::type;
+
+    template< typename T >
+    static constexpr parse_t< T >
+    parse( T const& expr, processor_type& f )
+    { return Parser< T >::value( expr, f ); }
+
+    template< typename ExprU >
+    requires( is_accepted_v< ExprU > ) 
+    struct Parser< ExprU >
+    {
+        using type = parse_t< accepted_result_t< ExprU >>;
+
+        static constexpr type
+        value( ExprU const& expr, processor_type& f )
+        { return parse( f( expr ), f ); }
+    };
+
+    template< typename ClosedU >
+    requires( not is_accepted_v< ClosedU > and closed_expression< ClosedU > )
+    struct Parser< ClosedU >
+    {
+        using type = parse_t< result_t< ClosedU >>;
+
+        static constexpr type
+        value( ClosedU const& expr, processor_type& f )
+        { return parse( expr(), f ); }
+    };
+
+    template< typename OpenU >
+    requires( not is_accepted_v< OpenU > and open_expression< OpenU > and
+        compound_expression< OpenU > )
+    struct Parser< OpenU >
+    {
+        //using arguments_type = OpenU::arguments_type;
+        using arguments_type = compound_arguments_t< OpenU >;
+
+        static constexpr size_t arguments_size = 
+            std::tuple_size_v< arguments_type >;
+
+        typedef make_seq< arguments_size > for_arguments;
+
+        template< size_t I >
+        using arg_t = std::tuple_element_t< I, arguments_type >;
+
+        template< size_t I >
+        static constexpr arg_t< I >
+        arg( arguments_type const& args )
+        { return std::get< I >( expr.args() ); }
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        {
+            using type = reconstitute_t< OpenU, parse_t< arg_t< Is >>... >;
+
+            static constexpr type
+            value( OpenU const& expr, processor_type& f )
+            {
+                auto args = compound_arguments( expr );                 
+                return reconstitute( parse( arg< Is >( args ), f )... ); 
+            }
+        };
+
+        using type = parse_t< typename Helper< for_arguments >::type >;
+
+        static constexpr type
+        value( OpenU const& expr, processor_type& f )
+        { return parse( Helper< for_arguments >::value( expr, f ), f ); }
+    };
+
+public:
+    using type = parse_t< ExprT >;
+
+    static constexpr type
+    value( ExprT const& expr, processor_type& f )
+    { return parse( expr, f ); }
+};
+
+template< typename T, typename ProcessorT >
+using process_t = Process< T, ProcessorT >::type;
+
+template< typename T, typename ProcessorT >
+constexpr process_t< T, ProcessorT >
+process( T const& expr, ProcessorT& f )
+{ return Process< T, ProcessorT >::value( expr, f ); }
+
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
 ////////////////////////////////////////////////////
@@ -1013,7 +1133,7 @@ public:
 /// if the manipulator does not accept a tuple, apply to the elements
 /// TODO: check if the applied tensor is accepted by the manipulator and apply
 template< shape S, typename... Ts, typename ManipulatorT >
-requires(( undefined< result_t< Ts >> or ... or false ) and 
+requires(( open_expression< Ts > or ... or false ) and 
     not std::is_invocable_v< ManipulatorT, Tensor< S, Ts... >> )
 struct Applier< Tensor< S, Ts... >, ManipulatorT > {
 private:
