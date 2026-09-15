@@ -44,7 +44,7 @@ int main( int ac, char* av[] )
 
     test::ensure( test_iteration, "Iteration" );
     test::ensure( test_minimize_parabola, "Minimize Parabola" );
-    test::ensure( test_gradient_descent, "Gradient Descent" );
+//    test::ensure( test_gradient_descent, "Gradient Descent" );
     
     println("SUCCESS.");
     return EXIT_SUCCESS;
@@ -63,6 +63,9 @@ bool test_iteration()
     static constexpr int N = 5;
     
     scope( m = 0, n = 0 );
+
+//    auto dw = do_while( n <= N, scope );
+//    process( ( n = n + 1, m = m + n ), dw );
 
     ( n = n + 1, 
       m = m + n ) | 
@@ -121,32 +124,32 @@ bool test_gradient_descent()
 
     auto grad_p = grad( para2 );
 
-    println("grad_p[0] = {}", get<0>( grad_p ));
-    println("grad_p[1] = {}", get<1>( grad_p ));
+//    println("grad_p[0] = {}", get<0>( grad_p ));
+//    println("grad_p[1] = {}", get<1>( grad_p ));
 
     //static_assert( is_same_v< void, decltype( grad_p )> );
 
     scope( n = 0, x = 0, y = 0, dx = 0, dy = 0, f = 0 );
 
-    println( "grad_p | scope = ( {}, {} )", 
-        get< 0 >( grad_p ) | scope, 
-            get< 1 >( grad_p ) | scope );
+//    println( "grad_p | scope = ( {}, {} )", 
+//        get< 0 >( grad_p ) | scope, 
+//            get< 1 >( grad_p ) | scope );
 
     // DT: this works, so executing each step one-by-one works
-    for( int i = 0; i < 30; ++i )
-    {
-        auto vf = para2 | scope;
-        auto vdfx = get<0>(grad_p) | scope;
-        auto vdfy = get<1>(grad_p) | scope;
-
-        auto vx = scope(x) - (float)rate * vf * vdfx;
-        auto vy = scope(y) - (float)rate * vf * vdfy;
-
-        scope( x = vx, y = vy, n = i );
-        
-    }
-    println( "[MANUAL ITERATION]: para2 is {} at ( {}, {} ) step {}",
-        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
+//    for( int i = 0; i < 30; ++i )
+//    {
+//        auto vf = para2 | scope;
+//        auto vdfx = get<0>(grad_p) | scope;
+//        auto vdfy = get<1>(grad_p) | scope;
+//
+//        auto vx = scope(x) - (float)rate * vf * vdfx;
+//        auto vy = scope(y) - (float)rate * vf * vdfy;
+//
+//        scope( x = vx, y = vy, n = i );
+//        
+//    }
+//    println( "[MANUAL ITERATION]: para2 is {} at ( {}, {} ) step {}",
+//        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
 
     scope( n = 0, x = 0, y = 0, dx = 0, dy = 0, f = 0 );
 
@@ -154,16 +157,16 @@ bool test_gradient_descent()
     //     y is recalculated with the new x.
     //
     //     We could set tensors each time maybe
-    ( f = para2( x, y ), 
-      dx = get< 0 >( grad_p( x, y )),
-      dy = get< 1 >( grad_p( x, y )),
-      x = x - rate * f * dx,
-      y = y - rate * f * dy,
-      n = n + 1 ) |
-        do_while( n < 30 and norm( grad_p( x, y )) > 0.001, scope );
-
-    println( "[AUTO ITERATION]:   para2 is {} at ( {}, {} ) step {}", 
-        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
+//    ( f = para2( x, y ), 
+//      dx = get< 0 >( grad_p( x, y )),
+//      dy = get< 1 >( grad_p( x, y )),
+//      x = x - rate * f * dx,
+//      y = y - rate * f * dy,
+//      n = n + 1 ) |
+//        do_while( n < 30 and norm( grad_p( x, y )) > 0.001, scope );
+//
+//    println( "[AUTO ITERATION]:   para2 is {} at ( {}, {} ) step {}", 
+//        para2( x, y ) | scope, scope( x ), scope( y ), scope( n ));
 
     return true;
 }

@@ -270,13 +270,31 @@ using result_t = Result< T >::type;
 ///
 /// Returns a tuple of arguments to a compound expression
 template< typename T >
-struct CompoundArguments
-{
-    using type = T::arguments_type;
+struct CompoundArguments;
 
+template< template< typename... > class Op, typename... Args >
+requires( IsCompoundOperation< Op >::value ) 
+struct CompoundArguments< Op< Args... >>
+{
+    using type = tuple< Args... >;
+
+    // CompoundCommon inherits from tuple
     static constexpr type
-    value( T const& expr )
-    { return expr.args(); }
+    value( Op< Args... > const& expr )
+    { return expr; }
+};
+
+template< template< auto, typename... > class Op, auto Discriminator,
+    typename... Args >
+requires( IsDiscriminatedOperation< Op >::value )
+struct CompoundArguments< Op< Discriminator, Args... >>
+{
+    using type = tuple< Args... >;
+
+    // CompoundCommon inherits from tuple
+    static constexpr type
+    value( Op< Discriminator, Args... > const& expr )
+    { return expr; }
 };
 
 template< typename... Ts >
