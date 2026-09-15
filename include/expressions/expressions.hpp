@@ -448,7 +448,7 @@ struct CompoundCommon: tuple< Args... >
 {
     // we keep the static members and typedefs 
     using expression_type = ExprT;
-    using arguments_tuple = tuple< Args... >;
+    using arguments_type = tuple< Args... >;
     static constexpr size_t arguments_size = sizeof...( Args );
 
 protected:
@@ -948,34 +948,26 @@ private:
         { return expr; }
     };
 
-    template< typename T >
-    using parse_t = Parser< T >::type;
-
-    template< typename T >
-    static constexpr parse_t< T >
-    parse( T const& expr, processor_type& f )
-    { return Parser< T >::value( expr, f ); }
-
     template< typename ExprU >
-    requires( is_accepted_v< ExprU > ) 
+    requires( is_accepted_v< ExprU > and not is_same_v< accepted_result_t< ExprU >, ExprU > ) 
     struct Parser< ExprU >
     {
-        using type = parse_t< accepted_result_t< ExprU >>;
+        using type = Parser< accepted_result_t< ExprU >>::type;
 
         static constexpr type
         value( ExprU const& expr, processor_type& f )
-        { return parse( f( expr ), f ); }
+        { return Parser< accepted_result_t< ExprU >>::value( f( expr ), f ); }
     };
 
     template< typename ClosedU >
     requires( not is_accepted_v< ClosedU > and closed_expression< ClosedU > )
     struct Parser< ClosedU >
     {
-        using type = parse_t< result_t< ClosedU >>;
+        using type = Parser< result_t< ClosedU >>::type;
 
         static constexpr type
         value( ClosedU const& expr, processor_type& f )
-        { return parse( expr(), f ); }
+        { return Parser< result_t< ClosedU >>::value( expr(), f ); }
     };
 
     template< typename OpenU >
@@ -991,36 +983,48 @@ private:
 
         typedef make_seq< arguments_size > for_arguments;
 
-        template< size_t I >
-        using arg_t = std::tuple_element_t< I, arguments_type >;
-
-        template< size_t I >
-        static constexpr arg_t< I >
-        arg( arguments_type const& args )
-        { return std::get< I >( expr.args() ); }
-
         template< typename Seq >
         struct Helper;
 
         template< size_t... Is >
         struct Helper< seq< Is... >>
         {
-            using type = reconstitute_t< OpenU, parse_t< arg_t< Is >>... >;
+            template< size_t I >
+            using arg_t = std::tuple_element_t< I, arguments_type >;
+
+            template< size_t I >
+            static constexpr arg_t< I >
+            arg( arguments_type const& args )
+            { return std::get< I >( args ); }
+
+            using type = reconstitute_t< OpenU, typename 
+                Parser< arg_t< Is >>::type... >;
 
             static constexpr type
             value( OpenU const& expr, processor_type& f )
             {
                 auto args = compound_arguments( expr );                 
-                return reconstitute( parse( arg< Is >( args ), f )... ); 
+                return reconstitute( Parser< arg_t< Is >>::
+                    value( arg< Is >( args ), f )... ); 
             }
         };
 
-        using type = parse_t< typename Helper< for_arguments >::type >;
+        using type = Parser< typename Helper< for_arguments >::type >::type;
 
         static constexpr type
         value( OpenU const& expr, processor_type& f )
-        { return parse( Helper< for_arguments >::value( expr, f ), f ); }
+        { return Parser< typename Helper< for_arguments >::type >::value( 
+            Helper< for_arguments >::value( expr, f ), f ); }
     };
+
+    template< typename T >
+    using parse_t = Parser< T >::type;
+
+    template< typename T >
+    static constexpr parse_t< T >
+    parse( T const& expr, processor_type& f )
+    { return Parser< T >::value( expr, f ); }
+
 
 public:
     using type = parse_t< ExprT >;
@@ -1419,7 +1423,8 @@ requires( std::is_invocable_v< ManipulatorT, T > or expression< T > )
 //requires( expression< T > )
 constexpr auto
 operator |( T const& value_or_expression, ManipulatorT&& f )
-{ return apply( value_or_expression, f ); }
+//{ return apply( value_or_expression, f ); }
+{ return process( value_or_expression, f ); }
 
 ////////////////////////
 /// Scope Evaluator ///
