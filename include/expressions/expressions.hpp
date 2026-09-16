@@ -853,6 +853,10 @@ consteval auto get_parameters_static( std::meta::info member )
     return std::define_static_array( params );
 }
 
+template< std::meta::info Func, typename... Args >
+concept can_call_with = requires( Args&&... args )
+{ std::invoke( &[: Func :], std::forward< Args >( args )... ); };
+
 /////////////////////////////////////
 /// is_accepted consteval method ///
 ///////////////////////////////////
@@ -864,7 +868,7 @@ consteval bool
 is_accepted()
 {
     using namespace std::meta;
-    using std::vector;
+    using std::vector, std::is_same_v, std::decay_t;
 
     constexpr auto members = get_members_static< ManipulatorT >();
     constexpr make_seq< members.size() > for_members = {};
@@ -876,20 +880,20 @@ is_accepted()
         if constexpr( is_operator_function( member ) and 
             operator_of( member ) == operators::op_parentheses )
         {
+//            return can_call_with< member, ManipulatorT&, ExprT >;
             constexpr auto params = get_parameters_static( member );
+
+            if constexpr( params.size() == 0 )
+                return false;
+
+            constexpr auto type_param0 = type_of( param[0] );
     
-            if constexpr( params.size() == 1 )
-            { 
-                using ParamT = std::decay_t<
-                    typename [: type_of( params[0] ) :]>;
-                
-                // is our parameter the same decayed type as the expression?
-                if constexpr( std::is_same_v< ParamT, std::decay_t< ExprT >> )
-                    return true; 
-
-                // is our parameter a templated type such that the method
-
-            }
+            using ParamT = decay_t<
+                typename [: type_param0 :]>;
+            
+            // is our parameter the same decayed type as the expression?
+            if constexpr( is_same_v< ParamT, decay_t< ExprT >> )
+                return true; 
         }
 
         return false;
@@ -898,24 +902,34 @@ is_accepted()
     return helper( for_members );
 }
 
+
+
 template< typename ExprT, typename ManipulatorT >
 constexpr bool is_accepted_v = is_accepted< ExprT, ManipulatorT >();
+
+template< typename ExprT, typename ManipulatorT >
+requires( is_accepted_v< ExprT, ManipulatorT > )
+using accepted_return_t = std::decay_t< decltype( ManipulatorT{}( ExprT{} )) >;
 
 template< typename T >
 struct Foo { };
 
 struct Bar {
-    int operator ()( Foo< int > const& ) const { return 0; }
+    int operator ()( int ) const { return 0; }
+};
 
+struct Bar2 {
     template< typename T >
     int operator ()( Foo< T > const& ) const { return 0; }
 };
 
+int bar( Foo< int > const& ) { return 0; }
+
 static_assert( is_accepted_v< Foo< int >, Bar >,
     "Foo< int > is accepted by Bar" );
 
-//static_assert( is_accepted_v< Foo< char >, Bar >, 
-//    "Foo< char > is accepted by Bar" );
+static_assert( is_accepted_v< Foo< char >, Bar2 >, 
+    "Foo< char > is accepted by Bar2" );
 
 #endif // g++-16
 
@@ -932,10 +946,13 @@ private:
 
     template< typename ExprU >
     static constexpr bool
-    is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
+    //is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
+    is_accepted_v = is_accepted< ExprU, ProcessorT >();
 
     template< typename ExprU >
-    using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
+    //using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
+    using accepted_result_t = 
+        std::decay_t< decltype( ProcessorT{}( ExprU{} ))>;
 
     // terminal default case
     template< typename ExprU >
@@ -949,7 +966,8 @@ private:
     };
 
     template< typename ExprU >
-    requires( is_accepted_v< ExprU > and not is_same_v< accepted_result_t< ExprU >, ExprU > ) 
+    requires( is_accepted_v< ExprU > and 
+        not is_same_v< accepted_result_t< ExprU >, ExprU > ) 
     struct Parser< ExprU >
     {
         using type = Parser< accepted_result_t< ExprU >>::type;

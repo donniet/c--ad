@@ -47,6 +47,7 @@ endif()
 # debug options
 add_compile_options("-ftemplate-backtrace-limit=0")
 add_compile_options("-fdiagnostics-show-template-tree")
+#add_compile_options("-fconcepts-diagnostics-depth=100")
 #add_compile_options("-fno-inline")
 
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
