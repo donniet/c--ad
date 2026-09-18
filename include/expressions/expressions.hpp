@@ -857,6 +857,17 @@ template< std::meta::info Func, typename... Args >
 concept can_call_with = requires( Args&&... args )
 { std::invoke( &[: Func :], std::forward< Args >( args )... ); };
 
+template< typename ExprT, typename AcceptorF >
+struct AcceptedByOperator;
+
+template< typename ExprT, typename ReturnT, typename ProcessorT, typename ArgT >
+struct AcceptedByOperator< ExprT, ReturnT ( ProcessorT::* )( ArgT const& )>:
+    std::is_convertible< ExprT, ArgT > { };
+
+template< typename ExprT, typename AcceptorF >
+constexpr bool is_accepted_by_operator_method_v = 
+    AcceptedByOperator< ExprT, AcceptorF >::value;
+
 /////////////////////////////////////
 /// is_accepted consteval method ///
 ///////////////////////////////////
@@ -899,12 +910,9 @@ is_accepted()
         if constexpr( is_operator_function_template( member ) and 
             operator_of( member ) == operators::op_parentheses )
         {
-            constexpr auto params = get_parameters_static( member );
-
-            if constexpr( params.size() == 0 )
-                return false;
-
-            return true;
+            // Error: reflection does not have a type
+            using operator_type = [: type_of( member ) :];
+            return is_accepted_by_operator_method_v< ExprT, operator_type >;
         }
 
         return false;
