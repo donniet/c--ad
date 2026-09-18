@@ -886,7 +886,7 @@ is_accepted()
             if constexpr( params.size() == 0 )
                 return false;
 
-            constexpr auto type_param0 = type_of( param[0] );
+            constexpr auto type_param0 = type_of( params[0] );
     
             using ParamT = decay_t<
                 typename [: type_param0 :]>;
@@ -894,6 +894,17 @@ is_accepted()
             // is our parameter the same decayed type as the expression?
             if constexpr( is_same_v< ParamT, decay_t< ExprT >> )
                 return true; 
+        }
+
+        if constexpr( is_operator_function_template( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            constexpr auto params = get_parameters_static( member );
+
+            if constexpr( params.size() == 0 )
+                return false;
+
+            return true;
         }
 
         return false;
@@ -915,7 +926,7 @@ template< typename T >
 struct Foo { };
 
 struct Bar {
-    int operator ()( int ) const { return 0; }
+    int operator ()( Foo< int > const& ) const { return 0; }
 };
 
 struct Bar2 {
@@ -946,13 +957,13 @@ private:
 
     template< typename ExprU >
     static constexpr bool
-    //is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
-    is_accepted_v = is_accepted< ExprU, ProcessorT >();
+    is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
+    //is_accepted_v = is_accepted< ExprU, ProcessorT >();
 
     template< typename ExprU >
-    //using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
-    using accepted_result_t = 
-        std::decay_t< decltype( ProcessorT{}( ExprU{} ))>;
+    using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
+    //using accepted_result_t = 
+    //    std::decay_t< decltype( ProcessorT{}( ExprU{} ))>;
 
     // terminal default case
     template< typename ExprU >
