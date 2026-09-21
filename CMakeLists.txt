@@ -63,6 +63,7 @@ elseif( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" )
     add_compile_options("-fdiagnostics-all-candidates")
     add_compile_options("-fmax-errors=1")
     add_compile_options("-fdiagnostics-color=always")
+    add_compile_options("-fno-elide-type")
     #add_compile_options("-ftemplate-depth=0")
 endif()
 
