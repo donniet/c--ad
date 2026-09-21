@@ -1,3 +1,26 @@
+
+
+
+
+
+
+
+
+
+
+reconstitute(
+    Process< 
+        Product< StaticValue<int>, Var<0, float> >, 
+        const Scope<Var<0, float> > >::
+            
+        Parser<StaticValue<int> >::type, 
+    Process<
+        Product< StaticValue<int>, Var<0, float> >, 
+        const Scope<Var<0, float> > >::
+
+        Parser<Var<0, float> >::type)
+
+
 Tensor<Shape<2>, 
     Sum<Sum<Sum<
         Product<

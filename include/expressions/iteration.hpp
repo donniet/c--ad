@@ -21,6 +21,7 @@ struct DoWhile
     constexpr auto
     operator ()( BodyT const& body )
     {
+        // return if_( cond(), body )
         auto pred = cond() | scope();
         while( pred )
         {

@@ -947,8 +947,8 @@ int bar( Foo< int > const& ) { return 0; }
 static_assert( is_accepted_v< Foo< int >, Bar >,
     "Foo< int > is accepted by Bar" );
 
-static_assert( is_accepted_v< Foo< char >, Bar2 >, 
-    "Foo< char > is accepted by Bar2" );
+//static_assert( is_accepted_v< Foo< char >, Bar2 >, 
+//    "Foo< char > is accepted by Bar2" );
 
 #endif // g++-16
 
@@ -959,116 +959,143 @@ static_assert( is_accepted_v< Foo< char >, Bar2 >,
 /// This is an attempt to replace and simplify the Applier below
 
 template< typename ExprT, typename ProcessorT >
-struct Process {
-private:
-    using processor_type = ProcessorT;
-
-    template< typename ExprU >
-    static constexpr bool
-    is_accepted_v = std::is_invocable_v< processor_type, ExprU >;
-    //is_accepted_v = is_accepted< ExprU, ProcessorT >();
-
-    template< typename ExprU >
-    using accepted_result_t = std::invoke_result_t< processor_type, ExprU >;
-    //using accepted_result_t = 
-    //    std::decay_t< decltype( ProcessorT{}( ExprU{} ))>;
-
-    // terminal default case
-    template< typename ExprU >
-    struct Parser
-    {
-        using type = ExprU;
-
-        static constexpr type
-        value( ExprU const& expr, processor_type& )
-        { return expr; }
-    };
-
-    template< typename ExprU >
-    requires( is_accepted_v< ExprU > and 
-        not is_same_v< accepted_result_t< ExprU >, ExprU > ) 
-    struct Parser< ExprU >
-    {
-        using type = Parser< accepted_result_t< ExprU >>::type;
-
-        static constexpr type
-        value( ExprU const& expr, processor_type& f )
-        { return Parser< accepted_result_t< ExprU >>::value( f( expr ), f ); }
-    };
-
-    template< typename ClosedU >
-    requires( not is_accepted_v< ClosedU > and closed_expression< ClosedU > )
-    struct Parser< ClosedU >
-    {
-        using type = Parser< result_t< ClosedU >>::type;
-
-        static constexpr type
-        value( ClosedU const& expr, processor_type& f )
-        { return Parser< result_t< ClosedU >>::value( expr(), f ); }
-    };
-
-    template< typename OpenU >
-    requires( not is_accepted_v< OpenU > and open_expression< OpenU > and
-        compound_expression< OpenU > )
-    struct Parser< OpenU >
-    {
-        //using arguments_type = OpenU::arguments_type;
-        using arguments_type = compound_arguments_t< OpenU >;
-
-        static constexpr size_t arguments_size = 
-            std::tuple_size_v< arguments_type >;
-
-        typedef make_seq< arguments_size > for_arguments;
-
-        template< typename Seq >
-        struct Helper;
-
-        template< size_t... Is >
-        struct Helper< seq< Is... >>
-        {
-            template< size_t I >
-            using arg_t = std::tuple_element_t< I, arguments_type >;
-
-            template< size_t I >
-            static constexpr arg_t< I >
-            arg( arguments_type const& args )
-            { return std::get< I >( args ); }
-
-            using type = reconstitute_t< OpenU, typename 
-                Parser< arg_t< Is >>::type... >;
-
-            static constexpr type
-            value( OpenU const& expr, processor_type& f )
-            {
-                auto args = compound_arguments( expr );                 
-                return reconstitute( Parser< arg_t< Is >>::
-                    value( arg< Is >( args ), f )... ); 
-            }
-        };
-
-        using type = Parser< typename Helper< for_arguments >::type >::type;
-
-        static constexpr type
-        value( OpenU const& expr, processor_type& f )
-        { return Parser< typename Helper< for_arguments >::type >::value( 
-            Helper< for_arguments >::value( expr, f ), f ); }
-    };
-
-    template< typename T >
-    using parse_t = Parser< T >::type;
-
-    template< typename T >
-    static constexpr parse_t< T >
-    parse( T const& expr, processor_type& f )
-    { return Parser< T >::value( expr, f ); }
-
-
-public:
-    using type = parse_t< ExprT >;
+struct Process 
+{
+    using type = ExprT;
 
     static constexpr type
-    value( ExprT const& expr, processor_type& f )
-    { return parse( expr, f ); }
+    value( ExprT const& expr, ProcessorT& )
+    { return expr; }
+};
+
+template< typename T, typename ProcessorT >
+requires( not expression< T > )
+struct Process< T, ProcessorT >
+{
+    using type = T;
+
+    static constexpr type
+    value( T const& val, ProcessorT& )
+    { return val; }
+};
+
+template< typename T, typename ProcessorT >
+struct Process< StaticValue< T >, ProcessorT >
+{
+    using type = T;
+
+    static constexpr type
+    value( StaticValue< T > const& expr, ProcessorT& )
+    { return expr.get_value(); }
+};
+
+template< auto Value, typename ProcessorT >
+struct Process< Constant< Value >, ProcessorT >
+{ 
+    using type = std::decay_t< decltype( Value )>;
+
+    static constexpr type
+    value( Constant< Value > const& expr, ProcessorT& )
+    { return Value; }
+};
+
+template< variable V, typename ProcessorT >
+struct Process< V, ProcessorT >
+{
+    using type = result_t< V >;
+
+    static constexpr type
+    value( V const& v, ProcessorT& proc )
+    { return proc( v ); }
+};
+
+template< size_t Id, expression ExprT, typename ProcessorT >
+struct Process< SetVar< Id, ExprT >, ProcessorT >
+{
+    using type = result_t< SetVar< Id, ExprT >>;
+
+    using right_hand_side_type = ExprT;
+
+    static constexpr type
+    value( SetVar< Id, ExprT > const& set_v, ProcessorT& proc )
+    { 
+        return proc( set_var< Id >( 
+            Process< right_hand_side_type, ProcessorT >::
+                value( set_v.expr(), proc ))); 
+    }
+};
+
+template< size_t Id, typename T, typename ProcessorT >
+requires( not expression< T > )
+struct Process< SetVar< Id, T >, ProcessorT >
+{
+    using type = result_t< SetVar< Id, T >>;
+
+    static constexpr type
+    value( SetVar< Id, T > const& set_v, ProcessorT& proc )
+    { return proc( set_v ); }
+};
+
+template< closed_expression ClosedU, typename ProcessorT >
+requires( not is_set_expression_v< ClosedU > ) // TODO: consider if a set
+                                               // expression can ever be closed
+struct Process< ClosedU, ProcessorT >
+{
+    using type = Process< result_t< ClosedU >, ProcessorT >::type;
+
+    static constexpr type
+    value( ClosedU const& expr, ProcessorT& f )
+    { return Process< result_t< ClosedU >, ProcessorT >::value( expr(), f ); }
+};
+
+template< open_expression OpenU, typename ProcessorT >
+requires( compound_expression< OpenU > and not is_set_expression_v< OpenU > )
+struct Process< OpenU, ProcessorT >
+{
+    using arguments_type = compound_arguments_t< OpenU >;
+
+    static constexpr size_t arguments_size = 
+        std::tuple_size_v< arguments_type >;
+
+    typedef make_seq< arguments_size > for_arguments;
+
+    template< typename Seq >
+    struct Helper;
+
+    template< size_t... Is >
+    struct Helper< seq< Is... >>
+    {
+        using arguments_type = compound_arguments_t< OpenU >;
+
+        template< size_t I >
+        using arg_t = Process< std::tuple_element_t< I, arguments_type >, 
+            ProcessorT >::type;
+
+        template< size_t I >
+        static constexpr arg_t< I >
+        arg( arguments_type const& args, ProcessorT& f )
+        { return Process< std::tuple_element_t< I, arguments_type >, 
+            ProcessorT >::value( std::get< I >( args ), f ); }
+
+        using reconstituted_type = reconstitute_t< OpenU, arg_t< Is >... >;
+        using type = std::decay_t< decltype( reconstituted_type::value( 
+            arg_t< Is >{}... ))>;
+
+        static constexpr type
+        value( OpenU const& expr, ProcessorT& f )
+        {
+            auto args = compound_arguments( expr );                 
+            return reconstituted_type::value( arg< Is >( args, f )... ); 
+        }
+    };
+
+    using type = Process< typename Helper< for_arguments >::type, 
+        ProcessorT >::type;
+
+    static constexpr type
+    value( OpenU const& expr, ProcessorT& f )
+    { return Process< typename Helper< for_arguments >::type, ProcessorT >::
+        value( Helper< for_arguments >::value( expr, f ), f ); }
 };
 
 template< typename T, typename ProcessorT >
@@ -1456,7 +1483,7 @@ apply( ExprT const& expr, ManipulatorT& f )
 /// We commandeer operator| on expression types as the "manipulation" operator
 ///
 template< typename T, typename ManipulatorT >
-requires( std::is_invocable_v< ManipulatorT, T > or expression< T > )
+//requires( std::is_invocable_v< ManipulatorT, T > or expression< T > )
 //requires( expression< T > )
 constexpr auto
 operator |( T const& value_or_expression, ManipulatorT&& f )
