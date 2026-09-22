@@ -17,6 +17,9 @@ namespace expressions {
 template< typename Condition, typename Scope >
 struct DoWhile
 {
+    // DT: this is called by the processor on each variable in the expression
+    //     so we can either create specializations of this for variables
+    //     or put this loop into the static value method
     template< typename BodyT >
     constexpr auto
     operator ()( BodyT const& body )
