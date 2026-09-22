@@ -461,10 +461,21 @@ public:
     // (one with no arguments that are themselves expression types) will ever
     // be instantiated **fingers crossed**
 
+    constexpr auto 
+    operator ()() const
+    {
+        static constexpr make_seq< arguments_size > for_args;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { return expression_type::value( std::get< Is >( *this )... ); };
+
+        return helper( for_args );
+    }
+
     constexpr CompoundCommon()
-    { static_assert( false, 
+    { /* static_assert( false, 
         "implementation of compound expression with no expression arguments "
-        "should not be instantiated" ); }
+        "should not be instantiated" ); */ }
     constexpr CompoundCommon( Args const&... ): CompoundCommon() { };
 };
 

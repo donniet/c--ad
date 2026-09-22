@@ -67,9 +67,11 @@ bool test_iteration()
 //    auto dw = do_while( n <= N, scope );
 //    process( ( n = n + 1, m = m + n ), dw );
 
-    ( n = n + 1, 
-      m = m + n ) | 
-        do_while( n <= N, scope );
+//    ( n = n + 1, 
+//      m = m + n ) | 
+//        do_while( n <= N, scope );
+
+    loop_while( n < N, ( n = n + 1, m = m + n )) | scope;
 
     println( "m == {} and should be {}", scope( m ), N*(N+1)/2 );
     
