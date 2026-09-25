@@ -779,6 +779,7 @@ struct GetElement< I, ExprT >
     { return { expr }; }
 };
 
+
 /////////////////////////////////////////////////
 /// Scope Contains Free Expression Variables ///
 ///////////////////////////////////////////////
@@ -968,7 +969,8 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 ////////////////
 ///
 /// This is an attempt to replace and simplify the Applier below
-
+/// 
+/// DT: perhaps we should bootstrap IF and WHILE expressions in the processor?
 template< typename ExprT, typename ProcessorT >
 struct Process 
 {
@@ -1116,6 +1118,66 @@ template< typename T, typename ProcessorT >
 constexpr process_t< T, ProcessorT >
 process( T const& expr, ProcessorT& f )
 { return Process< T, ProcessorT >::value( expr, f ); }
+
+////////////////////////
+/// Mold Expression ///
+//////////////////////
+///
+/// A mold is an expression that returns a compatible type to it's input.  A
+/// mold expression accepts a starting value for the inputs and a terminal 
+/// condition.
+/// 
+/// input | mold( function ) | until( condition )
+///
+namespace detail {
+
+// function variables unset by the function return
+template< typename FunctionT >
+struct Unmolded
+{
+    using type = free_variables_t< Sub< FunctionT, ReturnT >>;
+};
+
+template< typename... Rs >
+struct Unmolded< tuple< Rs... >>
+{
+    using type = free_variables_t< Sub< FunctionT, Rs... >>;
+};
+
+// any values set by the input that aren't part of the return of the function
+// plus any variables in the function that aren't set by the input are part 
+// of the scope of the mold
+template< typename FunctionT, typename InputT >
+struct MoldScope
+{
+    using free_variables_type = free_variables_t< Sub< FunctionT, InputT >>;
+
+};
+
+template< typename FunctionT, typename... Ts >
+struct MoldScope< FunctionT, tuple< Ts... >>
+{
+    // function variables unset by the input expressions
+    using free_variables_type = free_variables_t< Sub< FunctionT, Ts... >>;
+
+
+    static constexpr 
+};
+
+} // namespace detail
+
+template< typename FunctionT, typename InputT >
+class Molding: mold_scope_t< FunctionT, InputT >  
+{
+    using input_expression_type = InputT;
+    using function_expression_type = FunctionT;
+
+    
+
+private:
+    input_expression_type _input;
+    function_expression_type _func;
+};
 
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
