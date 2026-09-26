@@ -971,6 +971,16 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 /// This is an attempt to replace and simplify the Applier below
 /// 
 /// DT: perhaps we should bootstrap IF and WHILE expressions in the processor?
+
+template< typename T >
+struct IsProcessor: false_type { };
+
+template< typename T >
+static constexpr bool is_processor_v = IsProcessor< T >;
+
+template< typename T >
+concept processor = is_processor_v< T >;
+
 template< typename ExprT, typename ProcessorT >
 struct Process 
 {
@@ -1129,55 +1139,60 @@ process( T const& expr, ProcessorT& f )
 /// 
 /// input | mold( function ) | until( condition )
 ///
-namespace detail {
-
-// function variables unset by the function return
 template< typename FunctionT >
-struct Unmolded
+class Molding
 {
-    using type = free_variables_t< Sub< FunctionT, ReturnT >>;
-};
-
-template< typename... Rs >
-struct Unmolded< tuple< Rs... >>
-{
-    using type = free_variables_t< Sub< FunctionT, Rs... >>;
-};
-
-// any values set by the input that aren't part of the return of the function
-// plus any variables in the function that aren't set by the input are part 
-// of the scope of the mold
-template< typename FunctionT, typename InputT >
-struct MoldScope
-{
-    using free_variables_type = free_variables_t< Sub< FunctionT, InputT >>;
-
-};
-
-template< typename FunctionT, typename... Ts >
-struct MoldScope< FunctionT, tuple< Ts... >>
-{
-    // function variables unset by the input expressions
-    using free_variables_type = free_variables_t< Sub< FunctionT, Ts... >>;
-
-
-    static constexpr 
-};
-
-} // namespace detail
-
-template< typename FunctionT, typename InputT >
-class Molding: mold_scope_t< FunctionT, InputT >  
-{
-    using input_expression_type = InputT;
     using function_expression_type = FunctionT;
 
     
+     
+    constexpr Molding( FunctionT const& expr ): _func{ expr }
+    { }
+    constexpr Molding( Molding const& ) = default;
+    constexpr MOlding( ) = default;
 
 private:
-    input_expression_type _input;
     function_expression_type _func;
 };
+
+template< FunctionT >
+constexpr Molding< FunctionT >
+mold( FunctionT const& expr )
+{ return { expr }; }
+
+template< typename ConditionT >
+struct Repeater;
+
+template< typename ConditionT >
+struct IsProcessor< Repeater< ConditionT >>: true_type { };
+
+template< typename ConditionT >
+struct Repeater
+{
+    using condition_type = ConditionT;
+
+    typedef enum {
+        repeat_while,
+        repeat_until
+    } predicate_type;
+   
+    //  
+
+    constexpr Repeater( ConditionT const& cond, predicate_type pred = repeat_while ): 
+        _cond{ cond }, _pred{ pred }
+    { }
+    constexpr Repeater( Repeater const& ) = default;
+    constexpr Repeater( ) = default;
+
+private:
+    condition_type _cond;
+    predicate_type _pred;
+};
+
+template< typename ConditionT >
+constexpr Repeater< ConditionT >
+until( ConditionT const& cond )
+{ return { cond, Repeater< ConditionT >::repeat_until }; }
 
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
