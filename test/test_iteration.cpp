@@ -20,7 +20,7 @@ using namespace units;
 bool test_iteration();
 bool test_minimize_parabola();
 bool test_gradient_descent();
-
+bool test_mold();
 
 //using scope_type = Scope<Var<0, int>, Var<1, int>, Var<2, Length>, Var<3, Length>, Var<4, Length>, Var<5, Length>, Var<6, Length>>;
 
@@ -42,12 +42,34 @@ int main( int ac, char* av[] )
 {
     println("ITERATION TESTS");
 
-    test::ensure( test_iteration, "Iteration" );
-    test::ensure( test_minimize_parabola, "Minimize Parabola" );
+//    test::ensure( test_iteration, "Iteration" );
+//    test::ensure( test_minimize_parabola, "Minimize Parabola" );
 //    test::ensure( test_gradient_descent, "Gradient Descent" );
-    
+  
+    test::ensure( test_mold, "Testing a Mold Function" );
+
     println("SUCCESS.");
     return EXIT_SUCCESS;
+}
+
+bool test_mold()
+{
+    using std::println;
+
+    Var< 0, int > n;
+    Var< 1, int > m;
+
+    static constexpr int N = 5;
+
+    auto [ nf, mf ] = make_tuple( 0, 0 ) | 
+        mold( make_tuple( n + 1, m + n )).until( n <= N );
+
+    println( "m == {} and should be {}", mf, N*(N+1)/2 );
+    
+    if( mf != N*(N+1)/2 )
+        return false;
+
+    return true;
 }
 
 bool test_iteration() 

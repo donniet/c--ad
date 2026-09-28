@@ -674,7 +674,23 @@ template< variable... Bs >
 struct UniqueVarsDisjoint< unique_variables< >, unique_variables< Bs... >>:
     std::true_type { };
 
+template< typename T, typename U >
+struct IsUniqueVarsSubset: std::false_type { };
 
+template< variable T, variable... Ts, variable... Us >
+struct IsUniqueVarsSubset< unique_variables< T, Ts... >, 
+    unique_variables< Us ... >>: std::integral_constant< bool,
+        (( T::id == Us::id ) or ... or false ) and
+            IsUniqueVarsSubset< unique_variables< Ts... >, 
+                unique_variables< Us... >>::value > 
+{ };
+
+template< variable... Us >
+struct IsUniqueVarsSubset< unique_variables< >, unique_variables< Us... >>:
+    std::true_type { };
+
+template< typename T, typename U >
+constexpr bool is_unique_variables_subset_v = IsUniqueVarsSubset< T, U >::value;
 
 } // namespace expressions
 
