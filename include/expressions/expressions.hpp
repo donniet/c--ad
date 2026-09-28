@@ -197,8 +197,8 @@ public:
     using result_type = result_t< last_t >;
 
     constexpr operator result_type() const
-    requires( closed_expression< First > and ( closed_expression< Rest > and 
-        ... ))
+    requires( not( open_expression< First > or( open_expression< Rest > or 
+        ... )))
     { return Link< last_t >::value( last() ); }
 
     static constexpr last_t const&
@@ -211,13 +211,13 @@ public:
 
     constexpr result_type
     operator ()() const
-    requires( closed_expression< First > and ( closed_expression< Rest > and 
-        ... ))
+    requires( not( open_expression< First > or( open_expression< Rest > or 
+        ... )))
     { return Link< last_t >::value( last() ); }
 
     constexpr last_t 
     operator ()() const
-    requires( not closed_expression< First > or not ( closed_expression< Rest > and 
+    requires( open_expression< First > or( open_expression< Rest > or
         ... ))
     { return last(); }
 
@@ -523,9 +523,9 @@ private:
     requires( closed_expression< pack_element_t< I, Args... >> )
     struct ArgEvaluator< I >
     {
-        //using type = result_t< pack_element_t< I, Args... >>;
-        using type = std::remove_cvref_t< decltype( 
-            pack_element_t< I, Args... >{}() )>;
+        using type = result_t< pack_element_t< I, Args... >>;
+        //using type = std::remove_cvref_t< decltype( 
+        //    pack_element_t< I, Args... >{}() )>;
         static constexpr type
         value( arguments_tuple const& tup )
         { return std::get< I >( tup )(); } // ** the invocation operator()
@@ -976,7 +976,7 @@ template< typename T >
 struct IsProcessor: false_type { };
 
 template< typename T >
-static constexpr bool is_processor_v = IsProcessor< T >;
+static constexpr bool is_processor_v = IsProcessor< T >::value;
 
 template< typename T >
 concept processor = is_processor_v< T >;
@@ -1041,11 +1041,9 @@ struct Process< SetVar< Id, ExprT >, ProcessorT >
 
     static constexpr type
     value( SetVar< Id, ExprT > const& set_v, ProcessorT& proc )
-    { 
-        return proc( set_var< Id >( 
-            Process< right_hand_side_type, ProcessorT >::
-                value( set_v.expr(), proc ))); 
-    }
+    { return proc( set_var< Id >( 
+        Process< right_hand_side_type, ProcessorT >::
+            value( set_v.expr(), proc ))); }
 };
 
 template< size_t Id, typename T, typename ProcessorT >
@@ -1137,62 +1135,182 @@ process( T const& expr, ProcessorT& f )
 /// mold expression accepts a starting value for the inputs and a terminal 
 /// condition.
 /// 
-/// input | mold( function ) | until( condition )
+/// input | mold( function ).until( condition )
+/// ^     ^ ^     ^          ^      ^
+/// |     | |     |          |      defines the terminal condition
+/// |     | |     |          terminal condition predicate
+/// |     | |     recursed expression
+/// |     | constructs a mold from the recursed expression
+/// |     casts the input in the mold
+/// initial data tuple akin to an object being cast in a mold
+/// 
 ///
-template< typename FunctionT >
-class Molding
+namespace detail {
+
+template< typename T >
+struct IsMoldExpression: false_type { };
+
+// an expression is a mold expression if it's result type is a tuple of types
+// compatible as a substitution into itself
+template< expression ExprT >
+struct IsMoldExpression< ExprT > {
+private:
+    using result_type = result_t< ExprT >;
+
+    template< typename TupleT >
+    struct IsTupleCompatibleSubstitution: std::false_type { };
+
+    template< typename... Ts >
+    struct IsTupleCompatibleSubstitution< tuple< Ts... >>: 
+        std::integral_constant< bool, 
+            is_compatible_substitution_v< ExprT, Ts... >>
+    { };
+
+public:
+    static constexpr bool value = 
+        IsTupleCompatibleSubstitution< result_type >::value;
+};
+
+} // namespace detail
+
+template< typename T >
+constexpr bool is_mold_expression_v = detail::IsMoldExpression< T >::value;
+
+template< typename T >
+concept mold_expression = is_mold_expression_v< T >;
+
+template< typename ExprT, typename ConditionT >
+struct PourUntil {
+private:
+    using mold_expression_type = ExprT;
+    using until_condition_type = ConditionT;
+
+    using formula_variable_tuple = DirectSubOrder< mold_expression_type >::type;
+    using condition_variable_tuple = 
+        DirectSubOrder< until_condition_type >::type;
+
+    static constexpr size_t condition_variable_size = 
+        tuple_size_v< condition_variable_tuple >;
+    typedef make_seq< condition_variable_size > for_condition_vars;
+    
+    template< typename TupleT >
+    struct BoundMoldVariables;
+
+    template< typename... Ts >
+    struct BoundMoldVariables< tuple< Ts... >>
+    { using type = bound_variables_t< Sub< ExprT, Ts... >>; };
+
+    using bound_variables_type = BoundMoldVariables< result_t< ExprT >>::type;
+
+    // determines the tuple-index of the formula variable with id == Id
+    template< size_t Id >
+    struct FormulaVariableIndex
+    {
+        static constexpr size_t formula_variable_size = 
+            tuple_size_v< formula_variable_tuple >;
+        typedef make_seq< formula_variable_size > for_formula_vars;
+
+        template< typename Seq >
+        struct Helper
+#ifndef NDEBUG
+        { static_assert( false, "all condition variables should exist in "
+            "formula given Mold class precondition" ); }
+#endif
+        ;
+
+        template< size_t J, size_t... Js >
+        requires( tuple_element_t< J, formula_variable_tuple >::id == Id )
+        struct Helper< seq< J, Js... >>: std::integral_constant< size_t, J > { };
+
+        template< size_t J, size_t... Js >
+        requires( tuple_element_t< J, formula_variable_tuple >::id != Id )
+        struct Helper< seq< J, Js... >>: Helper< seq< Js... >> { };
+
+        static constexpr size_t value = Helper< for_formula_vars >::value; 
+    };
+
+    template< size_t Id >
+    static constexpr size_t formula_variable_index_v = 
+        FormulaVariableIndex< Id >::value;
+
+    // defines the sequence of formula variable indices that match the 
+    // condition variable substitution order
+    template< typename Seq >
+    struct FormulaVariableIndexFromConditionVariablePosition;
+
+    template< size_t... Is >
+    struct FormulaVariableIndexFromConditionVariablePosition< seq< Is... >>
+    { using type = seq< formula_variable_index_v< 
+        tuple_element_t< Is, condition_variable_tuple >::id >... >; };
+
+    static constexpr typename FormulaVariableIndexFromConditionVariablePosition< 
+        for_condition_vars >::type formula_var_indices_for_condition_vars = {};
+
+    // eval the condition expression from the proper variables
+    template< typename... Args >
+    constexpr auto
+    is_full( tuple< Args... > const& args ) const
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return _cond( get< Is >( args )... ); };
+
+        return helper( formula_var_indices_for_condition_vars ); 
+    }
+
+public:
+    // invoking our pour with a tuple of types compatible with our mold function
+    // begins the pour.
+    template< typename... Args >
+    requires( is_compatible_substitution_v< ExprT, Args... > )
+    constexpr auto
+    operator ()( tuple< Args... > args ) const
+    { 
+        while( not is_full( args ))
+            args = _expr( args ); 
+
+        return args;
+    }
+
+    constexpr PourUntil( ExprT const& expr, ConditionT const& cond ):
+        _expr{ expr }, _cond{ cond }
+    { }
+    constexpr PourUntil( PourUntil const& ) = default;
+    constexpr PourUntil( ) = default;
+
+private:
+    mold_expression_type _expr;
+    until_condition_type _cond;
+};
+
+template< mold_expression FunctionT >
+struct Molding
 {
     using function_expression_type = FunctionT;
 
+    // pours the mold until the condition is met.  We require the free variables
+    // in the condition to also be free in the function so we can understand
+    // which parameters in the input tuple correspond to the variables
+    template< typename ConditionT >
+    requires( is_unique_variables_subset_v< free_variables_t< ConditionT >,
+        free_variables_t< FunctionT >> )
+    constexpr PourUntil< FunctionT, ConditionT >
+    until( ConditionT const& cond )
+    { return { _func, cond }; }
     
-     
     constexpr Molding( FunctionT const& expr ): _func{ expr }
     { }
     constexpr Molding( Molding const& ) = default;
-    constexpr MOlding( ) = default;
+    constexpr Molding( ) = default;
 
 private:
     function_expression_type _func;
 };
 
-template< FunctionT >
+// creates a mold around the given expression
+template< typename FunctionT >
 constexpr Molding< FunctionT >
 mold( FunctionT const& expr )
 { return { expr }; }
-
-template< typename ConditionT >
-struct Repeater;
-
-template< typename ConditionT >
-struct IsProcessor< Repeater< ConditionT >>: true_type { };
-
-template< typename ConditionT >
-struct Repeater
-{
-    using condition_type = ConditionT;
-
-    typedef enum {
-        repeat_while,
-        repeat_until
-    } predicate_type;
-   
-    //  
-
-    constexpr Repeater( ConditionT const& cond, predicate_type pred = repeat_while ): 
-        _cond{ cond }, _pred{ pred }
-    { }
-    constexpr Repeater( Repeater const& ) = default;
-    constexpr Repeater( ) = default;
-
-private:
-    condition_type _cond;
-    predicate_type _pred;
-};
-
-template< typename ConditionT >
-constexpr Repeater< ConditionT >
-until( ConditionT const& cond )
-{ return { cond, Repeater< ConditionT >::repeat_until }; }
 
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
