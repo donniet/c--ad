@@ -597,7 +597,6 @@ private:
 
         using type = std::remove_cvref_t< decltype( reconstituted_type::
             value( arg_t< Is >{}... ))>;
-
         
         static constexpr type
         value( expression_type const& expr )
@@ -1304,6 +1303,12 @@ struct Molding
 
 private:
     function_expression_type _func;
+};
+
+template< set_expression... Forms >
+struct Mold
+{
+    
 };
 
 // creates a mold around the given expression
