@@ -61,8 +61,14 @@ bool test_mold()
 
     static constexpr int N = 5;
 
+    scope( n = 0, m = 0 );
+
+    mold( n = n + 1, m = m + n ).until( n == N ) | scope;
+
+    ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n == N ) | scope;
+
     auto [ nf, mf ] = make_tuple( 0, 0 ) | 
-        mold( make_tuple( n + 1, m + n )).until( n <= N );
+        mold( make_tuple( n + 1, m + n )).until( n == N );
 
     println( "m == {} and should be {}", mf, N*(N+1)/2 );
     

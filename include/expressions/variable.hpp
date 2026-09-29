@@ -1862,6 +1862,7 @@ set_variable( T const& val, VarT var = {} )
 //Var< I, T >::operator =( U const& expr ) const
 //{ return { make_expression( expr )}; }
 
+
 ////////////
 /// Var ///
 //////////
