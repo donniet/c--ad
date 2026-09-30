@@ -817,7 +817,9 @@ template< size_t Id, typename ExprT >
 struct SetVar
 {
     using arguments_tuple = tuple< ExprT >;
+    using expression_type = ExprT;
     static constexpr size_t arguments_size = 1;
+    static constexpr size_t id = Id; 
 
     static SetVar< Id, ExprT >
     value( ExprT const& val )

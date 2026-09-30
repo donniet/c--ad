@@ -65,7 +65,8 @@ bool test_mold()
 
     mold( n = n + 1, m = m + n ).until( n == N ) | scope;
 
-    ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n == N ) | scope;
+    ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n == N ); 
+
 
     auto [ nf, mf ] = make_tuple( 0, 0 ) | 
         mold( make_tuple( n + 1, m + n )).until( n == N );

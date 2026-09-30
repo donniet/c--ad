@@ -126,6 +126,9 @@ public:
     set_value( typename Var::value_type const& other, Var var = {} ) 
     { return helper_for< Var >::set( _values, _flags, other ); }
 
+    // DT: we should remove the dirty and wash routines if we can.  It's
+    //     extra complication without much gain
+    //
     /// @brief has a variable's value been assigned by set_value?
     template< variable Var >
     constexpr bool
@@ -154,9 +157,11 @@ public:
     }
 
     /// @brief returns a tuple of scoped variables
-    constexpr tuple< Vars... > variables() const
+    constexpr tuple< Vars... > 
+    variables() const
     { return { Vars{}... }; }
 
+    // DT: do we need the constant, static and non-expression invocation ops?
     /// @brief invocation against a constant will return the constant's value
     template< auto Value > 
     constexpr decltype( Value ) 

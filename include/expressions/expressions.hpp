@@ -1305,8 +1305,35 @@ private:
     function_expression_type _func;
 };
 
+// a mold expression requires a unique list of set expressions whose
+// right hand sides contain a subset (including a totality) of the variables
+// being set
 template< set_expression... Forms >
-struct Mold
+struct MoldingDefinition 
+{
+    // collect the variables being set by the forms
+    using form_variables_set = make_unique_variables_t< 
+        Var< Forms::id, result_t< typename Forms::expression_type >>... >;
+
+    // what are the free variables on the right hand side
+    using expression_variables_set = merge_unique_variables_t<
+        free_variables_t< typename Forms::expression_type >... >;
+
+    // each form should set a unique variable and the expression variables
+    // should be a subset of the form variables
+    static constexpr bool is_complete = 
+        form_variables_set::size == sizeof...( Forms ) and
+            is_unique_variables_subset_v< 
+                expression_variables_set, form_variables_set >;
+};  
+
+template< set_expression... Forms >
+constexpr bool is_complete_molding_v = 
+    MoldingDefinition< Forms... >::is_complete;
+
+template< set_expression... Forms >
+requires( is_complete_molding_v< Forms... > )
+struct Molding
 {
     
 };
