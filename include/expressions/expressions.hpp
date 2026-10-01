@@ -1311,6 +1311,10 @@ private:
 template< set_expression... Forms >
 struct MoldingDefinition 
 {
+    // tuple of variables being molded
+    using variables_tuple_type = tuple<
+        Var< Forms::id, result_t< typename Forms::expression_type >>... >;
+
     // collect the variables being set by the forms
     using form_variables_set = make_unique_variables_t< 
         Var< Forms::id, result_t< typename Forms::expression_type >>... >;
@@ -1331,11 +1335,91 @@ template< set_expression... Forms >
 constexpr bool is_complete_molding_v = 
     MoldingDefinition< Forms... >::is_complete;
 
+template< typename MoldingT, typename ConditionT >
+struct Pour;
+
 template< set_expression... Forms >
 requires( is_complete_molding_v< Forms... > )
 struct Molding
 {
-    
+    using molding_type = Molding< Forms... >;
+    using variables_tuple_type = MoldingDefinition< Forms... >::
+        variables_tuple_type;
+    using variable_id_seq = seq< Forms::id... >;
+
+    static constexpr forms_size = sizeof...( Forms );
+   
+    template< typename UntilT >
+    constexpr Pour< molding_type, UntilT >
+    until( Until const& until_expr )
+    { return { *this, until_expr }; } 
+
+private:
+    template< typename... Ts >
+    struct FormEvaluator;
+
+    // we must have the same number of parameters as forms since each parameter
+    // is an initializer for the form
+    template< typename... Ts >
+    requires( forms_size != sizeof...( Ts ))
+    struct FormEvaluator< Ts... >: false_type { };
+
+    template< typename... Ts >
+    requires( forms_size == sizeof...( Ts ))
+    struct FormEvaluator< Ts... >
+    {
+        typedef make_seq< forms_size > for_forms;
+
+        template< typename Seq >
+        struct IsValid;
+
+        // parameters are valid if they are convertible to corresponding form 
+        // result_type
+        template< sizeof... Is >
+        struct IsValid< seq< Is... >>: std::integral_constant< bool,
+            ( is_convertible_v< result_t< typename Forms::expression_type >,
+                result_t< pack_element_t< Is, Ts... >>> and ... and true )>
+        { };
+       
+        static constexpr bool value = IsValid< for_forms >::value;
+    };
+
+    template< typename... Ts >
+    static constexpr bool are_valid_mold_parameters_v = 
+        FormEvaluator< Ts... >::value;
+
+public:
+    // method to pour one step into this mold
+    template< typename... Ts >
+    requires( are_valid_mold_parameters_v< Ts... > )
+    constexpr auto
+    operator ()( Ts const&... ts ) const
+    {
+        // we return a tuple corresponding to substitution into each of our
+        // forms by mapping the parameters to a variable by the form order
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return make_tuple( substitute_for_id_seq< variable_id_seq >( 
+            std::get< Is >( _forms ), ts... )... ); };
+
+        return helper( for_forms{} );
+    }
+
+    constexpr Molding( Forms const&... forms ): 
+        _forms{ forms... }
+    { }
+    constexpr Molding( Molding const& ) = default;
+    constexpr Molding( ) = default;
+
+private:    
+    tuple< Forms... > _forms;
+};
+
+// a pour is mold with a condition expression to determin when the molding 
+// process is complete
+template< typename MoldingT, typename ConditionT >
+struct Pour
+{
+
 };
 
 // creates a mold around the given expression
