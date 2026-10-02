@@ -1335,22 +1335,34 @@ template< set_expression... Forms >
 constexpr bool is_complete_molding_v = 
     MoldingDefinition< Forms... >::is_complete;
 
+// this will be the actual pour
 template< typename MoldingT, typename ConditionT >
 struct Pour;
+
+// this is a Pour builder
+template< typename MoldingT, typename ConditionT, set_expression... Inits >
+struct Pourer;
 
 template< set_expression... Forms >
 requires( is_complete_molding_v< Forms... > )
 struct Molding
-{
+{   
     using molding_type = Molding< Forms... >;
+    using form_variables_set = MoldingDefinition< Forms... >::
+        form_variables_set;        
     using variables_tuple_type = MoldingDefinition< Forms... >::
         variables_tuple_type;
     using variable_id_seq = seq< Forms::id... >;
 
+    using this_type = Molding< Forms... >;
+
+    template< typename SomeMoldingT, typename ConditionT >
+    friend struct Pour;
+
     static constexpr forms_size = sizeof...( Forms );
    
     template< typename UntilT >
-    constexpr Pour< molding_type, UntilT >
+    constexpr Pourer< molding_type, UntilT >
     until( Until const& until_expr )
     { return { *this, until_expr }; } 
 
@@ -1416,9 +1428,131 @@ private:
 
 // a pour is mold with a condition expression to determin when the molding 
 // process is complete
-template< typename MoldingT, typename ConditionT >
-struct Pour
+template< typename MoldingT, typename ConditionT, set_expression... Inits >
+struct Pourer
 {
+    using molding_type = MoldingT;
+    using condition_type = ConditionT;
+    using form_variable_set = MoldingT::form_variable_set;
+    using initialized_variable_set = make_unique_variables_t< 
+        Var< Inits::id, result_t< typename Inits::expression_type >>... >;
+
+    static constexpr size_t forms_size = form_variable_set::size;
+    static constexpr size_t initialized_size = initialized_variable_set::size;
+
+    // setting one initial condition, but is incomplete
+    template< size_t Id, typename T >
+    requires( form_variable_set::contains_id( Id ) and 
+        not initialized_variable_set::contains_id( Id ) and initialized_size + 1 < forms_size )
+    constexpr Pourer< MoldingT, ConditionT, Inits..., SetVar< Id, T >>
+    operator ()( SetVar< Id, T > const& initial_condition )
+    { 
+        auto [ ...inits ] = _inits;
+        return { _molding, _cond, inits..., initial_condition };
+    }
+
+private:
+    template< typename InitsTupleT >
+    struct MoldingMapper
+    {
+        typedef make_seq< forms_size > for_forms;
+
+        template< size_t Id, typename RemainingSeq >
+        struct InitIndexHelper;
+
+        template< size_t Id, size_t First, size_t... Rest >
+        requires( Id == tuple_element_t< First, InitsTupleT >::id )
+        struct InitIndexHelper< Cur, seq< First, Rest... >>: 
+            std::integral_constant< size_t, First >
+        { };
+
+        template< size_t Id, size_t First, size_t... Rest >
+        requires( Id == tuple_element_t< First, InitsTupleT >::id )
+        struct InitIndexHelper< Cur, seq< First, Rest... >>: 
+            InitIndexHelper< Cur, seq< Rest... >>
+        { };
+
+        template< size_t Id >
+        struct InitIndex: InitIndexHelper< Id, make_seq< tuple_size_v< InitsTupleT >>>
+        { };
+
+        template< typename Seq >
+        struct Helper;
+
+        template< size_t... Is >
+        struct Helper< seq< Is... >>
+        { using type = seq< init_index_v< tuple_element_t< Is, form_variables_tuple_type >::id >... >; };
+
+        using type = Helper< for_forms >::type;
+    };
+
+public:
+    // setting the last remaining initial condition 
+    template< size_t Id, typename T >
+    requires( form_variable_set::contains_id( Id ) and 
+        not initialized_variable_set::contains_id( Id ) and initialized_size + 1 == forms_size )
+    constexpr Pour< MoldingT, ConditionT >
+    operator ()( SetVar< Id, T > const& initial_condition )
+    {
+        using inits_tuple_type = tuple< Inits..., SetVar< Id, T >>;
+
+        // this will allow us to pass the inits into the pour in sorted Id order
+        static constexpr typename MoldingWrapper< inits_tuple_type >::type 
+            for_sorted_inits = {};
+
+        auto [ ...temp ] = _inits;  
+        inits_tuple_type complete_inits = { temp..., initial_condition };
+   
+        // create a helper to select the inits in sorted order 
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            Pour< MoldingT, ConditionT >
+        { return { _mold, _cond, std::get< Is >( complete_inits )... }; };
+
+        return helper( for_sorted_inits );                 
+    }
+
+    constexpr Pourer( MoldingT const& molding, ConditionT const& cond,
+        Inits const&... inits ): _molding{ molding }, _cond{ cond }, _inits{ inits... } 
+    { }
+    constexpr Pourer( Pourer const& ) = default;
+    constexpr Pourer( ) = default;
+
+private:
+    molding_type _molding;
+    condition_type _cond;
+    tuple< Inits... > _inits;
+};
+
+template< set_expression... Forms, typename ConditionT >
+struct Pour< Molding< Forms... >, ConditionT >
+{
+    using molding_type = Molding< Forms... >;
+    using condition_type = ConditionT;
+    using init_tuple_type = tuple< result_t< typename Forms::expression_type >... >;
+
+    static constexpr size_t forms_size = molding_type::forms_size;
+
+    template< typename... Ts >
+    requires( moldiing_type::are_valid_mold_parameters_v< Ts... > )
+    constexpr auto 
+    operator ()( Ts const&... ts ) const
+    {
+        // while condition
+        // -- use substitute_for_id_seq
+        // call Mold::operator ()
+    }
+
+    constexpr Pour( Molding< Forms... > const& molding, ConditionT const& cond,
+        result_t< typename Forms::expression_type > const&... inits ):
+            _molding{ molding }, _cond{ cond }, _inits{ inits... } 
+    { }
+    constexpr Pour( Pour const& ) = default;
+    constexpr Pour( ) = default;
+
+private:
+    molding_type _molding;
+    condition_type _cond;
+    init_tuple_type _inits;
 
 };
 
