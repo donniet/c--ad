@@ -64,6 +64,10 @@ bool test_mold()
     auto scope = (
         ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n == N )); 
 
+    static_assert( is_same_v< void, std::decay_t< decltype( scope )>> );
+    static_assert( is_scope_v< std::decay_t< decltype( scope )>>, "return value of a mold expression is "
+        "a scope" );
+
     println( "m == {} and should be {}", scope(m), N*(N+1)/2 );
     
     if( scope(m) != N*(N+1)/2 )
