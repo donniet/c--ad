@@ -254,6 +254,22 @@ struct IsChainExpression< Chain< First, Rest... >>: true_type { };
 template< typename T >
 constexpr bool is_chain_expression_v = IsChainExpression< T >::value;
 
+namespace detail {
+
+// should a reconstituted chain just be the last link?
+template< typename... Links, typename... Firsts, typename Last > 
+requires( sizeof...( Links ) == 1 + sizeof...( Firsts ))
+struct Reconstituter< Chain< Links... >, Firsts..., Last >
+{
+    using type = Last;
+
+    static constexpr type
+    value( Chain< Links... > const& expr, Firsts const&... firsts,
+        Last const& last )
+    { return last; }
+};
+
+} // namespace detail
 /// Chain implementations
 template< size_t Id, typename ExprT >
 template< typename T >
