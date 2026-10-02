@@ -1144,166 +1144,6 @@ process( T const& expr, ProcessorT& f )
 /// initial data tuple akin to an object being cast in a mold
 /// 
 ///
-namespace detail {
-
-template< typename T >
-struct IsMoldExpression: false_type { };
-
-// an expression is a mold expression if it's result type is a tuple of types
-// compatible as a substitution into itself
-template< expression ExprT >
-struct IsMoldExpression< ExprT > {
-private:
-    using result_type = result_t< ExprT >;
-
-    template< typename TupleT >
-    struct IsTupleCompatibleSubstitution: std::false_type { };
-
-    template< typename... Ts >
-    struct IsTupleCompatibleSubstitution< tuple< Ts... >>: 
-        std::integral_constant< bool, 
-            is_compatible_substitution_v< ExprT, Ts... >>
-    { };
-
-public:
-    static constexpr bool value = 
-        IsTupleCompatibleSubstitution< result_type >::value;
-};
-
-} // namespace detail
-
-template< typename T >
-constexpr bool is_mold_expression_v = detail::IsMoldExpression< T >::value;
-
-template< typename T >
-concept mold_expression = is_mold_expression_v< T >;
-
-template< typename ExprT, typename ConditionT >
-struct PourUntil {
-private:
-    using mold_expression_type = ExprT;
-    using until_condition_type = ConditionT;
-
-    using formula_variable_tuple = DirectSubOrder< mold_expression_type >::type;
-    using condition_variable_tuple = 
-        DirectSubOrder< until_condition_type >::type;
-
-    static constexpr size_t condition_variable_size = 
-        tuple_size_v< condition_variable_tuple >;
-    typedef make_seq< condition_variable_size > for_condition_vars;
-    
-    template< typename TupleT >
-    struct BoundMoldVariables;
-
-    template< typename... Ts >
-    struct BoundMoldVariables< tuple< Ts... >>
-    { using type = bound_variables_t< Sub< ExprT, Ts... >>; };
-
-    using bound_variables_type = BoundMoldVariables< result_t< ExprT >>::type;
-
-    // determines the tuple-index of the formula variable with id == Id
-    template< size_t Id >
-    struct FormulaVariableIndex
-    {
-        static constexpr size_t formula_variable_size = 
-            tuple_size_v< formula_variable_tuple >;
-        typedef make_seq< formula_variable_size > for_formula_vars;
-
-        template< typename Seq >
-        struct Helper
-#ifndef NDEBUG
-        { static_assert( false, "all condition variables should exist in "
-            "formula given Mold class precondition" ); }
-#endif
-        ;
-
-        template< size_t J, size_t... Js >
-        requires( tuple_element_t< J, formula_variable_tuple >::id == Id )
-        struct Helper< seq< J, Js... >>: std::integral_constant< size_t, J > { };
-
-        template< size_t J, size_t... Js >
-        requires( tuple_element_t< J, formula_variable_tuple >::id != Id )
-        struct Helper< seq< J, Js... >>: Helper< seq< Js... >> { };
-
-        static constexpr size_t value = Helper< for_formula_vars >::value; 
-    };
-
-    template< size_t Id >
-    static constexpr size_t formula_variable_index_v = 
-        FormulaVariableIndex< Id >::value;
-
-    // defines the sequence of formula variable indices that match the 
-    // condition variable substitution order
-    template< typename Seq >
-    struct FormulaVariableIndexFromConditionVariablePosition;
-
-    template< size_t... Is >
-    struct FormulaVariableIndexFromConditionVariablePosition< seq< Is... >>
-    { using type = seq< formula_variable_index_v< 
-        tuple_element_t< Is, condition_variable_tuple >::id >... >; };
-
-    static constexpr typename FormulaVariableIndexFromConditionVariablePosition< 
-        for_condition_vars >::type formula_var_indices_for_condition_vars = {};
-
-    // eval the condition expression from the proper variables
-    template< typename... Args >
-    constexpr auto
-    is_full( tuple< Args... > const& args ) const
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return _cond( get< Is >( args )... ); };
-
-        return helper( formula_var_indices_for_condition_vars ); 
-    }
-
-public:
-    // invoking our pour with a tuple of types compatible with our mold function
-    // begins the pour.
-    template< typename... Args >
-    requires( is_compatible_substitution_v< ExprT, Args... > )
-    constexpr auto
-    operator ()( tuple< Args... > args ) const
-    { 
-        while( not is_full( args ))
-            args = _expr( args ); 
-
-        return args;
-    }
-
-    constexpr PourUntil( ExprT const& expr, ConditionT const& cond ):
-        _expr{ expr }, _cond{ cond }
-    { }
-    constexpr PourUntil( PourUntil const& ) = default;
-    constexpr PourUntil( ) = default;
-
-private:
-    mold_expression_type _expr;
-    until_condition_type _cond;
-};
-
-template< mold_expression FunctionT >
-struct Molding
-{
-    using function_expression_type = FunctionT;
-
-    // pours the mold until the condition is met.  We require the free variables
-    // in the condition to also be free in the function so we can understand
-    // which parameters in the input tuple correspond to the variables
-    template< typename ConditionT >
-    requires( is_unique_variables_subset_v< free_variables_t< ConditionT >,
-        free_variables_t< FunctionT >> )
-    constexpr PourUntil< FunctionT, ConditionT >
-    until( ConditionT const& cond )
-    { return { _func, cond }; }
-    
-    constexpr Molding( FunctionT const& expr ): _func{ expr }
-    { }
-    constexpr Molding( Molding const& ) = default;
-    constexpr Molding( ) = default;
-
-private:
-    function_expression_type _func;
-};
 
 // a mold expression requires a unique list of set expressions whose
 // right hand sides contain a subset (including a totality) of the variables
@@ -1316,7 +1156,7 @@ struct MoldingDefinition
         Var< Forms::id, result_t< typename Forms::expression_type >>... >;
 
     // collect the variables being set by the forms
-    using form_variables_set = make_unique_variables_t< 
+    using form_variable_set = make_unique_variables_t< 
         Var< Forms::id, result_t< typename Forms::expression_type >>... >;
 
     // what are the free variables on the right hand side
@@ -1326,9 +1166,9 @@ struct MoldingDefinition
     // each form should set a unique variable and the expression variables
     // should be a subset of the form variables
     static constexpr bool is_complete = 
-        form_variables_set::size == sizeof...( Forms ) and
+        form_variable_set::size == sizeof...( Forms ) and
             is_unique_variables_subset_v< 
-                expression_variables_set, form_variables_set >;
+                expression_variables_set, form_variable_set >;
 };  
 
 template< set_expression... Forms >
@@ -1348,8 +1188,8 @@ requires( is_complete_molding_v< Forms... > )
 struct Molding
 {   
     using molding_type = Molding< Forms... >;
-    using form_variables_set = MoldingDefinition< Forms... >::
-        form_variables_set;        
+    using form_variable_set = MoldingDefinition< Forms... >::
+        form_variable_set;        
     using variables_tuple_type = MoldingDefinition< Forms... >::
         variables_tuple_type;
     using variable_id_seq = seq< Forms::id... >;
@@ -1359,11 +1199,11 @@ struct Molding
     template< typename SomeMoldingT, typename ConditionT >
     friend struct Pour;
 
-    static constexpr forms_size = sizeof...( Forms );
+    static constexpr size_t forms_size = sizeof...( Forms );
    
     template< typename UntilT >
     constexpr Pourer< molding_type, UntilT >
-    until( Until const& until_expr )
+    until( UntilT const& until_expr )
     { return { *this, until_expr }; } 
 
 private:
@@ -1387,7 +1227,7 @@ private:
 
         // parameters are valid if they are convertible to corresponding form 
         // result_type
-        template< sizeof... Is >
+        template< size_t... Is >
         struct IsValid< seq< Is... >>: std::integral_constant< bool,
             ( is_convertible_v< result_t< typename Forms::expression_type >,
                 result_t< pack_element_t< Is, Ts... >>> and ... and true )>
@@ -1407,13 +1247,15 @@ public:
     constexpr auto
     operator ()( Ts const&... ts ) const
     {
+        static constexpr make_seq< forms_size > for_forms = {};
+
         // we return a tuple corresponding to substitution into each of our
         // forms by mapping the parameters to a variable by the form order
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
         { return make_tuple( substitute_for_id_seq< variable_id_seq >( 
             std::get< Is >( _forms ), ts... )... ); };
 
-        return helper( for_forms{} );
+        return helper( for_forms );
     }
 
     constexpr Molding( Forms const&... forms ): 
@@ -1434,6 +1276,7 @@ struct Pourer
     using molding_type = MoldingT;
     using condition_type = ConditionT;
     using form_variable_set = MoldingT::form_variable_set;
+    using form_variables_tuple_type = MoldingT::variables_tuple_type;
     using initialized_variable_set = make_unique_variables_t< 
         Var< Inits::id, result_t< typename Inits::expression_type >>... >;
 
@@ -1448,7 +1291,7 @@ struct Pourer
     operator ()( SetVar< Id, T > const& initial_condition )
     { 
         auto [ ...inits ] = _inits;
-        return { _molding, _cond, inits..., initial_condition };
+        return { _mold, _cond, inits..., initial_condition };
     }
 
 private:
@@ -1462,26 +1305,30 @@ private:
 
         template< size_t Id, size_t First, size_t... Rest >
         requires( Id == tuple_element_t< First, InitsTupleT >::id )
-        struct InitIndexHelper< Cur, seq< First, Rest... >>: 
+        struct InitIndexHelper< Id, seq< First, Rest... >>: 
             std::integral_constant< size_t, First >
         { };
 
         template< size_t Id, size_t First, size_t... Rest >
-        requires( Id == tuple_element_t< First, InitsTupleT >::id )
-        struct InitIndexHelper< Cur, seq< First, Rest... >>: 
-            InitIndexHelper< Cur, seq< Rest... >>
+        requires( Id != tuple_element_t< First, InitsTupleT >::id )
+        struct InitIndexHelper< Id, seq< First, Rest... >>: 
+            InitIndexHelper< Id, seq< Rest... >>
         { };
 
         template< size_t Id >
         struct InitIndex: InitIndexHelper< Id, make_seq< tuple_size_v< InitsTupleT >>>
         { };
 
+        template< size_t Id >
+        static constexpr size_t init_index_v = InitIndex< Id >::value;
+
         template< typename Seq >
         struct Helper;
 
         template< size_t... Is >
         struct Helper< seq< Is... >>
-        { using type = seq< init_index_v< tuple_element_t< Is, form_variables_tuple_type >::id >... >; };
+        { using type = seq< init_index_v< 
+            tuple_element_t< Is, form_variables_tuple_type >::id >... >; };
 
         using type = Helper< for_forms >::type;
     };
@@ -1495,10 +1342,10 @@ public:
     operator ()( SetVar< Id, T > const& initial_condition )
     {
         using inits_tuple_type = tuple< Inits..., SetVar< Id, T >>;
+        using molding_wrapper_type = MoldingMapper< inits_tuple_type >::type;
 
         // this will allow us to pass the inits into the pour in sorted Id order
-        static constexpr typename MoldingWrapper< inits_tuple_type >::type 
-            for_sorted_inits = {};
+        static constexpr molding_wrapper_type for_sorted_inits = {};
 
         auto [ ...temp ] = _inits;  
         inits_tuple_type complete_inits = { temp..., initial_condition };
@@ -1511,56 +1358,85 @@ public:
         return helper( for_sorted_inits );                 
     }
 
-    constexpr Pourer( MoldingT const& molding, ConditionT const& cond,
-        Inits const&... inits ): _molding{ molding }, _cond{ cond }, _inits{ inits... } 
+    constexpr Pourer( MoldingT const& mold, ConditionT const& cond,
+        Inits const&... inits ): _mold{ mold }, _cond{ cond }, _inits{ inits... } 
     { }
     constexpr Pourer( Pourer const& ) = default;
     constexpr Pourer( ) = default;
 
 private:
-    molding_type _molding;
+    molding_type _mold;
     condition_type _cond;
     tuple< Inits... > _inits;
 };
 
+namespace detail {
+
+template< set_expression... Forms >
+struct PourScope
+{ using type = Scope< 
+    Var< Forms::id, result_t< typename Forms::expression_type >>... >; };
+
+} // namespace detail
+
+template< set_expression... Forms >
+using pour_scope_t = detail::PourScope< Forms... >::type;
+
 template< set_expression... Forms, typename ConditionT >
-struct Pour< Molding< Forms... >, ConditionT >
+struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
 {
     using molding_type = Molding< Forms... >;
+    using pour_scope_type = pour_scope_t< Forms... >;
     using condition_type = ConditionT;
-    using init_tuple_type = tuple< result_t< typename Forms::expression_type >... >;
 
     static constexpr size_t forms_size = molding_type::forms_size;
 
-    template< typename... Ts >
-    requires( moldiing_type::are_valid_mold_parameters_v< Ts... > )
-    constexpr auto 
-    operator ()( Ts const&... ts ) const
+    using pour_scope_type::variable_t;
+
+    constexpr condition_type const&
+    condition() const
+    { return _cond; }
+
+    constexpr molding_type const&
+    mold() const
+    { return _molding; }
+
+    constexpr bool
+    is_complete() const
+    { return substitute_for_id_seq< seq< Forms::id... >>( condition(),
+         pour_scope_type::get_value( typename pour_scope_type::template 
+             variable_t< Forms::id >{} )... ); }
+
+private:
+    constexpr void
+    do_pour()
     {
-        // while condition
-        // -- use substitute_for_id_seq
-        // call Mold::operator ()
+        // as long as we haven't completed recurse our mold storing the
+        // intermediate values in our scope using the tuple operator=
+        while( not is_complete() )
+            *this = _mold( pour_scope_type::get_value( typename
+                pour_scope_type::template variable_t< Forms::id >{} )... );
     }
 
+public:
     constexpr Pour( Molding< Forms... > const& molding, ConditionT const& cond,
         result_t< typename Forms::expression_type > const&... inits ):
-            _molding{ molding }, _cond{ cond }, _inits{ inits... } 
-    { }
+            _molding{ molding }, _cond{ cond }, pour_scope_type{ inits... } 
+    { do_pour(); }
+
     constexpr Pour( Pour const& ) = default;
     constexpr Pour( ) = default;
 
 private:
     molding_type _molding;
     condition_type _cond;
-    init_tuple_type _inits;
-
 };
 
 // creates a mold around the given expression
-template< typename FunctionT >
-constexpr Molding< FunctionT >
-mold( FunctionT const& expr )
-{ return { expr }; }
+template< set_expression... Forms >
+constexpr Molding< Forms... >
+mold( Forms const&... forms )
+{ return { forms... }; }
 
 //////////////////////////////////////////////////////
 /// Application of a Manipulator to an Expression ///
@@ -1952,7 +1828,8 @@ operator |( T const& value_or_expression, ManipulatorT&& f )
 ///
 // TODO: remove the specializations for this, and let the Applier do it
 template< typename ScopeT >
-struct Evaluator
+requires( not std::is_void_v< ScopeT >)
+struct Evaluator< ScopeT >
 {
     using scope_type = ScopeT;
 
