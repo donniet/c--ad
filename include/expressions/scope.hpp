@@ -119,12 +119,22 @@ public:
     get_value( Var = {} ) const 
     { return helper_for< Var >::get( _values ); }
 
+    template< size_t Id >
+    constexpr typename variable_t< Id >::value_type
+    get_value_by_id() const
+    { return helper_for< variable_t< Id >>::get( _values ); }
+
     /// @brief assigns other to the scoped value of Var
     /// TODO: should we use result_type here instead of value_type?
     template< variable Var >
     constexpr typename Var::value_type 
     set_value( typename Var::value_type const& other, Var var = {} ) 
     { return helper_for< Var >::set( _values, _flags, other ); }
+
+    template< size_t Id >
+    constexpr typename variable_t< Id >::value_type
+    set_value_by_id( typename variable_t< Id >::value_type const& other )
+    { return helper_for< variable_t< Id >>::set( _values, _flags, other ); }
 
     // DT: we should remove the dirty and wash routines if we can.  It's
     //     extra complication without much gain
@@ -160,25 +170,25 @@ public:
     constexpr tuple< Vars... > 
     variables() const
     { return { Vars{}... }; }
-
-    // DT: do we need the constant, static and non-expression invocation ops?
-    /// @brief invocation against a constant will return the constant's value
-    template< auto Value > 
-    constexpr decltype( Value ) 
-    operator ()( Constant< Value > ) const
-    { return Value; }
-
-    /// @brief invocation against a static will return the static's value
-    template< typename T >
-    constexpr T 
-    operator ()( StaticValue< T > const& static_value ) const
-    { return static_cast< T >( static_value ); }
-
-    template< typename T >
-    requires( not expression< T > )
-    constexpr T 
-    operator ()( T const& value ) const
-    { return value; }
+//
+//    // DT: do we need the constant, static and non-expression invocation ops?
+//    /// @brief invocation against a constant will return the constant's value
+//    template< auto Value > 
+//    constexpr decltype( Value ) 
+//    operator ()( Constant< Value > ) const
+//    { return Value; }
+//
+//    /// @brief invocation against a static will return the static's value
+//    template< typename T >
+//    constexpr T 
+//    operator ()( StaticValue< T > const& static_value ) const
+//    { return static_cast< T >( static_value ); }
+//
+//    template< typename T >
+//    requires( not expression< T > )
+//    constexpr T 
+//    operator ()( T const& value ) const
+//    { return value; }
 
     // @brief sets the value of a variable in this scope
     // TODO: update this for a more generic SetVar
@@ -228,6 +238,12 @@ public:
     constexpr Scope& operator =( Scope const& other )
     {
         take_from( other, true );
+        return *this;
+    }
+
+    constexpr Scope& operator =( values_tuple_type const& other )
+    {
+        _values = other;
         return *this;
     }
 

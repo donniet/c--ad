@@ -135,6 +135,7 @@
 #endif
 
 #include <vector>
+#include <ranges>
 
 #include "expressions/forward_decl.hpp"
 #include "expressions/unique_variables.hpp"
@@ -880,6 +881,25 @@ consteval auto get_parameters_static( std::meta::info member )
     return std::define_static_array( params );
 }
 
+
+
+template< typename ExprT >
+consteval bool 
+is_accepted_by_unary_function( std::meta::info unary_function )
+{
+    using namespace std::meta;
+
+    auto params = get_parameters_static( unary_function );
+
+    if( params.size() == 0 )
+        return false;
+
+    auto type_param0 = type_of( params[0] );
+    auto type_expr = ^^ExprT;
+
+    return decay( type_param0 ) == decay( type_expr );
+}
+
 template< std::meta::info Func, typename... Args >
 concept can_call_with = requires( Args&&... args )
 { std::invoke( &[: Func :], std::forward< Args >( args )... ); };
@@ -917,22 +937,7 @@ is_accepted()
 
         if constexpr( is_operator_function( member ) and 
             operator_of( member ) == operators::op_parentheses )
-        {
-//            return can_call_with< member, ManipulatorT&, ExprT >;
-            constexpr auto params = get_parameters_static( member );
-
-            if constexpr( params.size() == 0 )
-                return false;
-
-            constexpr auto type_param0 = type_of( params[0] );
-    
-            using ParamT = decay_t<
-                typename [: type_param0 :]>;
-            
-            // is our parameter the same decayed type as the expression?
-            if constexpr( is_same_v< ParamT, decay_t< ExprT >> )
-                return true; 
-        }
+        { return is_accepted_by_unary_function< ExprT >( member ); }
 
         if constexpr( is_operator_function_template( member ) and 
             operator_of( member ) == operators::op_parentheses )
@@ -948,8 +953,6 @@ is_accepted()
     return helper( for_members );
 }
 
-
-
 template< typename ExprT, typename ManipulatorT >
 constexpr bool is_accepted_v = is_accepted< ExprT, ManipulatorT >();
 
@@ -957,6 +960,7 @@ template< typename ExprT, typename ManipulatorT >
 requires( is_accepted_v< ExprT, ManipulatorT > )
 using accepted_return_t = std::decay_t< decltype( ManipulatorT{}( ExprT{} )) >;
 
+// TESTS
 template< typename T >
 struct Foo { };
 
@@ -977,7 +981,111 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 //static_assert( is_accepted_v< Foo< char >, Bar2 >, 
 //    "Foo< char > is accepted by Bar2" );
 
+
+template< typename ProcessorT, typename ExprT >
+class ProcessorAccepts;
+
+template< typename ProcessorT, size_t Id, typename T >
+class ProcessorAccepts< ProcessorT, SetVar< Id, T >> 
+{
+    using expression_type = SetVar< Id, T >;
+
+    struct DoesNotAccept { };
+
+    static consteval std::meta::info 
+    member_accepts( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        // is there a non-templated operator() that accepts this expr?
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        { 
+            if( not is_accepted_by_unary_function< expression_type >( 
+                member ))
+            { return does_not_accept; }
+
+            return return_type_of( member );
+        }
+
+        // otherwise look for a template operator()
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            // if we can't substitute Id and T then this isn't our member
+            if( not can_substitute( member, { reflect_constant( Id ), ^^T }))
+            { return does_not_accept; }
+
+            auto concrete_member = substitute( member, {
+                reflect_constant( Id ), ^^T });
+
+            if( not is_accepted_by_unary_function< expression_type >(
+                concrete_member ))
+            { return does_not_accept; }
+
+            return return_type_of( concrete_member );
+        }
+
+        return does_not_accept; 
+    }
+
+    template< size_t N >
+    static consteval auto 
+    get_return_types( std::array< std::meta::info, N > members )
+    { 
+        return members;
+    }
+
+    static consteval bool
+    is_accepted( std::meta::info return_type )
+    { return return_type != ^^DoesNotAccept; }
+
+    static consteval std::meta::info 
+    accepted_return_type()
+    {
+        using namespace std::meta;
+        using std::views::transform;
+        using std::ranges::find_if;
+        using std::ranges::end;
+
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+        constexpr auto members = get_members_static< ProcessorT >();
+        static constexpr make_seq< members.size() > for_members = {};
+
+        std::array< info, members.size() > accepts;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        {(( accepts[ Is ] = member_accepts( members[ Is ])), ... ); };
+
+        helper( for_members );
+       
+        auto it = find_if( accepts, is_accepted );
+
+        if( it != end( accepts ))
+            return *it;
+
+        return does_not_accept;
+    }
+
+public:
+    using type = [: accepted_return_type() :];
+    static constexpr bool value = not std::is_same_v< type, DoesNotAccept >;
+};
+
 #endif // g++-16
+
+static_assert( ProcessorAccepts< Scope< Var< 0, int >>, SetVar< 0, int >>::value,
+    "a scope accepts a setvar expression for its variables" );
+static_assert( not ProcessorAccepts< Scope< Var< 0, int >>, SetVar< 1, int >>::value,
+    "a scope accepts a setvar expression for its variables" );
+
+template< typename ProcessorT, typename ExprT >
+static constexpr bool processor_accepts_v = 
+    ProcessorAccepts< ProcessorT, ExprT >::value;
+
+template< typename ProcessorT, typename ExprT >
+using processor_return_t = ProcessorAccepts< ProcessorT, ExprT >::type;
 
 //////////////////
 /// Processor ///
@@ -1050,22 +1158,31 @@ struct Process< V, ProcessorT >
 template< size_t Id, expression ExprT, typename ProcessorT >
 struct Process< SetVar< Id, ExprT >, ProcessorT >
 {
-    using type = result_t< SetVar< Id, ExprT >>;
+    using processed_expr_type = Process< ExprT, ProcessorT >::type;
+    using type = Process< SetVar< Id, processed_expr_type >, ProcessorT >::type;
 
     using right_hand_side_type = ExprT;
 
     static constexpr type
     value( SetVar< Id, ExprT > const& set_v, ProcessorT& proc )
-    { return proc( set_var< Id >( 
-        Process< right_hand_side_type, ProcessorT >::
-            value( set_v.expr(), proc ))); }
+    { 
+        processed_expr_type val = 
+            Process< ExprT, ProcessorT >::value( set_v.expr(), proc );
+
+        return Process< SetVar< Id, processed_expr_type >, ProcessorT >::
+            value( set_var< Id >( val ), proc );
+    }
 };
 
+// mold processors treat setvar expressions as initial conditions
+// requiring the return type to be determined by the processor itself.
+// should we always return the processor after a setvar?
 template< size_t Id, typename T, typename ProcessorT >
 requires( not expression< T > )
 struct Process< SetVar< Id, T >, ProcessorT >
 {
-    using type = result_t< SetVar< Id, T >>;
+    //using type = result_t< SetVar< Id, T >>;
+    using type = std::decay_t< decltype( ProcessorT{}( SetVar< Id, T >{} ))>;
 
     static constexpr type
     value( SetVar< Id, T > const& set_v, ProcessorT& proc )
@@ -1316,8 +1433,11 @@ private:
     {
         typedef make_seq< forms_size > for_forms;
 
+        // DT: there's likely a problem with the logic below requiring
+        //     a default specialization of InitIndexHelper to compile...
         template< size_t Id, typename RemainingSeq >
-        struct InitIndexHelper;
+        struct InitIndexHelper: std::integral_constant< size_t, 0 > 
+        { };
 
         template< size_t Id, size_t First, size_t... Rest >
         requires( Id == tuple_element_t< First, InitsTupleT >::id )
@@ -1406,6 +1526,7 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
     using condition_type = ConditionT;
 
     static constexpr size_t forms_size = molding_type::forms_size;
+    static constexpr make_seq< forms_size > for_forms = {};
 
     using pour_scope_type::variable_t;
 
@@ -1415,7 +1536,7 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
 
     constexpr molding_type const&
     mold() const
-    { return _molding; }
+    { return _mold; }
 
     constexpr bool
     is_complete() const
@@ -1425,27 +1546,42 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
 
 private:
     constexpr void
+    set_initial_values()
+    {
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        {( pour_scope_type::template 
+              set_value_by_id< pack_element_t< Is, Forms... >::id >(
+                  std::get< Is >( _inits )), ... ); };
+
+        return helper( for_forms );
+    }
+
+    constexpr void
     do_pour()
     {
+        set_initial_values();
+
         // as long as we haven't completed recurse our mold storing the
         // intermediate values in our scope using the tuple operator=
         while( not is_complete() )
-            *this = _mold( pour_scope_type::get_value( typename
-                pour_scope_type::template variable_t< Forms::id >{} )... );
+            pour_scope_type::operator =( 
+                _mold( pour_scope_type::get_value( typename
+                    pour_scope_type::template variable_t< Forms::id >{} )... ));
     }
 
 public:
-    constexpr Pour( Molding< Forms... > const& molding, ConditionT const& cond,
+    constexpr Pour( Molding< Forms... > const& mold, ConditionT const& cond,
         result_t< typename Forms::expression_type > const&... inits ):
-            _molding{ molding }, _cond{ cond }, pour_scope_type{ inits... } 
+            _mold{ mold }, _cond{ cond }, _inits{ inits... } 
     { do_pour(); }
 
     constexpr Pour( Pour const& ) = default;
     constexpr Pour( ) = default;
 
 private:
-    molding_type _molding;
+    molding_type _mold;
     condition_type _cond;
+    tuple< result_t< typename Forms::expression_type > const&... > _inits;
 };
 
 // creates a mold around the given expression

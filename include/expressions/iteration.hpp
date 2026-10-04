@@ -87,7 +87,8 @@ struct DoWhile
     scope() const
     { return *_scope_ptr; }
 
-    constexpr DoWhile() = delete;
+    // expressions require default constructors
+    constexpr DoWhile() = default;
     constexpr DoWhile( DoWhile const& ) = default;
     constexpr DoWhile( Condition const& cond, Scope& scope ):
         _cond{ cond }, _scope_ptr(&scope) { };
