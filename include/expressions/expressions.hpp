@@ -258,16 +258,16 @@ constexpr bool is_chain_expression_v = IsChainExpression< T >::value;
 namespace detail {
 
 // should a reconstituted chain just be the last link?
-template< typename... Links, typename... Firsts, typename Last > 
-requires( sizeof...( Links ) == 1 + sizeof...( Firsts ))
-struct Reconstituter< Chain< Links... >, Firsts..., Last >
+template< typename... Links, typename... Ts > 
+requires( sizeof...( Links ) == sizeof...( Ts ))
+struct Reconstituter< Chain< Links... >, Ts... >
 {
-    using type = Last;
+    static constexpr size_t links_size = sizeof...( Links );
+    using type = pack_element_t< links_size - 1, Ts... >;
 
     static constexpr type
-    value( Chain< Links... > const& expr, Firsts const&... firsts,
-        Last const& last )
-    { return last; }
+    value( Chain< Links... > const& expr, Ts const&... ts )
+    { return pack_element< links_size - 1 >( ts... ); }
 };
 
 } // namespace detail
@@ -981,61 +981,302 @@ static_assert( is_accepted_v< Foo< int >, Bar >,
 //static_assert( is_accepted_v< Foo< char >, Bar2 >, 
 //    "Foo< char > is accepted by Bar2" );
 
+struct DoesNotAccept { };
 
-template< typename ProcessorT, typename ExprT >
-class ProcessorAccepts;
+template< typename ExprT >
+struct MemberAccepts;
 
-template< typename ProcessorT, size_t Id, typename T >
-class ProcessorAccepts< ProcessorT, SetVar< Id, T >> 
+template< template< typename... > class Op, typename... Args >
+requires( IsCompoundOperation< Op >::value )
+struct MemberAccepts< Op< Args... >>
 {
-    using expression_type = SetVar< Id, T >;
-
-    struct DoesNotAccept { };
-
     static consteval std::meta::info 
-    member_accepts( std::meta::info member )
+    value( std::meta::info member )
     {
         using namespace std::meta;
         static constexpr auto does_not_accept = ^^DoesNotAccept;
 
-        // is there a non-templated operator() that accepts this expr?
         if( is_operator_function( member ) and 
             operator_of( member ) == operators::op_parentheses )
-        { 
-            if( not is_accepted_by_unary_function< expression_type >( 
-                member ))
+        {
+            if( not is_accepted_by_unary_function< Op< Args... >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        // for templated operator() we assume the template parameters are 
+        // ...Args
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { ^^Args... }))
+            {
+                auto concrete_member = substitute( member, { ^^Args... });
+    
+                if( is_accepted_by_unary_function< Op< Args... >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^Op< Args... > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^Op< Args... > });
+
+                if( is_accepted_by_unary_function< Op< Args... >>(
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+requires( IsDiscriminatedOperation< Op >::value )
+struct MemberAccepts< Op< Discriminator, Args... >>
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< 
+                Op< Discriminator, Args... >>( member ))
             { return does_not_accept; }
 
             return return_type_of( member );
         }
 
-        // otherwise look for a template operator()
         if( is_operator_function_template( member ) and
             operator_of( member ) == operators::op_parentheses )
         {
-            // if we can't substitute Id and T then this isn't our member
-            if( not can_substitute( member, { reflect_constant( Id ), ^^T }))
-            { return does_not_accept; }
+            if( can_substitute( member, { 
+                reflect_constant( Discriminator ), ^^Args... }))
+            {
+                auto concrete_member = substitute( member, { 
+                    reflect_constant( Discriminator ), ^^Args... });
+    
+                if( is_accepted_by_unary_function< 
+                    Op< Discriminator, Args... >>( concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
 
-            auto concrete_member = substitute( member, {
-                reflect_constant( Id ), ^^T });
+            // try just subbing the type
+            if( can_substitute( member, { ^^Op< Discriminator, Args... > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^Op< Discriminator, Args... > });
 
-            if( not is_accepted_by_unary_function< expression_type >(
-                concrete_member ))
-            { return does_not_accept; }
+                if( is_accepted_by_unary_function< 
+                    Op< Discriminator, Args... >>( concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< size_t Id, typename T >
+struct MemberAccepts< Var< Id, T >>
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< Var< Id, T >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { 
+                reflect_constant( Id ), ^^T }))
+            {
+                auto concrete_member = substitute( member, { 
+                    reflect_constant( Id ), ^^T });
+    
+                if( is_accepted_by_unary_function< Var< Id, T >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^Var< Id, T > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^Var< Id, T > });
+
+                if( is_accepted_by_unary_function< Var< Id, T >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< auto Value > 
+struct MemberAccepts< Constant< Value >>
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< Constant< Value >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { reflect_constant( Value ) }))
+            {
+                auto concrete_member = substitute( member, { 
+                    reflect_constant( Value ) });
+    
+                if( is_accepted_by_unary_function< Constant< Value >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^Constant< Value > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^Constant< Value > });
+
+                if( is_accepted_by_unary_function< Constant< Value >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< typename T >
+struct MemberAccepts< StaticValue< T >>
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< StaticValue< T >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { ^^T }))
+            {
+                auto concrete_member = substitute( member, { ^^T });
+    
+                if( is_accepted_by_unary_function< StaticValue< T >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^StaticValue< T > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^StaticValue< T > });
+
+                if( is_accepted_by_unary_function< StaticValue< T >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< typename T >
+requires( not expression< T > )
+struct MemberAccepts< T >
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< T >( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        // for templated operator() we assume the template parameters are 
+        // ...Args
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not can_substitute( member, { ^^T }))
+                return does_not_accept; 
+
+            auto concrete_member = substitute( member, { ^^T });
+
+            if( not is_accepted_by_unary_function< T >( concrete_member ))
+                return does_not_accept; 
 
             return return_type_of( concrete_member );
         }
 
-        return does_not_accept; 
+        return does_not_accept;
     }
+};
 
-    template< size_t N >
-    static consteval auto 
-    get_return_types( std::array< std::meta::info, N > members )
-    { 
-        return members;
-    }
+// TODO: write tuple and tensor versions of this working around compound expr
+
+template< typename ExprT >
+consteval std::meta::info
+member_accepts( std::meta::info member )
+{ return MemberAccepts< ExprT >::value( member ); }
+
+template< typename ProcessorT, typename ExprT >
+class ProcessorAccepts
+{
+    using expression_type = ExprT;
 
     static consteval bool
     is_accepted( std::meta::info return_type )
@@ -1045,7 +1286,6 @@ class ProcessorAccepts< ProcessorT, SetVar< Id, T >>
     accepted_return_type()
     {
         using namespace std::meta;
-        using std::views::transform;
         using std::ranges::find_if;
         using std::ranges::end;
 
@@ -1056,7 +1296,8 @@ class ProcessorAccepts< ProcessorT, SetVar< Id, T >>
         std::array< info, members.size() > accepts;
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-        {(( accepts[ Is ] = member_accepts( members[ Is ])), ... ); };
+        {(( accepts[ Is ] = member_accepts< expression_type >( 
+            members[ Is ])), ... ); };
 
         helper( for_members );
        
@@ -1077,8 +1318,13 @@ public:
 
 static_assert( ProcessorAccepts< Scope< Var< 0, int >>, SetVar< 0, int >>::value,
     "a scope accepts a setvar expression for its variables" );
+static_assert( ProcessorAccepts< Scope< Var< 0, int >>, Var< 0, int >>::value,
+    "a scope accepts a variable it scopes" );
 static_assert( not ProcessorAccepts< Scope< Var< 0, int >>, SetVar< 1, int >>::value,
-    "a scope accepts a setvar expression for its variables" );
+    "a scope does not accept a setvar expression for a variable it does not "
+    "scope" );
+static_assert( not ProcessorAccepts< Scope< Var< 0, int >>, Var< 1, int >>::value,
+    "a scope does not accept a variable it does not scope" );
 
 template< typename ProcessorT, typename ExprT >
 static constexpr bool processor_accepts_v = 
@@ -1114,8 +1360,20 @@ struct Process
     { return expr; }
 };
 
+template< typename ExprT, typename ProcessorT >
+requires( processor_accepts_v< ProcessorT, ExprT > )
+struct Process< ExprT, ProcessorT >
+{
+    using return_type = processor_return_t< ProcessorT, ExprT >;
+    using type = Process< return_type, ProcessorT >::type;
+
+    static constexpr type
+    value( ExprT const& expr, ProcessorT& proc )
+    { return Process< return_type, ProcessorT >::value( proc( expr ), proc ); }
+};
+
 template< typename T, typename ProcessorT >
-requires( not expression< T > )
+requires( not processor_accepts_v< ProcessorT, T > and not expression< T > )
 struct Process< T, ProcessorT >
 {
     using type = T;
@@ -1126,6 +1384,7 @@ struct Process< T, ProcessorT >
 };
 
 template< typename T, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, StaticValue< T >> )
 struct Process< StaticValue< T >, ProcessorT >
 {
     using type = T;
@@ -1136,6 +1395,7 @@ struct Process< StaticValue< T >, ProcessorT >
 };
 
 template< auto Value, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, Constant< Value >> )
 struct Process< Constant< Value >, ProcessorT >
 { 
     using type = std::decay_t< decltype( Value )>;
@@ -1145,53 +1405,33 @@ struct Process< Constant< Value >, ProcessorT >
     { return Value; }
 };
 
+// what should we do here?
 template< variable V, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, V > )
 struct Process< V, ProcessorT >
 {
-    using type = result_t< V >;
+    using type = Undefined< result_t< V >>;
 
     static constexpr type
-    value( V const& v, ProcessorT& proc )
-    { return proc( v ); }
+    value( V const& v, ProcessorT& )
+    { return {}; }
 };
 
 template< size_t Id, expression ExprT, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, SetVar< Id, ExprT >> )
 struct Process< SetVar< Id, ExprT >, ProcessorT >
 {
-    using processed_expr_type = Process< ExprT, ProcessorT >::type;
-    using type = Process< SetVar< Id, processed_expr_type >, ProcessorT >::type;
-
-    using right_hand_side_type = ExprT;
-
+    using type = Undefined< result_t< ExprT >>;
+    
     static constexpr type
-    value( SetVar< Id, ExprT > const& set_v, ProcessorT& proc )
-    { 
-        processed_expr_type val = 
-            Process< ExprT, ProcessorT >::value( set_v.expr(), proc );
-
-        return Process< SetVar< Id, processed_expr_type >, ProcessorT >::
-            value( set_var< Id >( val ), proc );
-    }
-};
-
-// mold processors treat setvar expressions as initial conditions
-// requiring the return type to be determined by the processor itself.
-// should we always return the processor after a setvar?
-template< size_t Id, typename T, typename ProcessorT >
-requires( not expression< T > )
-struct Process< SetVar< Id, T >, ProcessorT >
-{
-    //using type = result_t< SetVar< Id, T >>;
-    using type = std::decay_t< decltype( ProcessorT{}( SetVar< Id, T >{} ))>;
-
-    static constexpr type
-    value( SetVar< Id, T > const& set_v, ProcessorT& proc )
-    { return proc( set_v ); }
+    value( SetVar< Id, ExprT > const&, ProcessorT& )
+    { return { }; }
 };
 
 template< closed_expression ClosedU, typename ProcessorT >
-requires( not is_set_expression_v< ClosedU > ) // TODO: consider if a set
-                                               // expression can ever be closed
+requires( not processor_accepts_v< ProcessorT, ClosedU > and 
+    not is_set_expression_v< ClosedU > ) // TODO: consider if a set
+                                         // expression can ever be closed
 struct Process< ClosedU, ProcessorT >
 {
     using type = Process< result_t< ClosedU >, ProcessorT >::type;
@@ -1202,7 +1442,9 @@ struct Process< ClosedU, ProcessorT >
 };
 
 template< open_expression OpenU, typename ProcessorT >
-requires( compound_expression< OpenU > and not is_set_expression_v< OpenU > )
+requires( not processor_accepts_v< ProcessorT, OpenU > and
+              compound_expression< OpenU > and 
+          not is_set_expression_v< OpenU > )
 struct Process< OpenU, ProcessorT >
 {
     using arguments_type = compound_arguments_t< OpenU >;
