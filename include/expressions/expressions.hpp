@@ -1086,6 +1086,104 @@ struct MemberAccepts< Op< Discriminator, Args... >>
     }
 };
 
+template< typename... Ts >
+struct MemberAccepts< tuple< Ts... >>
+{
+    typedef tuple< Ts... > expression_type;
+
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< tuple< Ts... >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        // for templated operator() we assume the template parameters are 
+        // ...Args
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { ^^Ts... }))
+            {
+                auto concrete_member = substitute( member, { ^^Ts... });
+    
+                if( is_accepted_by_unary_function< tuple< Ts... >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^expression_type }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^expression_type });
+
+                if( is_accepted_by_unary_function< tuple< Ts... >>(
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
+template< shape S, typename... Ts >
+struct MemberAccepts< Tensor< S, Ts... >>
+{
+    static consteval std::meta::info 
+    value( std::meta::info member )
+    {
+        using namespace std::meta;
+        static constexpr auto does_not_accept = ^^DoesNotAccept;
+
+        if( is_operator_function( member ) and 
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( not is_accepted_by_unary_function< Tensor< S, Ts... >>( member ))
+                return does_not_accept;
+
+            return return_type_of( member );
+        }
+
+        // for templated operator() we assume the template parameters are 
+        // ...Args
+        if( is_operator_function_template( member ) and
+            operator_of( member ) == operators::op_parentheses )
+        {
+            if( can_substitute( member, { ^^S, ^^Ts... }))
+            {
+                auto concrete_member = substitute( member, { ^^S, ^^Ts... });
+    
+                if( is_accepted_by_unary_function< Tensor< S, Ts... >>( 
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+
+            // try just subbing the type
+            if( can_substitute( member, { ^^Tensor< S, Ts... > }))
+            {
+                auto concrete_member = substitute( member, { 
+                    ^^Tensor< S, Ts... > });
+
+                if( is_accepted_by_unary_function< Tensor< S, Ts... >>(
+                    concrete_member ))
+                { return return_type_of( concrete_member ); }
+            }
+        }
+
+        return does_not_accept;
+    }
+};
+
 template< size_t Id, typename T >
 struct MemberAccepts< Var< Id, T >>
 {
