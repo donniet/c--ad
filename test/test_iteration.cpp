@@ -61,10 +61,9 @@ bool test_mold()
 
     static constexpr int N = 5;
 
-    auto setn = ( n = 0 );
-    auto mold_expr = mold( n = n + 1 ).until( n >= N );
+    auto scope = ( n = 0, m = 0 ) | mold( n = n + 1 ).until( n >= N );
 
-    auto scope = setn | mold_expr;
+    println( "scope = {}", scope );
 
 //    static_assert( is_same_v< void, std::decay_t< decltype( scope )>> );
 //    static_assert( is_scope_v< std::decay_t< decltype( scope )>>, "return value of a mold expression is "
@@ -75,7 +74,7 @@ bool test_mold()
 //    if( scope(m) != N*(N+1)/2 )
 //        return false;
 
-    println( "n == {}", scope(n) );
+//    println( "n == {}", scope(n) );
 
 //    auto scope = (
 //        ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n == N ));
