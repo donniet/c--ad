@@ -1407,9 +1407,15 @@ class ProcessorAccepts
         return does_not_accept;
     }
 
+    using return_type = [: accepted_return_type() :];
+
 public:
-    using type = [: accepted_return_type() :];
-    static constexpr bool value = not std::is_same_v< type, DoesNotAccept >;
+    static constexpr bool value = 
+        not std::is_same_v< return_type, DoesNotAccept >;
+
+    // if our processor does not accept this expression type it will return
+    // the same type
+    using type = std::conditional_t< value, return_type, expression_type >;
 };
 
 #endif // g++-16
@@ -1430,6 +1436,26 @@ static constexpr bool processor_accepts_v =
 
 template< typename ProcessorT, typename ExprT >
 using processor_return_t = ProcessorAccepts< ProcessorT, ExprT >::type;
+
+/////////////////////////////////////////
+/// Processor Termination Conditions ///
+///////////////////////////////////////
+/// 
+/// So long as the processor modifies the type of the expression it will 
+/// re-process the result.  To avoid self-referential types we have to split
+/// processor into the processor parser and the actual processor
+///
+/// Default case: expression is returned unchanged
+template< typename ExprT, typename ProcessorT >
+struct ProcessParser
+{ using type = ExprT; };
+
+template< typename ExprT, typename ProcessorT >
+requires( processor_accepts_v< ProcessorT, ExprT >)
+struct ProcessParser< ExprT, ProcessorT >
+{ 
+
+};
 
 //////////////////
 /// Processor ///
@@ -1467,7 +1493,9 @@ struct Process< ExprT, ProcessorT >
 
     static constexpr type
     value( ExprT const& expr, ProcessorT& proc )
-    { return Process< return_type, ProcessorT >::value( proc( expr ), proc ); }
+    {   
+        static_assert( false, "processor accepts" );
+        return Process< return_type, ProcessorT >::value( proc( expr ), proc ); }
 };
 
 template< typename T, typename ProcessorT >
@@ -1526,26 +1554,26 @@ struct Process< SetVar< Id, ExprT >, ProcessorT >
     { return { }; }
 };
 
-template< closed_expression ClosedU, typename ProcessorT >
-requires( not processor_accepts_v< ProcessorT, ClosedU > and 
-    not is_set_expression_v< ClosedU > ) // TODO: consider if a set
-                                         // expression can ever be closed
-struct Process< ClosedU, ProcessorT >
-{
-    using type = Process< result_t< ClosedU >, ProcessorT >::type;
+//template< closed_expression ClosedU, typename ProcessorT >
+//requires( not processor_accepts_v< ProcessorT, ClosedU > and 
+//    not is_set_expression_v< ClosedU > ) // TODO: consider if a set
+//                                         // expression can ever be closed
+//struct Process< ClosedU, ProcessorT >
+//{
+//    using type = Process< result_t< ClosedU >, ProcessorT >::type;
+//
+//    static constexpr type
+//    value( ClosedU const& expr, ProcessorT& f )
+//    { return Process< result_t< ClosedU >, ProcessorT >::value( expr(), f ); }
+//};
 
-    static constexpr type
-    value( ClosedU const& expr, ProcessorT& f )
-    { return Process< result_t< ClosedU >, ProcessorT >::value( expr(), f ); }
-};
-
-template< open_expression OpenU, typename ProcessorT >
+template< compound_expression OpenU, typename ProcessorT >
 requires( not processor_accepts_v< ProcessorT, OpenU > and
-              compound_expression< OpenU > and 
           not is_set_expression_v< OpenU > )
 struct Process< OpenU, ProcessorT >
 {
     using arguments_type = compound_arguments_t< OpenU >;
+    using expression_type = OpenU;
 
     static constexpr size_t arguments_size = 
         std::tuple_size_v< arguments_type >;
@@ -1582,12 +1610,19 @@ struct Process< OpenU, ProcessorT >
         }
     };
 
+    using return_type = Helper< for_arguments >::type;
+    using is_type_idempotent = is_same_v< return_type, expression_type >;
+
+    using type = std::conditional_t< 
+
     using type = Process< typename Helper< for_arguments >::type, 
         ProcessorT >::type;
 
     static constexpr type
     value( OpenU const& expr, ProcessorT& f )
-    { return Process< typename Helper< for_arguments >::type, ProcessorT >::
+    { 
+        static_assert( false, "open compound" );
+        return Process< typename Helper< for_arguments >::type, ProcessorT >::
         value( Helper< for_arguments >::value( expr, f ), f ); }
 };
 
@@ -1599,9 +1634,9 @@ constexpr process_t< T, ProcessorT >
 process( T const& expr, ProcessorT& f )
 { return Process< T, ProcessorT >::value( expr, f ); }
 
-////////////////////////
-/// Mold Expression ///
-//////////////////////
+///////////////////////
+/// Mold Processor ///
+/////////////////////
 ///
 /// A mold is an expression that returns a compatible type to it's input.  A
 /// mold expression accepts a starting value for the inputs and a terminal 
