@@ -2,7 +2,31 @@
 
 
 
+detail::Reconstituter<
+    Chain<
+        SetVar<0, StaticValue<int> >, 
+        SetVar<1, StaticValue<int> > >, 
+    Pourer<
+        Molding<
+            SetVar<0, Sum<Var<0, int>, Var<1, int> > >, 
+            SetVar<1, StaticValue<int> > >, 
+        GreaterThanOrEquals< Var<0, int>, StaticValue<int> >, 
+        SetVar<0, StaticValue<int> > >, 
+    Pourer<
+        Molding<
+            SetVar<0, Sum<Var<0, int>, Var<1, int> > >, 
+            SetVar<1, StaticValue<int> > >, 
+        GreaterThanOrEquals< Var<0, int>, StaticValue<int> >, 
+        SetVar<1, StaticValue<int> > > >::type’ 
 
+{aka ‘
+
+Pourer<
+    Molding<
+        SetVar<0, Sum<Var<0, int>, Var<1, int> > >, 
+        SetVar<1, StaticValue<int> > >, 
+    GreaterThanOrEquals< Var<0, int>, StaticValue<int> >, 
+    SetVar<1, StaticValue<int> > >
 
 
 
