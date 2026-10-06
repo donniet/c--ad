@@ -1567,13 +1567,13 @@ struct Process< SetVar< Id, ExprT >, ProcessorT >
 //    { return Process< result_t< ClosedU >, ProcessorT >::value( expr(), f ); }
 //};
 
-template< compound_expression OpenU, typename ProcessorT >
-requires( not processor_accepts_v< ProcessorT, OpenU > and
-          not is_set_expression_v< OpenU > )
-struct Process< OpenU, ProcessorT >
+template< compound_expression CompoundT, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, CompoundT > and
+          not is_set_expression_v< CompoundT > )
+struct Process< CompoundT, ProcessorT >
 {
-    using arguments_type = compound_arguments_t< OpenU >;
-    using expression_type = OpenU;
+    using arguments_type = compound_arguments_t< CompoundT >;
+    using expression_type = CompoundT;
 
     static constexpr size_t arguments_size = 
         std::tuple_size_v< arguments_type >;
@@ -1586,7 +1586,7 @@ struct Process< OpenU, ProcessorT >
     template< size_t... Is >
     struct Helper< seq< Is... >>
     {
-        using arguments_type = compound_arguments_t< OpenU >;
+        using arguments_type = compound_arguments_t< CompoundT >;
 
         template< size_t I >
         using arg_t = Process< std::tuple_element_t< I, arguments_type >, 
@@ -1598,12 +1598,14 @@ struct Process< OpenU, ProcessorT >
         { return Process< std::tuple_element_t< I, arguments_type >, 
             ProcessorT >::value( std::get< I >( args ), f ); }
 
-        using reconstituted_type = reconstitute_t< OpenU, arg_t< Is >... >;
+        static_assert( not is_same_v< CompoundT, 
+
+        using reconstituted_type = reconstitute_t< CompoundT, arg_t< Is >... >;
         using type = std::decay_t< decltype( reconstituted_type::value( 
             arg_t< Is >{}... ))>;
 
         static constexpr type
-        value( OpenU const& expr, ProcessorT& f )
+        value( CompoundT const& expr, ProcessorT& f )
         {
             auto args = compound_arguments( expr );                 
             return reconstituted_type::value( arg< Is >( args, f )... ); 
@@ -1611,15 +1613,14 @@ struct Process< OpenU, ProcessorT >
     };
 
     using return_type = Helper< for_arguments >::type;
-    using is_type_idempotent = is_same_v< return_type, expression_type >;
+    //using is_type_idempotent = is_same_v< return_type, expression_type >;
 
-    using type = std::conditional_t< 
 
     using type = Process< typename Helper< for_arguments >::type, 
         ProcessorT >::type;
 
     static constexpr type
-    value( OpenU const& expr, ProcessorT& f )
+    value( CompoundT const& expr, ProcessorT& f )
     { 
         static_assert( false, "open compound" );
         return Process< typename Helper< for_arguments >::type, ProcessorT >::
@@ -1792,15 +1793,15 @@ struct Pourer
     static constexpr size_t initialized_size = initialized_variable_set::size;
 
     // setting one initial condition, but is incomplete
-    template< size_t Id, typename T >
-    requires( form_variable_set::contains_id( Id ) and 
-        not initialized_variable_set::contains_id( Id ) and initialized_size + 1 < forms_size )
-    constexpr Pourer< MoldingT, ConditionT, Inits..., SetVar< Id, T >>
-    operator ()( SetVar< Id, T > const& initial_condition )
-    { 
-        auto [ ...inits ] = _inits;
-        return { _mold, _cond, inits..., initial_condition };
-    }
+    //template< size_t Id, typename T >
+    //requires( form_variable_set::contains_id( Id ) and 
+    //    not initialized_variable_set::contains_id( Id ) and initialized_size + 1 < forms_size )
+    //constexpr Pourer< MoldingT, ConditionT, Inits..., SetVar< Id, T >>
+    //operator ()( SetVar< Id, T > const& initial_condition )
+    //{ 
+    //    auto [ ...inits ] = _inits;
+    //    return { _mold, _cond, inits..., initial_condition };
+    //}
 
 private:
     template< typename InitsTupleT >
@@ -1844,11 +1845,16 @@ private:
         using type = Helper< for_forms >::type;
     };
 
+    template< size_t Id >
+    static constexpr bool is_missing_variable_id_v = 
+        form_variable_set::contains_id( Id ) and 
+            not initialized_variable_set::contains_id( Id );
+
 public:
     // setting the last remaining initial condition 
     template< size_t Id, typename T >
-    requires( form_variable_set::contains_id( Id ) and 
-        not initialized_variable_set::contains_id( Id ) and initialized_size + 1 == forms_size )
+    requires( is_missing_variable_id_v< Id > and 
+        initialized_size + 1 == forms_size )
     constexpr Pour< MoldingT, ConditionT >
     operator ()( SetVar< Id, T > const& initial_condition )
     {
@@ -1867,6 +1873,35 @@ public:
         { return { _mold, _cond, std::get< Is >( complete_inits )... }; };
 
         return helper( for_sorted_inits );                 
+    }
+
+    // if all the set expressions set different variables and each are missing
+    // from our pourer and this chain would complete our pourer then start
+    // the pour
+    template< set_expression First, set_expression... Rest >
+    requires( is_missing_variable_id_v< First::id > and 
+        ( true and ... and is_missing_variable_id_v< Rest::id >) and
+        make_unique_variables_t< 
+            Var< First::id, result_t< typename First::expression_type >>,
+            Var< Rest::id, result_t< typename Reset::expression_type >>... 
+        >::size == 1 + sizeof...( Rest ) and
+        initialized_size + 1 + sizeof...( Rest ) == forms_size )
+    constexpr Pour< MoldingT, ConditionT >
+    operator ()( Chain< First, Rest... > const& initial_condition )
+    {
+        using inits_tuple_type = tuple< Inits..., First, Rest... >;
+        using molding_wrapper_type = MoldingMapper< inits_tuple_type >::type;
+
+        static constexpr molding_wrapper_type for_sorted_inits = {};
+
+        auto [ ... temp ] = _inits;
+        inits_tuple_type complete_inits = { temp..., initial_condition };
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
+            Pour< MoldingT, ConditionT >
+        { return { _mold, _cond, std::get< Is >( complete_inits )... }; };
+
+        return helper( for_sorted_inits );
     }
 
     constexpr Pourer( MoldingT const& mold, ConditionT const& cond,
