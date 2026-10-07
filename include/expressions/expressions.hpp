@@ -1494,7 +1494,7 @@ struct Process< ExprT, ProcessorT >
     static constexpr type
     value( ExprT const& expr, ProcessorT& proc )
     {   
-        static_assert( false, "processor accepts" );
+        //static_assert( false, "processor accepts" );
         return Process< return_type, ProcessorT >::value( proc( expr ), proc ); }
 };
 
@@ -1598,7 +1598,7 @@ struct Process< CompoundT, ProcessorT >
         { return Process< std::tuple_element_t< I, arguments_type >, 
             ProcessorT >::value( std::get< I >( args ), f ); }
 
-        static_assert( not is_same_v< CompoundT, 
+//        static_assert( not is_same_v< CompoundT, void > );
 
         using reconstituted_type = reconstitute_t< CompoundT, arg_t< Is >... >;
         using type = std::decay_t< decltype( reconstituted_type::value( 
@@ -1883,7 +1883,7 @@ public:
         ( true and ... and is_missing_variable_id_v< Rest::id >) and
         make_unique_variables_t< 
             Var< First::id, result_t< typename First::expression_type >>,
-            Var< Rest::id, result_t< typename Reset::expression_type >>... 
+            Var< Rest::id, result_t< typename Rest::expression_type >>... 
         >::size == 1 + sizeof...( Rest ) and
         initialized_size + 1 + sizeof...( Rest ) == forms_size )
     constexpr Pour< MoldingT, ConditionT >
@@ -1894,7 +1894,7 @@ public:
 
         static constexpr molding_wrapper_type for_sorted_inits = {};
 
-        auto [ ... temp ] = _inits;
+        auto [ ...temp ] = _inits;
         inits_tuple_type complete_inits = { temp..., initial_condition };
 
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
