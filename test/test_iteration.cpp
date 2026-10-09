@@ -61,7 +61,7 @@ bool test_mold()
 
     static constexpr int N = 5;
 
-    auto scope = ( n = 0, m = 0 ) | mold( n = n + m, m = 0 ).until( n >= N );
+    auto scope = ( n = 0, m = 0 ) | mold( n = n + 1, m = m + n ).until( n >= N );
 
 //    println( "scope = {}", scope );
 
