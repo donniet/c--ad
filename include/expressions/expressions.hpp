@@ -258,18 +258,18 @@ constexpr bool is_chain_expression_v = IsChainExpression< T >::value;
 namespace detail {
 
 // should a reconstituted chain just be the last link?
-template< typename... Links, typename... Ts > 
-requires( sizeof...( Links ) == sizeof...( Ts ))
-struct Reconstituter< Chain< Links... >, Ts... >
-{
-    static constexpr size_t links_size = sizeof...( Links );
-    using type = pack_element_t< links_size - 1, Ts... >;
-
-    static constexpr type
-    value( Chain< Links... > const& expr, Ts const&... ts )
-    { return pack_element< links_size - 1 >( ts... ); }
-};
-
+//template< typename... Links, typename... Ts > 
+//requires( sizeof...( Links ) == sizeof...( Ts ))
+//struct Reconstituter< Chain< Links... >, Ts... >
+//{
+//    static constexpr size_t links_size = sizeof...( Links );
+//    using type = pack_element_t< links_size - 1, Ts... >;
+//
+//    static constexpr type
+//    value( Chain< Links... > const& expr, Ts const&... ts )
+//    { return pack_element< links_size - 1 >( ts... ); }
+//};
+////
 } // namespace detail
 /// Chain implementations
 template< size_t Id, typename ExprT >
@@ -1877,7 +1877,7 @@ public:
 
     // if all the set expressions set different variables and each are missing
     // from our pourer and this chain would complete our pourer then start
-    // the pour
+    // the pour. DT: requires that the First and ...Rest are setting vars to non-expressions to allow the processor to process those expressions
     template< set_expression First, set_expression... Rest >
     requires( is_missing_variable_id_v< First::id > and 
         ( true and ... and is_missing_variable_id_v< Rest::id >) and
@@ -1894,9 +1894,11 @@ public:
 
         static constexpr molding_wrapper_type for_sorted_inits = {};
 
-        auto [ ...temp ] = _inits;
-        inits_tuple_type complete_inits = { temp..., initial_condition };
-
+        auto [ ...original_inits ] = _inits;
+        auto [ ...incoming_inits ] = initial_condition.args();
+        inits_tuple_type complete_inits = { original_inits..., 
+            incoming_inits... };
+        // operator int is being called on the initial conditions implicitly
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr ->
             Pour< MoldingT, ConditionT >
         { return { _mold, _cond, std::get< Is >( complete_inits )... }; };
