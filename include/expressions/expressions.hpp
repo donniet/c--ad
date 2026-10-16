@@ -493,7 +493,11 @@ public:
     { /* static_assert( false, 
         "implementation of compound expression with no expression arguments "
         "should not be instantiated" ); */ }
-    constexpr CompoundCommon( Args const&... ): CompoundCommon() { };
+
+    // DT: the SubFor in variables.hpp instantiates a non-expression 
+    //     CompoundCommon in the Helper for SetVar if the right-hand-side
+    constexpr CompoundCommon( Args const&... args ): 
+        tuple< Args... >{ args... } { };
 };
 
 /// specialization for a compound with at least one expression as an argument
@@ -1953,39 +1957,54 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
     constexpr bool
     is_complete() const
     { return substitute_for_id_seq< seq< Forms::id... >>( condition(),
-         pour_scope_type::get_value( typename pour_scope_type::template 
-             variable_t< Forms::id >{} )... ); }
+         pour_scope_type::template get_value_by_id< Forms::id >()... ); }
 
 private:
-    constexpr void
-    set_initial_values()
-    {
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        {( pour_scope_type::template 
-              set_value_by_id< pack_element_t< Is, Forms... >::id >(
-                  std::get< Is >( _inits )), ... ); };
-
-        return helper( for_forms );
-    }
+//    constexpr void
+//    set_initial_values()
+//    {
+//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+//        {( pour_scope_type::template 
+//              set_value_by_id< pack_element_t< Is, Forms... >::id >(
+//                  std::get< Is >( _inits )), ... ); };
+//
+//        return helper( for_forms );
+//    }
 
     constexpr void
     do_pour()
     {
-        set_initial_values();
+//        set_initial_values();
 
         // as long as we haven't completed recurse our mold storing the
         // intermediate values in our scope using the tuple operator=
         while( not is_complete() )
-            pour_scope_type::operator =( 
-                _mold( pour_scope_type::get_value( typename
-                    pour_scope_type::template variable_t< Forms::id >{} )... ));
+        {
+            // collect the molded values into a tuple
+            auto molded_values = _mold( pour_scope_type::template 
+                get_value_by_id< Forms::id >()... );
+
+            // update these molded values in our scope
+            auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+            {( pour_scope_type::template 
+                set_value_by_id< pack_element_t< Is, Forms... >::id >(
+                    std::get< Is >( molded_values )), ... );};
+
+            helper( for_forms );
+        }
     }
 
 public:
+    template< set_expression... Inits >
     constexpr Pour( Molding< Forms... > const& mold, ConditionT const& cond,
-        result_t< typename Forms::expression_type > const&... inits ):
-            _mold{ mold }, _cond{ cond }, _inits{ inits... } 
-    { do_pour(); }
+        Inits const&... inits ):
+            _mold{ mold }, _cond{ cond }
+    { 
+        pour_scope_t< Forms... >& this_scope = *this;
+        ( this_scope( inits ), ... ); 
+
+        do_pour(); 
+    }
 
     constexpr Pour( Pour const& ) = default;
     constexpr Pour( ) = default;
@@ -1993,7 +2012,6 @@ public:
 private:
     molding_type _mold;
     condition_type _cond;
-    tuple< result_t< typename Forms::expression_type > const&... > _inits;
 };
 
 // creates a mold around the given expression
