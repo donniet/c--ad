@@ -1754,6 +1754,13 @@ private:
         FormEvaluator< Ts... >::value;
 
 public:
+    template< size_t I, typename... Ts >
+    requires( are_valid_mold_parameters_v< Ts... > )
+    constexpr auto
+    form( Ts const&... ts ) const
+    { return substitute_for_id_seq< variable_id_seq >( std::get< I >( _forms ),
+        ts... ); }
+
     // method to pour one step into this mold
     template< typename... Ts >
     requires( are_valid_mold_parameters_v< Ts... > )
@@ -1765,12 +1772,10 @@ public:
         // we return a tuple corresponding to substitution into each of our
         // forms by mapping the parameters to a variable by the form order
         auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return make_tuple( substitute_for_id_seq< variable_id_seq >( 
-            std::get< Is >( _forms ), ts... )... ); };
+        { return make_tuple( form< Is >( ts... )... ); };
 
         return helper( for_forms );
     }
-
     constexpr Molding( Forms const&... forms ): 
         _forms{ forms... }
     { }
@@ -1959,6 +1964,23 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
     { return substitute_for_id_seq< seq< Forms::id... >>( condition(),
          pour_scope_type::template get_value_by_id< Forms::id >()... ); }
 
+    template< size_t I >
+    void
+    do_pour_form()
+    { 
+        static constexpr size_t form_variable_id = 
+            pack_element_t< I, Forms... >::id;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
+        { return make_tuple( pour_scope_type::template get_value_by_id< 
+            pack_element_t< Is, Forms... >::id >()... ); };
+
+        auto [ ...current_values ] = helper( for_forms );
+
+        pour_scope_type::template set_value_by_id< form_variable_id >(
+            _mold.template form< I >( current_values... ));
+    }
+
 private:
 //    constexpr void
 //    set_initial_values()
@@ -1980,15 +2002,9 @@ private:
         // intermediate values in our scope using the tuple operator=
         while( not is_complete() )
         {
-            // collect the molded values into a tuple
-            auto molded_values = _mold( pour_scope_type::template 
-                get_value_by_id< Forms::id >()... );
-
             // update these molded values in our scope
             auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-            {( pour_scope_type::template 
-                set_value_by_id< pack_element_t< Is, Forms... >::id >(
-                    std::get< Is >( molded_values )), ... );};
+            {( do_pour_form< Is >(), ... );};
 
             helper( for_forms );
         }
