@@ -1042,9 +1042,24 @@ struct SubstituteForIdSeq< IdSeq, ExprT, Subs... >
     { return expr; }
 };
 
+// DT: creating specializations for SetVars since they are closed if the
+//     right-hand-side is closed.  Maybe come back to this?
+template< typename IdSeq, size_t Id, typename ExprT, typename... Subs >
+struct SubstituteForIdSeq< IdSeq, SetVar< Id, ExprT >, Subs... >
+{
+    using type = SetVar< Id, typename 
+        SubstituteForIdSeq< IdSeq, ExprT, Subs... >::type >;
+
+    static constexpr type
+    value( SetVar< Id, ExprT > const& expr, Subs const&... subs )
+    { return { SubstituteForIdSeq< IdSeq, ExprT, Subs... >::value(
+        expr.expr(), subs... )}; }
+};
+
 /// @brief we evaluate substitution expressions breadth-first.
 template< size_t... Ids, typename ExprT, typename... Ss, typename... Subs >
-requires( closed_expression< Sub< ExprT, Ss... >> )
+requires( closed_expression< Sub< ExprT, Ss... >> and 
+    not is_set_expression_v< ExprT > )
 struct SubstituteForIdSeq< seq< Ids... >, Sub< ExprT, Ss... >, Subs... >
 {
     // process subs in breadth first order
@@ -1069,7 +1084,8 @@ struct SubstituteForIdSeq< seq< Ids... >, Sub< ExprT, Ss... >, Subs... >
 ///        substitution is idempotent
 template< size_t... Ids, typename ExprT, typename... Subs >
 requires( open_expression< ExprT > and 
-    not ( free_variables_t< ExprT >::contains_id( Ids ) or ... or false ))
+    not is_set_expression_v< ExprT > and 
+        not ( free_variables_t< ExprT >::contains_id( Ids ) or ... or false ))
 struct SubstituteForIdSeq< seq< Ids... >, ExprT, Subs... >
 {
     using type = ExprT;
@@ -1083,7 +1099,8 @@ struct SubstituteForIdSeq< seq< Ids... >, ExprT, Subs... >
 template< size_t... Ids, typename ExprT, typename... Subs >
 requires( not is_substitution_expression_v< ExprT > and
     not is_function_v< ExprT > and
-        closed_expression< ExprT > )
+        closed_expression< ExprT > and 
+            not is_set_expression_v< ExprT >)
 struct SubstituteForIdSeq< seq< Ids... >, ExprT, Subs... >
 {
     using type = result_t< ExprT >;
@@ -1113,7 +1130,8 @@ struct SubstituteForIdSeq< seq< Ids... >, Func< ExprT, Vars... >, Subs... >
 ///       FreeVars< Sub<...>> -> BoundVars< Sub<...>> ->
 template< size_t FirstId, size_t... RestIds, typename ExprT, 
     typename FirstSub, typename... RestSubs >
-requires( free_variables_t< ExprT >::contains_id( FirstId )) 
+requires( not is_set_expression_v< ExprT > and
+    free_variables_t< ExprT >::contains_id( FirstId )) 
 struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT, 
     FirstSub, RestSubs... >
 {
@@ -1132,8 +1150,9 @@ struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT,
 ///        Id as a free variable
 template< size_t FirstId, size_t... RestIds, typename ExprT, 
     typename FirstSub, typename... RestSubs >
-requires( open_expression< ExprT > and 
-    not free_variables_t< ExprT >::contains_id( FirstId ))
+requires( not is_set_expression_v< ExprT > and 
+    open_expression< ExprT > and 
+        not free_variables_t< ExprT >::contains_id( FirstId ))
 struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT, 
     FirstSub, RestSubs... >
 {
@@ -1148,6 +1167,13 @@ struct SubstituteForIdSeq< seq< FirstId, RestIds... >, ExprT,
 
 template< typename Seq, typename ExprT, typename... Subs >
 using substitute_for_id_seq_t = SubstituteForIdSeq< Seq, ExprT, Subs... >::type;
+
+// DT: should setvars be open?  They are closed now and this assertion fails
+//static_assert( open_expression< SetVar< 0, int >>, "setvars are open" );
+
+static_assert( is_same_v< SetVar< 0, int >, 
+    substitute_for_id_seq_t< seq< 1 >, SetVar< 0, Var< 1, int >>, int >>,
+        "substitution into a set expression produces a terminal set expression" );
 
 template< typename Seq, typename ExprT, typename... Subs >
 constexpr substitute_for_id_seq_t< Seq, ExprT, Subs... >
@@ -1599,7 +1625,8 @@ struct GetFreeVars< Op< Args... >>: GetFreeVars< tuple< Args... >>
 template< template< auto, typename... > class Op, auto Discriminator, 
     typename... Args >
 requires( compound_expression< Op< Discriminator, Args... >> and 
-    not is_substitution_expression_v< Op< Discriminator, Args... >> )
+    not is_substitution_expression_v< Op< Discriminator, Args... >> and
+        not is_set_expression_v< Op< Discriminator, Args... >> )
 struct GetFreeVars< Op< Discriminator, Args... >>: 
     GetFreeVars< tuple< Args... >>
 { };

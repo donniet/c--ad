@@ -1749,11 +1749,37 @@ private:
         static constexpr bool value = IsValid< for_forms >::value;
     };
 
+    template< scope ScopeT >
+    struct IsFormableScope: std::integral_constant< bool, 
+        ( ScopeT::contains_id( Forms::id ) and ... and true )>
+    { };
+
+    template< typename ScopeT >
+    static constexpr bool
+    is_formable_scope_v = IsFormableScope< ScopeT >::value;
+
     template< typename... Ts >
     static constexpr bool are_valid_mold_parameters_v = 
         FormEvaluator< Ts... >::value;
 
+    template< typename FormT, typename ScopeT >
+    constexpr auto
+    form_scope( FormT const& form, ScopeT& scope ) const
+    { return substitute_for_id_seq< seq< Forms::id... >>( form,
+        scope.template get_value_by_id< Forms::id >()... ); }
+
 public:
+    template< typename ScopeT >
+    requires( is_formable_scope_v< ScopeT > )
+    constexpr void
+    form( ScopeT& scope ) const
+    {
+        // for each form substitute the values from the scope into the form
+        // and reset the scope value for the form::id in the scope
+        auto const& [ ...forms ] = _forms;
+        ( scope( form_scope( forms, scope )), ... );
+    }
+
     template< size_t I, typename... Ts >
     requires( are_valid_mold_parameters_v< Ts... > )
     constexpr auto
@@ -1968,6 +1994,7 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
     void
     do_pour_form()
     { 
+
         static constexpr size_t form_variable_id = 
             pack_element_t< I, Forms... >::id;
 
@@ -2001,13 +2028,7 @@ private:
         // as long as we haven't completed recurse our mold storing the
         // intermediate values in our scope using the tuple operator=
         while( not is_complete() )
-        {
-            // update these molded values in our scope
-            auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
-            {( do_pour_form< Is >(), ... );};
-
-            helper( for_forms );
-        }
+            _mold.form(*( pour_scope_type* )this );
     }
 
 public:
