@@ -825,7 +825,8 @@ struct SetVar
     value( ExprT const& val )
     { return { val }; } 
 
-    constexpr operator result_t< ExprT >() const
+    explicit constexpr 
+    operator result_t< ExprT >() const
     { return expr()(); }
 
     constexpr arguments_tuple 
