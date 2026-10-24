@@ -1991,44 +1991,44 @@ struct Pour< Molding< Forms... >, ConditionT >: pour_scope_t< Forms... >
          pour_scope_type::template get_value_by_id< Forms::id >()... ); }
 
     template< size_t I >
-    void
-    do_pour_form()
+    static constexpr size_t
+    form_variable_id = pack_element_t< I, Forms... >::id;
+
+private:
+    template< size_t I, typename T >
+    constexpr void
+    set_form_value( T const& value )
+    { pour_scope_type::template 
+        set_value_by_id< form_variable_id< I >>( value ); }
+
+    template< size_t I >
+    constexpr auto
+    get_form_value() const
+    { return pour_scope_type::template 
+        get_value_by_id< form_variable_id< I >>(); }
+
+    template< size_t I >
+    constexpr auto
+    mold_form() const
     { 
-
-        static constexpr size_t form_variable_id = 
-            pack_element_t< I, Forms... >::id;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-        { return make_tuple( pour_scope_type::template get_value_by_id< 
-            pack_element_t< Is, Forms... >::id >()... ); };
-
-        auto [ ...current_values ] = helper( for_forms );
-
-        pour_scope_type::template set_value_by_id< form_variable_id >(
-            _mold.template form< I >( current_values... ));
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr
+        { return _mold.template form< I >( get_form_value< Is >()... ); };
+        
+        return helper( for_forms );  
     }
 
 private:
-//    constexpr void
-//    set_initial_values()
-//    {
-//        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr 
-//        {( pour_scope_type::template 
-//              set_value_by_id< pack_element_t< Is, Forms... >::id >(
-//                  std::get< Is >( _inits )), ... ); };
-//
-//        return helper( for_forms );
-//    }
-
     constexpr void
     do_pour()
     {
-//        set_initial_values();
+        // update these molded values in our scope
+        auto molder = [&]< size_t... Is >( seq< Is... > ) constexpr
+        {( set_form_value< Is >( mold_form< Is >() ), ... );};
 
         // as long as we haven't completed recurse our mold storing the
         // intermediate values in our scope using the tuple operator=
         while( not is_complete() )
-            _mold.form(*( pour_scope_type* )this );
+            molder( for_forms );
     }
 
 public:
@@ -2037,9 +2037,11 @@ public:
         Inits const&... inits ):
             _mold{ mold }, _cond{ cond }
     { 
+        // initialize our scope with the initial conditions
         pour_scope_t< Forms... >& this_scope = *this;
         ( this_scope( inits ), ... ); 
 
+        // iteration on the ...Forms expressions is called a "pour"
         do_pour(); 
     }
 

@@ -818,6 +818,7 @@ struct SetVar
 {
     using arguments_tuple = tuple< ExprT >;
     using expression_type = ExprT;
+    using value_type = result_t< expression_type >;
     static constexpr size_t arguments_size = 1;
     static constexpr size_t id = Id; 
 
