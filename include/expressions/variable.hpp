@@ -511,6 +511,182 @@ struct GetFreeVars
     { return {}; }
 };
 
+//////////////////
+/// Free Vars ///
+////////////////
+///
+/// @brief variables have a single free variable plus any variables in the
+///        the nested type T
+
+template< size_t I, typename T >
+requires( not expression< T > )
+struct GetFreeVars< Var< I, T >> 
+{
+    using type = unique_variables< Var< I, T >>;
+    static constexpr type
+    value( Var< I, T > const& var )
+    { return { var }; }
+};
+
+template< size_t I, typename T >
+requires( expression< T > )
+struct GetFreeVars< Var< I, T >> {
+private:
+    // get the free variables of the value type
+    using value_variable_set = GetFreeVars< T >::type;
+    using this_variable_set = unique_variables< Var< I, T >>;
+
+    // subtract out Variable I since the value_types would not match
+    using subtracted_variable_set = subtract_unique_variables_t<
+        value_variable_set, this_variable_set >;
+
+public:
+    // remerge with variable I with the correct value type
+    using type = merge_unique_variables_t<
+        subtracted_variable_set, this_variable_set >;
+       
+    static constexpr type
+    value( Var< I, T > const& var )
+    {
+        static constexpr this_variable_set this_variable;
+
+        return merge_unique_variables(
+            subtract_unique_variables(
+                GetFreeVars< T >::value( var.get_value() ),
+                this_variable ),
+            this_variable );
+    }
+};
+
+/// @brief trait to identify free variables in a tuple of expressions. 
+
+
+template< typename... Ts >
+struct GetFreeVars< tuple< Ts... >>
+{ 
+    using type = merge_unique_variables_t< typename 
+        GetFreeVars< Ts >::type... >; 
+    static constexpr type value( tuple< Ts... > const& expr )
+    { 
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return merge_unique_variables( GetFreeVars< Ts >::value( 
+            std::get< Is >( expr ))... ); };
+
+        return helper( for_elements );
+    }
+};
+
+template< shape S, typename... Ts >
+struct GetFreeVars< Tensor< S, Ts... >>
+{
+    using type = merge_unique_variables_t< typename
+        GetFreeVars< Ts >::type... >;
+
+    static constexpr type
+    value( Tensor< S, Ts... > const& expr )
+    {
+        static constexpr make_seq< sizeof...( Ts )> for_elements;
+
+        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
+        { return merge_unique_variables( GetFreeVars< Ts >::value(
+            tensor_get< Is >( expr ))... ); };
+
+        return helper( for_elements );
+    }
+};
+
+/// @brief trait to identify free variables in a compound expression.  We 
+///        reduce to the tuple-case.
+template< template< typename... > class Op, typename... Args >
+requires( compound_expression< Op< Args... >> and 
+    not is_substitution_expression_v< Op< Args... >> )
+struct GetFreeVars< Op< Args... >>: GetFreeVars< tuple< Args... >> 
+{ };
+
+template< template< auto, typename... > class Op, auto Discriminator, 
+    typename... Args >
+requires( compound_expression< Op< Discriminator, Args... >> and 
+    not is_substitution_expression_v< Op< Discriminator, Args... >> and
+        not is_set_expression_v< Op< Discriminator, Args... >> )
+struct GetFreeVars< Op< Discriminator, Args... >>: 
+    GetFreeVars< tuple< Args... >>
+{ };
+
+static_assert( not compound_expression< Var< 0, int >>, "vars are not compound" );
+//variable Id is not considered free in the expression T
+//template< size_t Id, typename T >
+//requires( free_variables_t< T >::contains_id( Id ))
+//struct GetFreeVars< SetVar< Id, T >> {
+//private:
+//    using value_variable_set = GetFreeVars< T >::type;
+//    using value_type = var_value_t< typename value_variable_set::template 
+//        variable_t< Id >>;
+//    using this_variables_set = unique_variables< Var< Id, value_type >>;
+//
+//public:
+//    using type = subtract_unique_variables_t< 
+//        value_variable_set, this_variables_set >;
+//
+//    static constexpr type
+//    value( SetVar< Id, T > const& expr )
+//    {
+//        static constexpr this_variables_set this_variable;
+//        return subtract_unique_variables(
+//            GetFreeVars< T >::value( std::get< 0 >( expr )),
+//            this_variable );
+//    }
+//};
+
+/// @brief trait to identify free variables in an unbound function
+template< typename ExprT, variable... Vars >
+requires( is_greater( var_order_v< ExprT >, 1 ))
+struct GetFreeVars< Func< ExprT, Vars... >>
+{
+    using expression_free_vars_type = GetFreeVars< ExprT >::type;
+    using parameters_type = make_unique_variables_t< Vars... >;
+
+    // subtract any free vars from expression_free_vars to eliminate duplicate
+    // ids with different value types-- we prefer the ...vars value types
+    using unbound_expression_vars_type = subtract_unique_variables_t<
+        expression_free_vars_type, parameters_type >;
+
+    // now merge them knowing there will be no duplicates
+    using type = merge_unique_variables_t< unbound_expression_vars_type,
+        parameters_type >;
+
+    static constexpr type 
+    value( Func< ExprT, Vars... > const& func )
+    {
+        auto [ formula, ...vars ] = func.args();
+
+        auto expression_free_vars = 
+            GetFreeVars< ExprT >::value( formula );
+        auto parameters = make_unique_variables( vars... );
+
+        // remove free vars from formula that match our parameters
+        auto unbound_expression_vars = subtract_unique_variables(
+            expression_free_vars, parameters );
+
+        // return the re-merged variables to eliminate duplicate IDs
+        return merge_unique_variables( unbound_expression_vars, parameters );
+    }
+};
+
+/// @brief trait to identify free variables in a bound function
+template< typename ExprT, variable... Vars >
+requires( var_order_v< ExprT > == 1 )
+struct GetFreeVars< Func< ExprT, Vars... >>
+{
+    using type = GetFreeVars< ExprT >::type;
+    
+    static constexpr type
+    value( Func< ExprT, Vars... > const& func )
+    { return GetFreeVars< ExprT >::value( func.formula() ); };
+};
+
+
 /// @brief unique_variable list of free variables in an expression
 template< typename ExprT >
 using free_variables_t = 
@@ -1572,178 +1748,6 @@ struct Substituter< T, Ss... >
     value( T const& expr, Ss const&... )
     { return expr; }
 };
-
-//////////////////
-/// Free Vars ///
-////////////////
-///
-/// @brief trait to identify free variables in a tuple of expressions. 
-template< typename... Ts >
-struct GetFreeVars< tuple< Ts... >>
-{ 
-    using type = merge_unique_variables_t< typename 
-        GetFreeVars< Ts >::type... >; 
-    static constexpr type value( tuple< Ts... > const& expr )
-    { 
-        static constexpr make_seq< sizeof...( Ts )> for_elements;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return merge_unique_variables( GetFreeVars< Ts >::value( 
-            std::get< Is >( expr ))... ); };
-
-        return helper( for_elements );
-    }
-};
-
-template< shape S, typename... Ts >
-struct GetFreeVars< Tensor< S, Ts... >>
-{
-    using type = merge_unique_variables_t< typename
-        GetFreeVars< Ts >::type... >;
-
-    static constexpr type
-    value( Tensor< S, Ts... > const& expr )
-    {
-        static constexpr make_seq< sizeof...( Ts )> for_elements;
-
-        auto helper = [&]< size_t... Is >( seq< Is... > ) constexpr -> type
-        { return merge_unique_variables( GetFreeVars< Ts >::value(
-            tensor_get< Is >( expr ))... ); };
-
-        return helper( for_elements );
-    }
-};
-
-/// @brief trait to identify free variables in a compound expression.  We 
-///        reduce to the tuple-case.
-template< template< typename... > class Op, typename... Args >
-requires( compound_expression< Op< Args... >> and 
-    not is_substitution_expression_v< Op< Args... >> )
-struct GetFreeVars< Op< Args... >>: GetFreeVars< tuple< Args... >> 
-{ };
-
-template< template< auto, typename... > class Op, auto Discriminator, 
-    typename... Args >
-requires( compound_expression< Op< Discriminator, Args... >> and 
-    not is_substitution_expression_v< Op< Discriminator, Args... >> and
-        not is_set_expression_v< Op< Discriminator, Args... >> )
-struct GetFreeVars< Op< Discriminator, Args... >>: 
-    GetFreeVars< tuple< Args... >>
-{ };
-
-/// @brief variables have a single free variable plus any variables in the
-///        the nested type T
-template< size_t I, typename T >
-requires( expression< T > )
-struct GetFreeVars< Var< I, T >> {
-private:
-    // get the free variables of the value type
-    using value_variable_set = GetFreeVars< T >::type;
-    using this_variable_set = unique_variables< Var< I, T >>;
-
-    // subtract out Variable I since the value_types would not match
-    using subtracted_variable_set = subtract_unique_variables_t<
-        value_variable_set, this_variable_set >;
-
-public:
-    // remerge with variable I with the correct value type
-    using type = merge_unique_variables_t<
-        subtracted_variable_set, this_variable_set >;
-       
-    static constexpr type
-    value( Var< I, T > const& var )
-    {
-        static constexpr this_variable_set this_variable;
-
-        return merge_unique_variables(
-            subtract_unique_variables(
-                GetFreeVars< T >::value( var.get_value() ),
-                this_variable ),
-            this_variable );
-    }
-};
-
-template< size_t I, typename T >
-requires( not expression< T > )
-struct GetFreeVars< Var< I, T >> 
-{
-    using type = unique_variables< Var< I, T >>;
-    static constexpr type
-    value( Var< I, T > const& var )
-    { return { var }; }
-};
-
-//variable Id is not considered free in the expression T
-//template< size_t Id, typename T >
-//requires( free_variables_t< T >::contains_id( Id ))
-//struct GetFreeVars< SetVar< Id, T >> {
-//private:
-//    using value_variable_set = GetFreeVars< T >::type;
-//    using value_type = var_value_t< typename value_variable_set::template 
-//        variable_t< Id >>;
-//    using this_variables_set = unique_variables< Var< Id, value_type >>;
-//
-//public:
-//    using type = subtract_unique_variables_t< 
-//        value_variable_set, this_variables_set >;
-//
-//    static constexpr type
-//    value( SetVar< Id, T > const& expr )
-//    {
-//        static constexpr this_variables_set this_variable;
-//        return subtract_unique_variables(
-//            GetFreeVars< T >::value( std::get< 0 >( expr )),
-//            this_variable );
-//    }
-//};
-
-/// @brief trait to identify free variables in an unbound function
-template< typename ExprT, variable... Vars >
-requires( is_greater( var_order_v< ExprT >, 1 ))
-struct GetFreeVars< Func< ExprT, Vars... >>
-{
-    using expression_free_vars_type = GetFreeVars< ExprT >::type;
-    using parameters_type = make_unique_variables_t< Vars... >;
-
-    // subtract any free vars from expression_free_vars to eliminate duplicate
-    // ids with different value types-- we prefer the ...vars value types
-    using unbound_expression_vars_type = subtract_unique_variables_t<
-        expression_free_vars_type, parameters_type >;
-
-    // now merge them knowing there will be no duplicates
-    using type = merge_unique_variables_t< unbound_expression_vars_type,
-        parameters_type >;
-
-    static constexpr type 
-    value( Func< ExprT, Vars... > const& func )
-    {
-        auto [ formula, ...vars ] = func.args();
-
-        auto expression_free_vars = 
-            GetFreeVars< ExprT >::value( formula );
-        auto parameters = make_unique_variables( vars... );
-
-        // remove free vars from formula that match our parameters
-        auto unbound_expression_vars = subtract_unique_variables(
-            expression_free_vars, parameters );
-
-        // return the re-merged variables to eliminate duplicate IDs
-        return merge_unique_variables( unbound_expression_vars, parameters );
-    }
-};
-
-/// @brief trait to identify free variables in a bound function
-template< typename ExprT, variable... Vars >
-requires( var_order_v< ExprT > == 1 )
-struct GetFreeVars< Func< ExprT, Vars... >>
-{
-    using type = GetFreeVars< ExprT >::type;
-    
-    static constexpr type
-    value( Func< ExprT, Vars... > const& func )
-    { return GetFreeVars< ExprT >::value( func.formula() ); };
-};
-
 /// @brief free variables in a substitution expression are the free variables 
 ///        in the formula that are not bound. 
 template< typename ExprT, typename... Subs >
