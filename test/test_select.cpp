@@ -47,7 +47,7 @@ bool test_chain()
 
     ( n = 1 ) | scope;
 
-    println( "n == {}", scope(n) );
+    println( "n == {} (expected {})", scope(n), 1 );
     if( scope( n ) != 1 )
         return false;
     
