@@ -908,6 +908,17 @@ constexpr SetVar< Id, ExprT >
 set_var( ExprT const& expr )
 { return { expr }; }
 
+template< size_t Id, typename T >
+struct CompoundArguments< SetVar< Id, T >>
+{
+    using type = tuple< T >;
+
+    static constexpr type 
+    value( SetVar< Id, T > const& expr )
+    { return { expr.expr() }; }
+};
+
+
 }; // namespace expressions
 
 // HACK: make SetVar tuple-like

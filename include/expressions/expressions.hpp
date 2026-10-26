@@ -1489,7 +1489,8 @@ struct Process
 };
 
 template< typename ExprT, typename ProcessorT >
-requires( processor_accepts_v< ProcessorT, ExprT > )
+requires( processor_accepts_v< ProcessorT, ExprT > and 
+    not is_same_v< ExprT, processor_return_t< ProcessorT, ExprT >> )
 struct Process< ExprT, ProcessorT >
 {
     using return_type = processor_return_t< ProcessorT, ExprT >;
@@ -1547,8 +1548,9 @@ struct Process< V, ProcessorT >
     { return {}; }
 };
 
-template< size_t Id, expression ExprT, typename ProcessorT >
-requires( not processor_accepts_v< ProcessorT, SetVar< Id, ExprT >> )
+template< size_t Id, typename ExprT, typename ProcessorT >
+requires( not processor_accepts_v< ProcessorT, SetVar< Id, ExprT >> and
+    not expression< ExprT > )
 struct Process< SetVar< Id, ExprT >, ProcessorT >
 {
     using type = Undefined< result_t< ExprT >>;
@@ -1572,8 +1574,8 @@ struct Process< SetVar< Id, ExprT >, ProcessorT >
 //};
 
 template< compound_expression CompoundT, typename ProcessorT >
-requires( not processor_accepts_v< ProcessorT, CompoundT > and
-          not is_set_expression_v< CompoundT > )
+requires( not processor_accepts_v< ProcessorT, CompoundT > /* and
+          not is_set_expression_v< CompoundT > */ )
 struct Process< CompoundT, ProcessorT >
 {
     using arguments_type = compound_arguments_t< CompoundT >;
@@ -1626,7 +1628,7 @@ struct Process< CompoundT, ProcessorT >
     static constexpr type
     value( CompoundT const& expr, ProcessorT& f )
     { 
-        static_assert( false, "open compound" );
+        //static_assert( false, "open compound" );
         return Process< typename Helper< for_arguments >::type, ProcessorT >::
         value( Helper< for_arguments >::value( expr, f ), f ); }
 };
