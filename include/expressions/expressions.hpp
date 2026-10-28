@@ -1579,13 +1579,12 @@ requires( not processor_accepts_v< ProcessorT, CompoundT > /* and
           not is_set_expression_v< CompoundT > */ )
 struct Process< CompoundT, ProcessorT >
 {
-    using arguments_type = compound_arguments_t< CompoundT >;
     using expression_type = CompoundT;
 
+private:
+    using arguments_type = compound_arguments_t< CompoundT >;
     static constexpr size_t arguments_size = 
         std::tuple_size_v< arguments_type >;
-
-private:
     typedef make_seq< arguments_size > for_arguments;
 
     template< typename Seq >
@@ -1600,25 +1599,10 @@ private:
         using arg_t = Process< std::tuple_element_t< I, arguments_type >, 
             ProcessorT >::type;
 
-        template< size_t I >
-        static constexpr arg_t< I >
-        arg( arguments_type const& args, ProcessorT& f )
-        { return Process< std::tuple_element_t< I, arguments_type >, 
-            ProcessorT >::value( std::get< I >( args ), f ); }
-
-//        static_assert( not is_same_v< CompoundT, void > );
-
         using processed_arguments_type = tuple< arg_t< Is >... >;
         using reconstituted_type = reconstitute_t< CompoundT, arg_t< Is >... >;
         using type = std::decay_t< decltype( reconstituted_type::value( 
             arg_t< Is >{}... ))>;
-
-        static constexpr type
-        value( CompoundT const& expr, ProcessorT& f )
-        {
-            auto arg_tuple = compound_arguments( expr );
-            return reconstituted_type::value( arg< Is >( arg_tuple )... ); 
-        }
     };
 
     template< size_t I >
@@ -1638,10 +1622,6 @@ private:
     // return type of reconstituted value method
     using return_type = Helper< for_arguments >::type;
 
-public:
-    using type = Process< return_type, ProcessorT >::type;
-
-private:
     // helper to process the arguments in-order using tail recursion
     template< size_t First, size_t... Rest >
     constexpr static void
@@ -1662,6 +1642,8 @@ private:
     { }
 
 public:
+    using type = Process< return_type, ProcessorT >::type;
+
     static constexpr type
     value( CompoundT const& expr, ProcessorT& f )
     { 
