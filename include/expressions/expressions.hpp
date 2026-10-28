@@ -1575,6 +1575,7 @@ struct Process< SetVar< Id, ExprT >, ProcessorT >
 
 template< compound_expression CompoundT, typename ProcessorT >
 requires( not processor_accepts_v< ProcessorT, CompoundT > /* and
+    not is_chain_expression_v< CompoundT > and
           not is_set_expression_v< CompoundT > */ )
 struct Process< CompoundT, ProcessorT >
 {
@@ -1584,6 +1585,7 @@ struct Process< CompoundT, ProcessorT >
     static constexpr size_t arguments_size = 
         std::tuple_size_v< arguments_type >;
 
+private:
     typedef make_seq< arguments_size > for_arguments;
 
     template< typename Seq >
@@ -1606,6 +1608,7 @@ struct Process< CompoundT, ProcessorT >
 
 //        static_assert( not is_same_v< CompoundT, void > );
 
+        using processed_arguments_type = tuple< arg_t< Is >... >;
         using reconstituted_type = reconstitute_t< CompoundT, arg_t< Is >... >;
         using type = std::decay_t< decltype( reconstituted_type::value( 
             arg_t< Is >{}... ))>;
@@ -1613,24 +1616,74 @@ struct Process< CompoundT, ProcessorT >
         static constexpr type
         value( CompoundT const& expr, ProcessorT& f )
         {
-            auto args = compound_arguments( expr );                 
-            return reconstituted_type::value( arg< Is >( args, f )... ); 
+            auto arg_tuple = compound_arguments( expr );
+            return reconstituted_type::value( arg< Is >( arg_tuple )... ); 
         }
     };
 
+    template< size_t I >
+    using arg_processor_t = Process< std::tuple_element_t< I, arguments_type >, 
+        ProcessorT >;
+
+    // type of the processed Ith argument
+    template< size_t I >
+    using processed_arg_t = arg_processor_t< I >::type;
+
+    // type of this expression made from processed arguments
+    using reconstituted_type = Helper< for_arguments >::reconstituted_type;
+
+    // tuple of procssed arguments, used as an intermediary
+    using processed_arguments_type = Helper< for_arguments >::processed_arguments_type;
+
+    // return type of reconstituted value method
     using return_type = Helper< for_arguments >::type;
-    //using is_type_idempotent = is_same_v< return_type, expression_type >;
 
+public:
+    using type = Process< return_type, ProcessorT >::type;
 
-    using type = Process< typename Helper< for_arguments >::type, 
-        ProcessorT >::type;
+private:
+    // helper to process the arguments in-order using tail recursion
+    template< size_t First, size_t... Rest >
+    constexpr static void
+    process_args( processed_arguments_type& processed_args_tuple, 
+        arguments_type const& args_tuple, ProcessorT& f, seq< First, Rest... > )
+    {
+        std::get< First >( processed_args_tuple ) = arg_processor_t< First >::
+            value( std::get< First >( args_tuple ), f );
+        
+        // tail recurse to ensure in-order processing of expression arguments
+        process_args( processed_args_tuple, args_tuple, f, seq< Rest... >{} );
+    }
 
+    // terminal case
+    constexpr static void
+    process_args( processed_arguments_type& processed_args_tuple, 
+        arguments_type const& args_tuple, ProcessorT& f, seq< > )
+    { }
+
+public:
     static constexpr type
     value( CompoundT const& expr, ProcessorT& f )
     { 
-        //static_assert( false, "open compound" );
-        return Process< typename Helper< for_arguments >::type, ProcessorT >::
-        value( Helper< for_arguments >::value( expr, f ), f ); }
+        // reserve space on stack for the processed expression arguments
+        processed_arguments_type processed_args_tuple;
+
+        // process the arguments onto the stack
+        process_args( processed_args_tuple, compound_arguments( expr ), f, 
+            for_arguments{} );
+
+        // name each argument with a pack expansion 
+        auto const& [ ...processed_args ] = processed_args_tuple;
+
+        // use the expression's value method to rebuild the processed 
+        // expression
+        return_type reconstituted_expr = 
+            reconstituted_type::value( processed_args... );
+
+        // lastly recurse our processor 
+        return Process< return_type, ProcessorT >::
+            value( reconstituted_expr, f );
+    }
 };
 
 template< typename T, typename ProcessorT >
